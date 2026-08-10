@@ -1119,13 +1119,13 @@ async function saveSelectedProfile() {
     if (presetName) settings().presetBindings[presetName] = current.id;
     saveSettingsDebounced();
     renderProfiles(current.id);
-    toastr.success('API 配置、连接字段和非空凭据已保存。');
+    toastr.success('API 配置已保存。');
 }
 
 async function renameSelectedProfile() {
     const profile = selectedProfile();
     if (!profile) return;
-    const name = await promptName('输入新的 Profile 名称：', profile.name);
+    const name = await promptName('输入新的配置名称：', profile.name);
     if (!name) return;
     profile.name = uniqueName(name, profile.id);
     profile.updatedAt = new Date().toISOString();
