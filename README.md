@@ -10,6 +10,35 @@ Quicker Api 是 SillyTavern 原生“API 连接配置”的轻量增强面板，
 
 Quicker Api 界面直接显示在 SillyTavern 原生的 **API 连接配置** 中，使用前需要先将 SillyTavern 的 **聊天补全来源** 切换至 **自定义（兼容 OpenAI）** / **Claude** / **Google AI Studio**。
 
+## 功能预览
+
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/894298f4-c0b7-4ed3-beaf-161a2cfcec22" alt="Quicker Api 配置管理界面" width="100%" />
+      <br />
+      <sub>API 配置管理</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/74c36eab-06ca-48fa-a7ec-24b351b3ea63" alt="Quicker Api 模型列表管理界面" width="100%" />
+      <br />
+      <sub>模型列表管理</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/25c97261-78d3-4d1f-a8a0-8039228fff98" alt="Quicker Api 便捷方案菜单" width="303" />
+  <br />
+  <sub>发送栏便捷方案菜单</sub>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/f82e5f9a-a5be-4066-a752-dbcaa06091c7" alt="Quicker Api 便捷按钮管理界面" width="100%" />
+  <br />
+  <sub>便捷按钮管理</sub>
+</p>
+
 ## 主要功能
 
 - **多配置管理** — 保存多个 API 配置，快速新增、切换、重命名、复制和删除
