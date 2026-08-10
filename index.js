@@ -1469,7 +1469,7 @@ async function manageCustomModels() {
     const initialDraft = structuredClone(draft);
 
     const content = $('<div class="quicker-api__model-manager">');
-    content.append($('<div class="quicker-api__manager-note">').text('左侧远端快照整行可选；右侧为主下拉留存列表。所有修改仅在确认后落盘，取消会完整回滚。'));
+    content.append($('<div class="quicker-api__manager-note">').text('所有修改仅在确认后保存，取消会完整回滚。'));
     const columns = $('<div class="quicker-api__manager-columns">');
     const remotePanel = $('<section class="quicker-api__manager-panel">');
     const chosenPanel = $('<section class="quicker-api__manager-panel">');
