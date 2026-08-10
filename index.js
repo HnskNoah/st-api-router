@@ -880,10 +880,14 @@ function createProfile() {
     clearKeyEditor();
     settings().selectedProfileId = null;
     saveSettingsDebounced();
-    $('#quicker_api_profile_select').val('');
+    const select = $('#quicker_api_profile_select');
+    select.find('option[value=""]').text('— 新建 API 配置（未保存） —');
+    select.val('');
     renderProfileEditor(null);
     updateCredentialEditor(null);
-    setStatus('当前配置尚未保存。', 'warning');
+    setStatus('正在新建 API 配置；填写后请点击“保存 API 配置”。', 'warning');
+    toastr.info('已进入新建模式；填写连接信息后点击“保存 API 配置”即可创建 Profile。');
+    $('#quicker_api_url').trigger('focus');
 }
 
 function importIdentity(format, endpoint, credentialIdentity) {
