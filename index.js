@@ -1740,6 +1740,7 @@ async function manageQuickActions() {
     let draftPlacement = normalizeQuickActionPlacement(settings().quickActionPlacement);
     let selectedId = globalDraft[0]?.id || '';
     let detailDraft = selectedId ? structuredClone(globalDraft[0]) : null;
+    let detailBaseline = detailDraft ? JSON.stringify(detailDraft) : '';
     let detailCandidates = detailDraft ? modelSuggestionsForProfile(detailDraft.profileId) : [];
 
     const content = $('<div class="quicker-api__quick-manager">');
@@ -1764,12 +1765,14 @@ async function manageQuickActions() {
         selectedId = id;
         const action = globalDraft.find(item => item.id === selectedId) || null;
         detailDraft = action ? structuredClone(action) : null;
+        detailBaseline = detailDraft ? JSON.stringify(detailDraft) : '';
         detailCandidates = detailDraft ? modelSuggestionsForProfile(detailDraft.profileId) : [];
         render();
     };
     const field = (label, control) => $('<label class="quicker-api__quick-field">').append($('<span>').text(label), control);
+    const updateDetailSaveState = () => editor.toggleClass('has-unsaved-detail', Boolean(detailDraft) && JSON.stringify(detailDraft) !== detailBaseline);
     const renderEditor = () => {
-        editor.empty();
+        editor.empty().removeClass('has-unsaved-detail');
         if (!detailDraft) {
             editor.append($('<div class="quicker-api__empty-state">').text('新增方案后，可自由组合 preset、Profile 与 model。'));
             return;
@@ -1790,8 +1793,8 @@ async function manageQuickActions() {
         const modelControl = $('<div class="quicker-api__quick-model-control">').append(modelInput, modelSelect, fetchModels);
         const selectedProfileValue = () => profiles().find(item => item.id === detailDraft.profileId) || null;
         fetchModels.prop('disabled', selectedProfileValue()?.format !== 'openai');
-        name.on('input', () => { detailDraft.name = sanitizeName(name.val()); });
-        preset.on('change', () => { detailDraft.preset = normalizeText(preset.val()); });
+        name.on('input', () => { detailDraft.name = sanitizeName(name.val()); updateDetailSaveState(); });
+        preset.on('change', () => { detailDraft.preset = normalizeText(preset.val()); updateDetailSaveState(); });
         profileSelect.on('change', () => {
             detailDraft.profileId = normalizeText(profileSelect.val());
             detailCandidates = modelSuggestionsForProfile(detailDraft.profileId);
@@ -1802,11 +1805,13 @@ async function manageQuickActions() {
             if (!selectedModel) return;
             detailDraft.model = selectedModel;
             modelInput.val(selectedModel);
+            updateDetailSaveState();
         });
         modelInput.on('input', () => {
             detailDraft.model = normalizeText(modelInput.val()).slice(0, 500);
             const exists = modelSelect.find('option').filter((_, option) => option.value === detailDraft.model).length;
             modelSelect.val(exists ? detailDraft.model : '');
+            updateDetailSaveState();
         });
         fetchModels.on('click', async () => {
             const profile = selectedProfileValue();
@@ -1846,7 +1851,9 @@ async function manageQuickActions() {
             if (index < 0) return;
             globalDraft[index] = normalizeQuickAction(structuredClone(detailDraft), index);
             detailDraft = structuredClone(globalDraft[index]);
+            detailBaseline = JSON.stringify(detailDraft);
             render();
+            toastr.success('方案修改已保存；点击顶部“保存”后写入设置。');
         });
         cancelScheme.on('click', () => selectAction(selectedId, true));
         editor.append(
@@ -1856,6 +1863,7 @@ async function manageQuickActions() {
             ),
             $('<div class="quicker-api__quick-editor-actions">').append(saveScheme, cancelScheme),
         );
+        updateDetailSaveState();
     };
     const updateSaveState = () => saveAll.toggleClass('is-dirty', JSON.stringify(globalDraft) !== initialGlobalSnapshot);
     const render = () => {

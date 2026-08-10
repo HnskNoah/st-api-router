@@ -676,6 +676,11 @@ dialog.popup:has(.quicker-api__quick-manager) .popup-controls {
     border-top: 1px solid var(--SmartThemeBorderColor);
 }
 
+.quicker-api__quick-editor.has-unsaved-detail .quicker-api__quick-editor-actions .quicker-api__save-button {
+    border-color: color-mix(in srgb, lightgreen 78%, var(--SmartThemeBorderColor));
+    background: color-mix(in srgb, lightgreen 10%, transparent);
+}
+
 .quicker-api__quick-field {
     display: grid;
     min-width: 0;
