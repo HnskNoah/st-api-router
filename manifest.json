@@ -1,11 +1,11 @@
 {
-    "name": "ST Quicker Api",  
+    "name": "ST Quicker Api",
     "display_name": "更快更好的酒馆 Api 管理 / ST Quicker Api",
     "loading_order": 3,
     "requires": [],
     "optional": [],
     "description": "更方便地管理/切换 API 配置",
-    "js": "index.js",
+    "js": "dist/index.js",
     "css": "style.css",
     "author": "Qianzhuo",
     "version": "3.4.7"

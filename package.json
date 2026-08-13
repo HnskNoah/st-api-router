@@ -1,0 +1,21 @@
+{
+    "name": "st-quicker-api",
+    "version": "3.4.7",
+    "private": true,
+    "type": "module",
+    "description": "SillyTavern Quicker Api extension (modular TypeScript refactor)",
+    "scripts": {
+        "build": "vite build",
+        "watch": "vite build --watch",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run"
+    },
+    "devDependencies": {
+        "@types/jquery": "^3.5.30",
+        "@types/node": "^22.0.0",
+        "@types/toastr": "^2.1.40",
+        "typescript": "^7.0.2",
+        "vite": "^6.0.0",
+        "vitest": "^4.1.10"
+    }
+}
