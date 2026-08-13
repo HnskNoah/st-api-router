@@ -8,6 +8,8 @@ import {
 } from '../constants.js';
 import { normalizeProfile } from '../domain/profile.js';
 import { normalizeQuickAction } from '../domain/quick-action.js';
+import { normalizeProviders, providerFromProfile, resetRoutingRuntimeState } from '../domain/provider.js';
+import { normalizeRoutingSettings } from '../domain/routing.js';
 import { sanitizeName } from '../utils/text.js';
 
 export function initializeSettings(): boolean {
@@ -41,6 +43,16 @@ export function initializeSettings(): boolean {
     }
 
     value.profiles = Array.isArray(value.profiles) ? value.profiles.map(profile => normalizeProfile(profile)) : [];
+    // ── st-api-router：providers 迁移（v11）──
+    // 旧 profiles → providers：保留 id 兼容引用；profiles 保留（Profile UI 仍在，Provider 面板与其共存）。
+    value.providers = normalizeProviders(value.providers);
+    // 运行时状态（窗口/熔断/失败计数）不跨会话：载入即重置
+    resetRoutingRuntimeState(value.providers);
+    if (storedVersion < 11 && value.providers.length === 0 && value.profiles.length > 0) {
+        value.providers = value.profiles.map(profile => providerFromProfile(profile));
+        changed = true;
+    }
+    value.routing = normalizeRoutingSettings(value.routing);
     value.emptySecretIds = value.emptySecretIds && typeof value.emptySecretIds === 'object' ? value.emptySecretIds : {};
     value.presetBindings = value.presetBindings && typeof value.presetBindings === 'object' ? value.presetBindings : {};
     value.blockedSecretKeys = value.blockedSecretKeys && typeof value.blockedSecretKeys === 'object' ? value.blockedSecretKeys : {};

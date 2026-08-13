@@ -1,0 +1,90 @@
+// 连接层（扳道工）：把选中单元的 provider/key 写回 ST 原生连接字段。
+// 只赋值不新增；请求仍由 ST 原生发出。附带轻量快照/回滚。
+// 格式映射：
+//   custom           → source=custom + custom_url + custom_api_format=openai_compat
+//   custom-responses → source=custom + custom_url + custom_api_format=openai_responses
+//   deepseek         → source=deepseek + reverse_proxy + deepseek_model + SECRET_KEYS.DEEPSEEK
+
+import { oai_settings, chat_completion_sources } from '@sillytavern/scripts/openai';
+import { SECRET_KEYS, secret_state } from '@sillytavern/scripts/secrets';
+import type { Provider, ProviderKey } from '../types.js';
+
+const CUSTOM_API_FORMAT_VALUES: Record<string, string> = {
+    'custom': 'openai_compat',
+    'custom-responses': 'openai_responses',
+};
+
+function syncInput(selector: string, value: string | number | null | undefined, eventType = 'input'): void {
+    const el = $(selector);
+    if (el.length && String(el.val() ?? '') !== String(value ?? '')) {
+        el.val(value ?? '').trigger(eventType);
+    }
+}
+
+/** 快照当前连接字段（路由开始前调用）。 */
+export function snapshotConnection(): Record<string, string> {
+    return {
+        source: String(oai_settings.chat_completion_source || ''),
+        custom_url: String(oai_settings.custom_url || ''),
+        custom_model: String(oai_settings.custom_model || ''),
+        custom_api_format: String(oai_settings.custom_api_format || 'openai_compat'),
+        reverse_proxy: String(oai_settings.reverse_proxy || ''),
+        deepseek_model: String(oai_settings.deepseek_model || ''),
+        apiKeyCustom: String(secret_state?.[SECRET_KEYS.CUSTOM] ?? ''),
+        apiKeyDeepseek: String(secret_state?.[SECRET_KEYS.DEEPSEEK] ?? ''),
+    };
+}
+
+/** 恢复连接字段（应用失败/路由取消时调用）。 */
+export function restoreConnection(snapshot: Record<string, string>): void {
+    oai_settings.custom_url = snapshot.custom_url;
+    oai_settings.custom_model = snapshot.custom_model;
+    oai_settings.custom_api_format = snapshot.custom_api_format;
+    oai_settings.reverse_proxy = snapshot.reverse_proxy;
+    oai_settings.deepseek_model = snapshot.deepseek_model;
+    if (secret_state) {
+        secret_state[SECRET_KEYS.CUSTOM] = snapshot.apiKeyCustom;
+        secret_state[SECRET_KEYS.DEEPSEEK] = snapshot.apiKeyDeepseek;
+    }
+    syncInput('#custom_api_url_text', snapshot.custom_url);
+    syncInput('#custom_model_id', snapshot.custom_model);
+    syncInput('#api_key_custom', snapshot.apiKeyCustom);
+    syncInput('#openai_reverse_proxy', snapshot.reverse_proxy);
+    syncInput('#model_deepseek_select', snapshot.deepseek_model, 'change');
+    syncInput('#api_key_deepseek', snapshot.apiKeyDeepseek);
+    if (String(oai_settings.chat_completion_source) !== snapshot.source) {
+        syncInput('#chat_completion_source', snapshot.source, 'change');
+    }
+}
+
+/** 把路由单元（provider + key）写入 ST 连接字段。不触碰任何请求内容字段（include/exclude）。 */
+export function applyProviderConnection(provider: Provider, key: ProviderKey, model: string): void {
+    const format = String(provider?.format || 'custom');
+    const endpoint = String(provider?.endpoint || '').trim();
+    const apiKey = String(key?.apiKey || '');
+
+    if (format === 'deepseek') {
+        oai_settings.chat_completion_source = chat_completion_sources.DEEPSEEK;
+        oai_settings.reverse_proxy = endpoint;
+        oai_settings.deepseek_model = model;
+        if (apiKey && secret_state) secret_state[SECRET_KEYS.DEEPSEEK] = apiKey;
+        syncInput('#chat_completion_source', chat_completion_sources.DEEPSEEK, 'change');
+        syncInput('#openai_reverse_proxy', endpoint);
+        syncInput('#model_deepseek_select', model, 'change');
+        if (apiKey) syncInput('#api_key_deepseek', apiKey);
+        return;
+    }
+
+    oai_settings.chat_completion_source = chat_completion_sources.CUSTOM;
+    oai_settings.custom_url = endpoint;
+    oai_settings.custom_model = model;
+    oai_settings.custom_api_format = CUSTOM_API_FORMAT_VALUES[format] ?? 'openai_compat';
+    if (apiKey && secret_state) secret_state[SECRET_KEYS.CUSTOM] = apiKey;
+
+    syncInput('#custom_api_url_text', endpoint);
+    syncInput('#custom_model_id', model);
+    if (apiKey) syncInput('#api_key_custom', apiKey);
+    if (String(oai_settings.chat_completion_source) !== chat_completion_sources.CUSTOM) {
+        syncInput('#chat_completion_source', chat_completion_sources.CUSTOM, 'change');
+    }
+}

@@ -828,3 +828,222 @@ dialog.popup:has(.quicker-api__placement-popup) .popup-controls {
     }
 }
 
+/* ── st-api-router：供应商路由面板（rem 弹性布局，移动端断点 760px）── */
+
+.st-router-title-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.st-router-title-actions .menu_button.active {
+    background-color: var(--SmartThemeEmColor, rgba(120, 120, 120, 0.3));
+}
+
+.st-router-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+}
+
+.st-router-controls .st-router-strategy-label {
+    margin-left: auto;
+}
+
+.st-router-strategy {
+    width: auto;
+    min-width: 8rem;
+}
+
+.st-router-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.st-router-add {
+    margin-top: 0.5rem;
+}
+
+.st-router-provider {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid rgba(128, 128, 128, 0.25);
+    border-radius: 0.4rem;
+    box-sizing: border-box;
+}
+
+.st-router-provider-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1 1 12rem;
+    min-width: 0;
+}
+
+.st-router-provider-name {
+    font-weight: 600;
+}
+
+.st-router-provider-endpoint {
+    font-size: 0.85em;
+    opacity: 0.75;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.st-router-provider-meta {
+    font-size: 0.8em;
+    opacity: 0.6;
+}
+
+.st-router-provider-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.st-router-badge {
+    display: inline-block;
+    padding: 0.1em 0.5em;
+    border-radius: 999px;
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
+.st-router-badge--ok { background-color: rgba(76, 175, 80, 0.25); }
+.st-router-badge--disabled { background-color: rgba(128, 128, 128, 0.3); }
+.st-router-badge--rpm { background-color: rgba(255, 165, 0, 0.25); }
+.st-router-badge--circuit { background-color: rgba(244, 67, 54, 0.3); }
+
+.st-router-model-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.st-router-model-chip {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 0.4rem;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    max-width: 100%;
+}
+
+.st-router-model-chip:hover {
+    border-color: var(--SmartThemeQuoteColor, rgba(128, 128, 128, 0.7));
+}
+
+.st-router-model-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.st-router-model-providers {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.st-router-editor .quicker-api__field {
+    margin-bottom: 0.5rem;
+}
+
+.st-router-editor-enabled {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+.st-router-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+@media (max-width: 760px) {
+    .st-router-provider-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .st-router-controls .st-router-strategy-label {
+        margin-left: 0;
+    }
+
+    .st-router-strategy {
+        min-width: 100%;
+    }
+}
+
+.st-router-view-toggle {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.st-router-view-toggle .menu_button.active {
+    background-color: var(--SmartThemeEmColor, rgba(120, 120, 120, 0.3));
+}
+
+.st-router-key-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 0.4rem;
+    box-sizing: border-box;
+}
+
+.st-router-key-label {
+    font-weight: 600;
+}
+
+.st-router-key-meta {
+    flex: 1 1 auto;
+    font-size: 0.8em;
+    opacity: 0.65;
+    min-width: 0;
+}
+
+.st-router-key-group {
+    width: 100%;
+    margin-bottom: 0.6rem;
+}
+
+.st-router-key-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.3rem;
+}
+
+.st-router-key-group-title {
+    font-weight: 600;
+}
+
+.st-router-key-group-meta {
+    font-size: 0.8em;
+    opacity: 0.65;
+}
+

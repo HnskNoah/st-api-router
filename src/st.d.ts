@@ -23,11 +23,13 @@ declare module '@sillytavern/scripts/openai' {
 declare module '@sillytavern/scripts/secrets' {
     export const SECRET_KEYS: Record<string, string>;
     export const secret_state: Record<string, any>;
+    export function writeSecret(key: string, value: string, label?: string): Promise<string | null>;
 }
 
 declare module '@sillytavern/scripts/popup' {
     export const POPUP_TYPE: Record<string, string>;
     export class Popup {
+        static show: Record<string, (...args: any[]) => Promise<any>>;
         constructor(
             content: JQuery<HTMLElement> | string,
             type: string,

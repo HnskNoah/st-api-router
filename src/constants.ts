@@ -1,9 +1,9 @@
 // 常量定义（来自 index.js 顶部的 FORMATS / DEFAULT_SETTINGS 等）
-import type { FormatConfig, FormatName, QuickerApiSettings, QuickActionPlacement } from './types.js';
+import type { FormatConfig, FormatName, QuickerApiSettings, QuickActionPlacement, RoutingSettings } from './types.js';
 
 export const MODULE_NAME = 'quickerApi';
 export const LEGACY_MODULE_NAME = 'customOpenAIProfiles';
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 export const EMPTY_SECRET_LABEL = 'Quicker Api · No key';
 
 export const SUPPORTED_SOURCES = new Set([
@@ -49,9 +49,18 @@ export const FORMAT_NAMES: FormatName[] = ['openai', 'anthropic', 'gemini'];
 
 export const QUICK_ACTION_PLACEMENTS: QuickActionPlacement[] = ['leftSendForm', 'rightSendForm', 'qrButtons', 'disabled'];
 
+export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
+    enabled: false,
+    stickySeconds: 600,
+    failThreshold: 3,
+    cooldownSeconds: 60,
+});
+
 export const DEFAULT_SETTINGS: QuickerApiSettings = Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     profiles: [],
+    providers: [],
+    routing: DEFAULT_ROUTING_SETTINGS,
     selectedProfileId: null,
     activeProfileId: null,
     emptySecretIds: {},

@@ -19,6 +19,7 @@ import { profileMatchesNative } from './native/match.js';
 import { bindEvents } from './events.js';
 import { toolbarHtml } from './ui/toolbar.js';
 import { updatePanelVisibility } from './ui/render.js';
+import { initRouting, teardownRouting } from './routing/init.js';
 
 function findInitialProfile() {
     const currentPreset = currentPresetName();
@@ -115,6 +116,7 @@ export async function teardownQuickerApi(): Promise<boolean> {
     runtimeState.quickActionRenderPending = false;
     clearKeyEditor();
     $('#quicker_api').remove();
+    teardownRouting();
     $('#custom_form, #claude_form, #makersuite_form').removeClass('quicker-api__native-provider');
     $(document).off('.quickerApi').off('.quickerApiMenu');
     $(window).off('.quickerApiMenu');
@@ -150,6 +152,7 @@ export function initQuickerApi(): void {
     updatePanelVisibility();
     bindEvents();
     renderProfiles();
+    initRouting();
     watchForDomChanges();
     void enqueueOperation(async () => {
         if (!await readAuthoritativeSecretState()) toastr.warning('Quicker Api 暂时无法读取权威密钥状态；切换将保持阻断。');

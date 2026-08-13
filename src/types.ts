@@ -44,9 +44,69 @@ export interface QuickAction {
 
 export type QuickActionPlacement = 'leftSendForm' | 'rightSendForm' | 'qrButtons' | 'disabled';
 
+// ── Provider 聚合路由领域类型（v11）──
+
+export type ProviderFormat = 'custom' | 'custom-responses' | 'deepseek';
+
+export interface ProviderKey {
+    id: string;
+    label: string;
+    apiKey: string;
+    fetchedModels: string[];
+    rpm: number;
+    weight: number;
+    enabled: boolean;
+    // ── 运行时状态（不持久化语义）──
+    window: number[];                       // rpm 滑动窗口（熔断不影响 rpm 计数）
+    circuits: Record<string, number>;       // model -> 熔断截止时间（熔断针对模型）
+    failStreakByModel: Record<string, number>; // model -> 连续失败
+    lastError: string;
+}
+
+export interface Provider {
+    id: string;
+    name: string;
+    format: ProviderFormat;
+    endpoint: string;
+    keys: ProviderKey[];
+    enabled: boolean;
+    updatedAt: string;
+}
+
+export interface RoutingUnit {
+    provider: Provider;
+    key: ProviderKey;
+}
+
+/** 模型注册表条目：模型记录自己的承载供应商（provider/key）。 */
+export interface ModelEntry {
+    model: string;
+    units: RoutingUnit[];
+}
+
+export interface RoutingSettings {
+    enabled: boolean;
+    stickySeconds: number;
+    failThreshold: number;
+    cooldownSeconds: number;
+}
+
+export interface LastPicked {
+    unitId: string;
+    until: number;
+}
+
+export interface RouteResult {
+    unit: RoutingUnit | null;
+    reasons: string[];
+    nextLastPicked: LastPicked | null;
+}
+
 export interface QuickerApiSettings {
     schemaVersion: number;
     profiles: Profile[];
+    providers: Provider[];
+    routing: RoutingSettings;
     selectedProfileId: string | null;
     activeProfileId: string | null;
     emptySecretIds: Record<string, string>;

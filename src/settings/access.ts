@@ -4,7 +4,7 @@ import { extension_settings } from '@sillytavern/scripts/extensions';
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { MODULE_NAME } from '../constants.js';
 import { normalizeText } from '../utils/text.js';
-import type { Profile, QuickerApiSettings } from '../types.js';
+import type { Profile, Provider, QuickerApiSettings, RoutingSettings } from '../types.js';
 
 export function settings(): QuickerApiSettings {
     return extension_settings[MODULE_NAME] as QuickerApiSettings;
@@ -12,6 +12,14 @@ export function settings(): QuickerApiSettings {
 
 export function profiles(): Profile[] {
     return settings().profiles;
+}
+
+export function providers(): Provider[] {
+    return settings().providers;
+}
+
+export function routingSettings(): RoutingSettings {
+    return settings().routing;
 }
 
 export function selectedProfile(): Profile | null {

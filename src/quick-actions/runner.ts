@@ -4,8 +4,9 @@ import { oai_settings } from '@sillytavern/scripts/openai';
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
 import { FORMATS } from '../constants.js';
 import { runtimeState } from '../state.js';
-import { settings, profiles, selectedProfile, currentPresetName } from '../settings/access.js';
+import { settings, profiles, providers, routingSettings, selectedProfile, currentPresetName } from '../settings/access.js';
 import { normalizeText } from '../utils/text.js';
+import { aggregateModels } from '../domain/model-catalog.js';
 import { enqueueOperation, waitForStableOperationQueue } from '../operation-queue.js';
 import { applyProfile } from '../apply/profile.js';
 import { beginPresetTransition, endPresetTransition } from '../presets/transition.js';
@@ -38,6 +39,16 @@ export function applyExplicitModel(model: unknown, preferredFormat = ''): boolea
         oai_settings[config.modelField] = value;
     }
     return String(input.val() || '') === value && String(oai_settings[config.modelField] || '') === value;
+}
+
+/** 路由命中的模型：只写 custom_model（生成时由路由钩子选 key），不做原生格式推断。 */
+export function setRoutedModel(model: unknown): boolean {
+    const value = normalizeText(model);
+    if (!value) return true;
+    oai_settings.custom_model = value;
+    const input = $('#custom_model_id');
+    if (input.length) input.val(value).trigger('input');
+    return String(oai_settings.custom_model || '') === value;
 }
 
 export function waitForPresetAfter(expectedName: string, token: number): Promise<boolean> {
@@ -115,9 +126,16 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
             }
         }
         if (token !== runtimeState.quickActionTransaction) return;
-        if (action.model && !applyExplicitModel(action.model, profile?.format || '')) {
-            toastr.error('便捷方案模型写入验证失败。');
-            return;
+        if (action.model) {
+            // 路由命中的模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
+            const routedModel = routingSettings().enabled && aggregateModels(providers()).includes(action.model);
+            const applied = routedModel
+                ? setRoutedModel(action.model)
+                : applyExplicitModel(action.model, profile?.format || '');
+            if (!applied) {
+                toastr.error('便捷方案模型写入验证失败。');
+                return;
+            }
         }
         if (token !== runtimeState.quickActionTransaction) return;
         renderProfiles(settings().selectedProfileId);
