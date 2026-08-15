@@ -230,6 +230,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 <div class="st-router-section-head">
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
+                        <button id="st_router_refresh_models" class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表（无 Key 的 Vendor 跳过）"><i class="fa-solid fa-arrows-rotate"></i><span>刷新模型</span></button>
                         <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
                         <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
@@ -976,6 +977,40 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         if (group) void openGroupEditor(group);
     });
     panel.find('#st_router_add_logical').on('click', () => void openLogicalModelEditor(null));
+    panel.find('#st_router_refresh_models').on('click', async () => {
+        const vendors = deps.getVendors();
+        if (vendors.length === 0) {
+            toastr.info('还没有 Vendor。先在上方"Vendor"区新增 Vendor，再为其配置 Key 后刷新。');
+            return;
+        }
+        const btn = panel.find('#st_router_refresh_models');
+        btn.prop('disabled', true);
+        let ok = 0;
+        let skipped = 0;
+        const failed: string[] = [];
+        try {
+            for (const vendor of vendors) {
+                const key = firstKeyForVendor(vendor);
+                if (!key) {
+                    skipped++;
+                    continue;
+                }
+                const models = await fetchModelsForVendor(vendor, key);
+                if (models) ok++;
+                else failed.push(vendor.name);
+            }
+            renderProviderList();
+            renderGroupEntries();
+            renderModelList();
+            renderGroupSummary();
+            const parts = [`成功 ${ok} 个`];
+            if (skipped > 0) parts.push(`无 Key 跳过 ${skipped} 个`);
+            if (failed.length > 0) parts.push(`失败 ${failed.length} 个（${failed.join('、')}）`);
+            toastr.success(`模型刷新完成：${parts.join('，')}。`);
+        } finally {
+            btn.prop('disabled', false);
+        }
+    });
     panel.find('#st_router_build_logical').on('click', () => {
         const allModels: string[] = [];
         for (const vendor of deps.getVendors()) {
