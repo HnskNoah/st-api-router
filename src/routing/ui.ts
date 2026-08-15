@@ -90,7 +90,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             </div>
             <div class="quicker-api__field">
                 <label>Vendor（模型商）<span class="quicker-api__field-hint" title="Vendor = 一家模型站点。填好 endpoint 和 Key 后，拉取模型并映射到逻辑模型即可参与路由">?</span></label>
-                <div class="quicker-api__status">每个 Vendor 填站点地址（Endpoint）；下方"当前分组条目"给该分组选 Vendor 并填对应 Key（同一 Vendor 可配多个 Key）。</div>
+                <div class="quicker-api__status">每个 Vendor 填站点地址（Endpoint）；下方给当前分组选 Vendor、填 Key 后点 ↻ 拉取模型（用该条目的真实 Key）。</div>
                 <div id="st_router_provider_list" class="st-router-list"></div>
                 <button id="st_router_add_provider" class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>
                 <div class="quicker-api__field-inline-label">当前分组使用的 Vendor + Key（生成时从这些里随机选）</div>
@@ -151,6 +151,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             $('<span>').text('API Key'),
             $('<span>').text('名称'),
             $('<span>').text('启用'),
+            $('<span>').text('拉取'),
             $('<span>'),
         );
         groupEntriesList.append(header);
@@ -186,13 +187,32 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     entry.enabled = $(this).prop('checked');
                     deps.save();
                 });
+            const fetchBtn = $('<button class="menu_button" type="button" title="用该 Vendor 的 Key 拉取模型并自动映射"><i class="fa-solid fa-arrows-rotate"></i></button>')
+                .on('click', async () => {
+                    const vendor = deps.getVendors().find(item => item.id === entry.vendorId);
+                    if (!vendor) {
+                        toastr.warning('请先为该条目选择 Vendor。');
+                        return;
+                    }
+                    const key = String(entry.apiKey || '').trim();
+                    if (!key) {
+                        toastr.warning(`请在条目中填写 Vendor「${vendor.name}」的 API Key 后再拉取。`);
+                        return;
+                    }
+                    const models = await fetchModelsForVendor(vendor, key);
+                    if (!models) return;
+                    renderProviderList();
+                    renderGroupEntries();
+                    renderModelList();
+                    toastr.success(`Vendor「${vendor.name}」获取 ${models.length} 个模型并已映射。`);
+                });
             const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
                 .on('click', () => {
                     group.entries = group.entries.filter(item => item.id !== entry.id);
                     deps.save();
                     renderGroupEntries();
                 });
-            row.append(vendorSelect, keyInput, labelInput, enabled, removeBtn);
+            row.append(vendorSelect, keyInput, labelInput, enabled, fetchBtn, removeBtn);
             groupEntriesList.append(row);
         }
     }
