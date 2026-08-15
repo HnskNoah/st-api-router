@@ -78,8 +78,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             .st-router-provider-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
             .st-router-provider-name { flex: none; font-weight: 600; white-space: nowrap; }
             .st-router-provider-endpoint {
-                width: 180px; max-width: 55%; flex: none;
-                margin: 0; height: auto; box-sizing: border-box;
+                width: 180px; max-width: 55%; flex: none; margin: 0;
             }
             .st-router-provider-meta { flex-basis: 100%; font-size: 12px; color: #999; opacity: 0.9; }
             .st-router-provider-actions { flex: none; display: flex; gap: 4px; }
