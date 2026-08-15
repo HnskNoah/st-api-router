@@ -1,8 +1,8 @@
-// 模型清单导出：本地已拉取模型 + 映射 + 逻辑模型的结构化清单（不含任何密钥）。
+// 模型列表导出：所有 Vendor 已拉取真实模型名的纯文本清单（每行一个，去重排序）。不含密钥。
 
 import { describe, expect, it } from 'vitest';
-import { buildModelExport } from '../src/domain/vendor.js';
-import type { LogicalModel, Vendor } from '../src/types.js';
+import { buildModelListText } from '../src/domain/vendor.js';
+import type { Vendor } from '../src/types.js';
 
 function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
     return {
@@ -27,54 +27,46 @@ function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
     };
 }
 
-describe('domain/vendor > 模型清单导出', () => {
-    it('导出包含 Vendor 名称、拉取模型与映射（含逻辑模型名）', () => {
+describe('domain/vendor > 模型列表导出（txt）', () => {
+    it('每行一个模型名，收集所有 Vendor 的已拉取模型', () => {
         const vendors = [
-            makeVendor({
-                name: '硅基流动',
-                format: 'custom',
-                endpoint: 'https://api.example.com/v1',
-                fetchedModels: ['deepseek-chat', 'deepseek-reasoner'],
-                mappings: [
-                    { id: 'm1', realModel: 'deepseek-chat', logicalModelId: 'l1' },
-                    { id: 'm2', realModel: 'deepseek-reasoner', logicalModelId: 'l1' },
-                ],
-            }),
+            makeVendor({ fetchedModels: ['deepseek-chat', 'deepseek-reasoner'] }),
+            makeVendor({ id: 'v2', fetchedModels: ['grok-4.5'] }),
         ];
-        const logicalModels: LogicalModel[] = [
-            { id: 'l1', name: 'DeepSeek 系', matchPattern: 'deepseek' },
-        ];
-        const result = buildModelExport(vendors, logicalModels);
-        expect(result.vendors).toHaveLength(1);
-        expect(result.vendors[0].name).toBe('硅基流动');
-        expect(result.vendors[0].fetchedModels).toEqual(['deepseek-chat', 'deepseek-reasoner']);
-        expect(result.vendors[0].mappings[0].logicalModelName).toBe('DeepSeek 系');
-        expect(result.logicalModels).toEqual([{ id: 'l1', name: 'DeepSeek 系', matchPattern: 'deepseek' }]);
+        const text = buildModelListText(vendors);
+        const lines = text.split('\n');
+        expect(lines).toHaveLength(3);
+        expect(lines).toEqual(expect.arrayContaining(['deepseek-chat', 'deepseek-reasoner', 'grok-4.5']));
     });
 
-    it('导出不含任何密钥字段（apiKey/secret/authorization/key）', () => {
-        const vendors = [makeVendor({ fetchedModels: ['gpt-4o'], mappings: [] })];
-        const result = buildModelExport(vendors, []);
-        const json = JSON.stringify(result);
+    it('跨 Vendor 重复的模型名只出现一次', () => {
+        const vendors = [
+            makeVendor({ fetchedModels: ['gpt-4o', 'gpt-4o-mini'] }),
+            makeVendor({ id: 'v2', fetchedModels: ['gpt-4o'] }),
+        ];
+        const text = buildModelListText(vendors);
+        expect(text.split('\n').filter(line => line === 'gpt-4o')).toHaveLength(1);
+        expect(text.split('\n')).toHaveLength(2);
+    });
+
+    it('按名称排序且空行被剔除', () => {
+        const vendors = [
+            makeVendor({ fetchedModels: ['  zeta ', '', 'alpha', 'MIXED', 'alpha'] }),
+        ];
+        const text = buildModelListText(vendors);
+        expect(text).toBe('MIXED\nalpha\nzeta');
+    });
+
+    it('无任何模型时返回空字符串', () => {
+        expect(buildModelListText([makeVendor()])).toBe('');
+        expect(buildModelListText([])).toBe('');
+    });
+
+    it('导出文本不含密钥字段', () => {
+        const vendors = [makeVendor({ fetchedModels: ['gpt-4o'] })];
+        const json = buildModelListText(vendors);
         expect(json.toLowerCase()).not.toContain('apikey');
         expect(json.toLowerCase()).not.toContain('secret');
         expect(json.toLowerCase()).not.toContain('authorization');
-        expect(json.toLowerCase()).not.toContain('"key"');
-    });
-
-    it('空 Vendor 列表导出为空数组且带 exportedAt 时间戳', () => {
-        const result = buildModelExport([], []);
-        expect(result.vendors).toEqual([]);
-        expect(result.logicalModels).toEqual([]);
-        expect(typeof result.exportedAt).toBe('string');
-        expect(result.exportedAt.length).toBeGreaterThan(0);
-    });
-
-    it('未知逻辑模型 id 的映射逻辑模型名为空字符串', () => {
-        const vendors = [
-            makeVendor({ mappings: [{ id: 'm1', realModel: 'x', logicalModelId: 'ghost' }] }),
-        ];
-        const result = buildModelExport(vendors, []);
-        expect(result.vendors[0].mappings[0].logicalModelName).toBe('');
     });
 });
