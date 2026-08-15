@@ -139,6 +139,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 border-radius: 8px; background: rgba(0, 0, 0, 0.10);
                 overflow: hidden; margin-top: 10px;
             }
+            .st-router-model-search {
+                display: flex; align-items: center; gap: 6px; margin-top: 8px;
+                border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 6px;
+                background: rgba(0, 0, 0, 0.08); padding: 2px 8px;
+            }
+            .st-router-model-search > i { color: #999; font-size: 12px; flex: none; }
+            .st-router-model-search > input.text_pole { flex: 1 1 0; min-width: 0; margin: 0; width: auto; }
             .st-router-real-head {
                 display: flex; align-items: center; gap: 8px; cursor: pointer;
                 user-select: none; font-size: 13px; color: #ccc;
@@ -240,6 +247,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
+                </div>
+                <div class="st-router-model-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input id="st_router_model_search" class="text_pole" type="search" maxlength="200" placeholder="搜索逻辑模型 / 真实模型…">
                 </div>
                 <div id="st_router_logical" class="st-router-real-fold"></div>
                 <div id="st_router_mapped" class="st-router-real-fold"></div>
@@ -415,6 +426,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             for (const model of models) {
                 const chip = $('<button class="st-router-model-chip" type="button"></button>')
+                    .attr('data-search', String(model.name).toLowerCase())
                     .append($('<span class="st-router-model-name">').text(model.name));
                 const mappedEntries = entries.filter(entry => entry.mappings.some(mapping => mapping.logicalModelId === model.id));
                 const mappedCount = mappedEntries.reduce((sum, entry) => sum + entry.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
@@ -459,10 +471,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         logicalList.append(rows);
         renderMapped();
         renderUnmapped();
+        applyModelSearch();
     }
 
     function buildRealPill(realModel: string, currentLogicalId: string, subtitle: string): JQuery<HTMLElement> {
-        const wrap = $('<div class="st-router-real-pill-wrap"></div>');
+        const wrap = $('<div class="st-router-real-pill-wrap"></div>')
+            .attr('data-search', `${realModel} ${subtitle}`.toLowerCase());
         const pill = $('<button class="st-router-model-chip st-router-real-pill" type="button"></button>');
         pill.append($('<span class="st-router-model-name">').text(realModel));
         pill.append($('<span class="st-router-model-providers">').text(subtitle));
@@ -957,6 +971,18 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         routing.stickySeconds = Math.max(0, Math.floor(Number($(this).val()) || 0));
         deps.save();
     });
+    function applyModelSearch(): void {
+        const query = String(panel.find('#st_router_model_search').val() || '').trim().toLowerCase();
+        const containers = [logicalList, mappedList, unmappedList];
+        for (const container of containers) {
+            container.find('[data-search]').each(function () {
+                const matches = !query || String($(this).attr('data-search') || '').includes(query);
+                $(this).toggle(!query || matches);
+            });
+            container.find('.st-router-empty').toggle(!query);
+        }
+    }
+    panel.find('#st_router_model_search').on('input', applyModelSearch);
     panel.find('#st_router_group_select').on('change', function () {
         deps.setActiveGroupId(String($(this).val() || ''));
         renderGroupSummary();
@@ -1084,8 +1110,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             toastr.info('还没有已拉取的模型。先在"当前分组 Key"里点 ↻ 拉取模型，再回来创建逻辑模型。');
             return;
         }
-        const { created, skipped, mapped } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels(), deps.getGroups());
-        if (created.length === 0 && mapped === 0) {
+        const { created, skipped, mapped, rebuilt } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels(), deps.getGroups());
+        if (created.length === 0 && mapped === 0 && rebuilt === 0) {
             toastr.info(skipped.length > 0 ? `无新模型可创建（${skipped.length} 个 search/thinking/image 变体已跳过）。` : '逻辑模型已是最新，无需创建。');
             return;
         }
@@ -1094,6 +1120,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderGroupSummary();
         const parts = [`已为 ${created.length} 个真实模型创建独立逻辑模型`];
         if (mapped > 0) parts.push(`自动映射 ${mapped} 条`);
+        if (rebuilt > 0) parts.push(`修正归并 ${rebuilt} 条`);
         if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 个特殊变体`);
         toastr.success(`${parts.join('，')}。`);
     });

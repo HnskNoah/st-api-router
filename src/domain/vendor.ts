@@ -309,17 +309,20 @@ export function canonicalModelName(raw: string): string {
 }
 
 /** 从已拉取模型批量创建逻辑模型并自动映射：每个核心模型独立创建一个（渠道/假流式变体合并），跳过 search/thinking/image 变体。
- *  自动映射：核心名匹配的逻辑模型建立后，把各 Key 中未映射的真实模型映射过去（已有映射不动）。返回 created / skipped / mapped 数。 */
+ *  自动映射：核心名匹配的逻辑模型建立后，把各 Key 中未映射的真实模型映射过去（已有映射不动）。
+ *  重建：若已有映射指向“canonical 名相同但 id 不同”的旧逻辑模型（如 -假流式 旧脏名），修正到 canonical 同名逻辑模型；
+ *  映射到非核心名逻辑模型（用户手动命名）不覆盖。返回 created / skipped / mapped / rebuilt 数。 */
 export function buildLogicalModelsFromFetched(
     models: string[],
     logicalModels: LogicalModel[],
     groups: Group[] = [],
-): { created: LogicalModel[]; skipped: string[]; mapped: number } {
+): { created: LogicalModel[]; skipped: string[]; mapped: number; rebuilt: number } {
     const existingNames = new Set(logicalModels.map(model => model.name));
     const seen = new Set<string>();
     const created: LogicalModel[] = [];
     const skipped: string[] = [];
     let mapped = 0;
+    let rebuilt = 0;
     for (const raw of models) {
         const name = String(raw || '').trim();
         if (!name || seen.has(name)) continue;
@@ -339,12 +342,22 @@ export function buildLogicalModelsFromFetched(
         if (!target) continue;
         for (const entry of allGroupEntries(groups)) {
             if (!entry.fetchedModels.includes(name)) continue;
-            if (entry.mappings.some(mapping => mapping.realModel === name)) continue;
-            entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id });
-            mapped++;
+            const existing = entry.mappings.find(mapping => mapping.realModel === name);
+            if (!existing) {
+                entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id });
+                mapped++;
+                continue;
+            }
+            const mappedModel = logicalModels.find(model => model.id === existing.logicalModelId);
+            if (!mappedModel || mappedModel.id === target.id) continue;
+            // 仅修正 canonical 错配：旧逻辑模型名去前缀后与核心名一致（如 xxx-假流式 → xxx）
+            if (canonicalModelName(mappedModel.name) === canonical) {
+                existing.logicalModelId = target.id;
+                rebuilt++;
+            }
         }
     }
-    return { created, skipped, mapped };
+    return { created, skipped, mapped, rebuilt };
 }
 
 export function normalizeLogicalModels(raw: unknown): LogicalModel[] {

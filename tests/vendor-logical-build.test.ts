@@ -185,6 +185,36 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
         expect(result.mapped).toBe(0);
     });
 
+    it('把 canonical 错配的映射重建到核心逻辑模型（-假流式 修正）', () => {
+        const existing: LogicalModel[] = [
+            { id: 'clean', name: 'gemini-3.1-pro-preview', matchPattern: '' },
+            { id: 'dirty', name: 'gemini-3.1-pro-preview-假流式', matchPattern: '' },
+        ];
+        const groups = [
+            makeGroup({
+                entries: [makeEntry('e1', 'v1', ['gemini-3.1-pro-preview-假流式'], [{ id: 'm1', realModel: 'gemini-3.1-pro-preview-假流式', logicalModelId: 'dirty' }])],
+            }),
+        ];
+        const result = buildLogicalModelsFromFetched(['gemini-3.1-pro-preview-假流式'], existing, groups);
+        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('clean');
+        expect(result.rebuilt).toBe(1);
+    });
+
+    it('手动映射到非核心逻辑模型不被重建覆盖', () => {
+        const existing: LogicalModel[] = [
+            { id: 'clean', name: 'gemini-3.1-pro-preview', matchPattern: '' },
+            { id: 'manual', name: 'Gemini 系', matchPattern: '' },
+        ];
+        const groups = [
+            makeGroup({
+                entries: [makeEntry('e1', 'v1', ['gemini-3.1-pro-preview-假流式'], [{ id: 'm1', realModel: 'gemini-3.1-pro-preview-假流式', logicalModelId: 'manual' }])],
+            }),
+        ];
+        const result = buildLogicalModelsFromFetched(['gemini-3.1-pro-preview-假流式'], existing, groups);
+        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('manual');
+        expect(result.rebuilt).toBe(0);
+    });
+
     it('特殊变体不建映射', () => {
         const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', ['gemini-3.1-pro-preview-search'])] })];
         const existing: LogicalModel[] = [];
