@@ -120,6 +120,15 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             groupEntriesList.append($('<div class="quicker-api__status">').text('先新增 Vendor，再为 Group 添加 Vendor + Key 条目。'));
             return;
         }
+        const header = $('<div class="st-router-key-row st-router-key-row--header"></div>');
+        header.append(
+            $('<span>').text('Vendor'),
+            $('<span>').text('API Key'),
+            $('<span>').text('名称'),
+            $('<span>').text('启用'),
+            $('<span>'),
+        );
+        groupEntriesList.append(header);
         for (const entry of group.entries) {
             const row = $('<div class="st-router-key-row"></div>');
             const vendorSelect = $('<select class="text_pole" title="Vendor"></select>');
@@ -321,7 +330,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function openVendorEditor(vendor: Vendor): void {
         const draft = normalizeVendor(structuredClone(vendor));
         const content = $('<div class="st-router-editor"></div>');
-        const nameInput = $('<input class="text_pole" type="text" maxlength="120">').val(draft.name);
+        const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="识别用名称，如：硅基流动">').val(draft.name);
         const formatSelect = $('<select class="text_pole"></select>');
         for (const [value, label] of Object.entries(FORMAT_LABELS)) {
             formatSelect.append($('<option>').val(value).text(label));
@@ -413,7 +422,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function openGroupEditor(group: Group): void {
         const draft = normalizeGroup(structuredClone(group));
         const content = $('<div class="st-router-editor"></div>');
-        const nameInput = $('<input class="text_pole" type="text" maxlength="120">').val(draft.name);
+        const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="Group 名称，如：日常 / 深挖">').val(draft.name);
         const enabledCheck = $('<input type="checkbox">').prop('checked', draft.enabled);
         const logicalSelect = $('<select class="text_pole"></select>');
         for (const model of deps.getLogicalModels()) logicalSelect.append($('<option>').val(model.id).text(model.name));
@@ -508,13 +517,32 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         if (group) void openGroupEditor(group);
     });
     panel.find('#st_router_add_provider').on('click', async () => {
-        const name = await Popup.show.input('新增 Vendor', '');
-        if (!name) return;
-        const vendor = normalizeVendor({ name });
-        deps.getVendors().push(vendor);
-        deps.save();
-        renderProviderList();
-        await openVendorEditor(vendor);
+        const content = $('<div class="st-router-editor"></div>');
+        const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="如：硅基流动 / OpenRouter">');
+        const endpointInput = $('<input class="text_pole" type="text" maxlength="2048" placeholder="站点 API 地址，如 https://api.example.com/v1">');
+        content.append(
+            $('<div class="quicker-api__status">').text('名称用于在列表中识别该 Vendor，随便起；Endpoint 填模型商站点的 API 地址（之后也可在主面板直接改）。'),
+            field('名称（识别用）', nameInput),
+            field('Endpoint（站点 API 地址）', endpointInput),
+        );
+        const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>添加</span></button>');
+        const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
+        const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
+        content.append(actions);
+        const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
+        saveBtn.on('click', async () => {
+            const name = String(nameInput.val() ?? '').trim().slice(0, 120);
+            if (!name) return toastr.warning('请填写 Vendor 名称。');
+            const endpoint = String(endpointInput.val() ?? '').trim().slice(0, 2048);
+            const vendor = normalizeVendor({ name, endpoint });
+            deps.getVendors().push(vendor);
+            deps.save();
+            renderProviderList();
+            await popup.completeCancelled();
+            toastr.success(`Vendor「${name}」已添加。`);
+        });
+        cancelBtn.on('click', () => void popup.completeCancelled());
+        void popup.show();
     });
     panel.find('#st_router_add_entry').on('click', () => {
         const group = activeGroup();
