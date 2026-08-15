@@ -8,9 +8,11 @@ import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
 import {
+    assignModelToLogical,
     assignRealModel,
     buildLogicalModelsFromFetched,
     buildModelListText,
+    findUnmappedModels,
     isSpecialVariant,
     normalizeGroup,
     normalizeLogicalModel,
@@ -128,6 +130,16 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             .st-router-model-edit:hover { color: #5b9bd5; background: rgba(91, 155, 213, 0.15); }
 
+            /* ── 未归类模型 ── */
+            .st-router-unmapped {
+                margin-top: 12px; border-top: 1px dashed rgba(128, 128, 128, 0.3);
+                padding-top: 8px; display: flex; flex-direction: column; gap: 4px;
+            }
+            .st-router-unmapped-title { font-size: 12px; color: #999; margin-bottom: 4px; }
+            .st-router-unmapped-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+            .st-router-unmapped-name { flex: 1 1 160px; min-width: 120px; font-family: monospace; word-break: break-all; }
+            .st-router-unmapped-row > select.text_pole { width: auto; flex: 1 1 150px; min-width: 110px; margin: 0; }
+
             /* ── 空状态 ── */
             .st-router-empty { font-size: 12px; color: #999; padding: 8px 2px; line-height: 1.6; }
 
@@ -198,17 +210,19 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
                         <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
-                        <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型（跳过 search/thinking/image 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
+                        <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
                 </div>
                 <div id="st_router_model_list" class="st-router-model-list"></div>
+                <div id="st_router_unmapped" class="st-router-unmapped"></div>
             </div>
         </section>
     `);
 
     const providerList = panel.find('#st_router_provider_list');
     const modelList = panel.find('#st_router_model_list');
+    const unmappedList = panel.find('#st_router_unmapped');
     const groupSummary = panel.find('#st_router_group_summary');
 
     function renderRoutingControls(): void {
@@ -346,32 +360,66 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         modelList.empty();
         if (models.length === 0) {
             modelList.append($('<div class="st-router-empty">').text('还没有逻辑模型。可在下方"当前分组 Key"填 Key 后点 ↻ 拉取自动生成，或点击右上角"添加逻辑模型"手动创建。'));
-            return;
-        }
-        for (const model of models) {
-            const chip = $('<button class="st-router-model-chip" type="button"></button>')
-                .append($('<span class="st-router-model-name">').text(model.name));
-            const mappedVendors = vendors.filter(vendor => vendor.mappings.some(mapping => mapping.logicalModelId === model.id));
-            const mappedCount = mappedVendors.reduce((sum, vendor) => sum + vendor.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
-            chip.append($('<span class="st-router-model-providers">').text(
-                model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor` : `${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor`,
-            ));
-            if (group?.currentLogicalModelId === model.id) chip.addClass('is-selected');
-            chip.attr('title', group ? '点击设为当前分组的逻辑模型' : '');
-            chip.on('click', () => {
-                if (!group) return;
-                group.currentLogicalModelId = model.id;
-                deps.save();
-                renderModelList();
-                renderGroupSummary();
-            });
-            const editBtn = $('<span class="st-router-model-edit" role="button" tabindex="0" title="编辑正则与名称"><i class="fa-solid fa-sliders"></i></span>')
-                .on('click', event => {
-                    event.stopPropagation();
-                    void openLogicalModelEditor(model);
+        } else {
+            for (const model of models) {
+                const chip = $('<button class="st-router-model-chip" type="button"></button>')
+                    .append($('<span class="st-router-model-name">').text(model.name));
+                const mappedVendors = vendors.filter(vendor => vendor.mappings.some(mapping => mapping.logicalModelId === model.id));
+                const mappedCount = mappedVendors.reduce((sum, vendor) => sum + vendor.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
+                chip.append($('<span class="st-router-model-providers">').text(
+                    model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor` : `${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor`,
+                ));
+                if (group?.currentLogicalModelId === model.id) chip.addClass('is-selected');
+                chip.attr('title', group ? '点击设为当前分组的逻辑模型' : '');
+                chip.on('click', () => {
+                    if (!group) return;
+                    group.currentLogicalModelId = model.id;
+                    deps.save();
+                    renderModelList();
+                    renderGroupSummary();
                 });
-            chip.append(editBtn);
-            modelList.append(chip);
+                const editBtn = $('<span class="st-router-model-edit" role="button" tabindex="0" title="编辑正则与名称"><i class="fa-solid fa-sliders"></i></span>')
+                    .on('click', event => {
+                        event.stopPropagation();
+                        void openLogicalModelEditor(model);
+                    });
+                chip.append(editBtn);
+                modelList.append(chip);
+            }
+        }
+        renderUnmapped();
+    }
+
+    function renderUnmapped(): void {
+        const unmapped = findUnmappedModels(deps.getVendors());
+        unmappedList.empty();
+        if (unmapped.length === 0) return;
+        unmappedList.append($('<div class="st-router-unmapped-title">').text('未归类模型（拉取到但还没映射逻辑模型）：'));
+        const logicalOptions = () => {
+            const options = deps.getLogicalModels().map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
+            return `<option value="">— 选择逻辑模型 —</option>${options}`;
+        };
+        for (const realModel of unmapped) {
+            const row = $('<div class="st-router-unmapped-row"></div>');
+            row.append($('<span class="st-router-unmapped-name">').text(realModel));
+            const select = $('<select class="text_pole"></select>').html(logicalOptions());
+            const applyBtn = $('<button class="menu_button" type="button" title="建立映射到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
+                .on('click', () => {
+                    const logicalId = String(select.val() || '');
+                    if (!logicalId) {
+                        toastr.warning('请先为模型选择逻辑模型。');
+                        return;
+                    }
+                    const touched = assignModelToLogical(deps.getVendors(), realModel, logicalId);
+                    if (touched > 0) {
+                        deps.save();
+                        renderModelList();
+                        renderGroupSummary();
+                        toastr.success(`已为「${realModel}」映射逻辑模型（影响 ${touched} 个 Vendor）。`);
+                    }
+                });
+            row.append(select, applyBtn);
+            unmappedList.append(row);
         }
     }
 

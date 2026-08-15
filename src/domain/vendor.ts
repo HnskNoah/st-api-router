@@ -143,6 +143,39 @@ export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors:
     return removed;
 }
 
+/** 未归类模型：所有 Vendor 已拉取但无任何映射的真实模型（跨 Vendor 去重，排除特殊变体）。 */
+export function findUnmappedModels(vendors: Vendor[]): string[] {
+    const mapped = new Set<string>();
+    for (const vendor of vendors) {
+        for (const mapping of vendor.mappings) mapped.add(mapping.realModel);
+    }
+    const result = new Set<string>();
+    for (const vendor of vendors) {
+        for (const raw of vendor.fetchedModels) {
+            const name = String(raw || '').trim();
+            if (!name || mapped.has(name) || isSpecialVariant(name)) continue;
+            result.add(name);
+        }
+    }
+    return [...result];
+}
+
+/** 手动补选：给真实模型指定逻辑模型，对所有包含该模型的 Vendor 生效（已存在则更新）。返回受影响的 Vendor 数。 */
+export function assignModelToLogical(vendors: Vendor[], realModel: string, logicalModelId: string): number {
+    let touched = 0;
+    for (const vendor of vendors) {
+        if (!vendor.fetchedModels.includes(realModel)) continue;
+        const existing = vendor.mappings.find(mapping => mapping.realModel === realModel);
+        if (existing) {
+            existing.logicalModelId = logicalModelId;
+        } else {
+            vendor.mappings.push({ id: makeId('mapping'), realModel, logicalModelId });
+        }
+        touched++;
+    }
+    return touched;
+}
+
 /** 模型列表导出（txt）：所有 Vendor 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
 export function buildModelListText(vendors: Vendor[]): string {
     const names = new Set<string>();
