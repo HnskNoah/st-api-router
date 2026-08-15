@@ -135,6 +135,14 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 margin-top: 12px; border-top: 1px dashed rgba(128, 128, 128, 0.3);
                 padding-top: 8px; display: flex; flex-direction: column; gap: 4px;
             }
+            .st-router-unmapped-head {
+                display: flex; align-items: center; gap: 8px; cursor: pointer;
+                user-select: none; font-size: 13px; color: #ccc; padding: 3px 2px;
+            }
+            .st-router-unmapped-head:hover { color: #fff; }
+            .st-router-unmapped-arrow { font-family: monospace; color: #5b9bd5; flex: none; }
+            .st-router-unmapped-count { font-size: 11px; color: #999; }
+            .st-router-unmapped-rows { display: flex; flex-direction: column; gap: 4px; }
             .st-router-unmapped-title { font-size: 12px; color: #999; margin-bottom: 4px; }
             .st-router-unmapped-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
             .st-router-unmapped-name { flex: 1 1 160px; min-width: 120px; font-family: monospace; word-break: break-all; }
@@ -390,11 +398,23 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderUnmapped();
     }
 
+    let unmappedExpanded = false;
+
     function renderUnmapped(): void {
         const unmapped = findUnmappedModels(deps.getVendors());
         unmappedList.empty();
         if (unmapped.length === 0) return;
-        unmappedList.append($('<div class="st-router-unmapped-title">').text('未归类模型（拉取到但还没映射逻辑模型）：'));
+        const head = $('<div class="st-router-unmapped-head" role="button" tabindex="0"></div>');
+        head.append($('<span class="st-router-unmapped-arrow"></span>').text(unmappedExpanded ? '>----▼' : '>----▶'));
+        head.append($('<span>').text('未归类模型'));
+        head.append($('<span class="st-router-unmapped-count"></span>').text(`${unmapped.length} 个`));
+        head.on('click', () => {
+            unmappedExpanded = !unmappedExpanded;
+            renderUnmapped();
+        });
+        unmappedList.append(head);
+        if (!unmappedExpanded) return;
+        const rows = $('<div class="st-router-unmapped-rows"></div>');
         const logicalOptions = () => {
             const options = deps.getLogicalModels().map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
             return `<option value="">— 选择逻辑模型 —</option>${options}`;
@@ -419,8 +439,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     }
                 });
             row.append(select, applyBtn);
-            unmappedList.append(row);
+            rows.append(row);
         }
+        unmappedList.append(rows);
     }
 
     function vendorStatus(vendor: Vendor, now = Date.now()): string | null {
