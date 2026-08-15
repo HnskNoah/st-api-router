@@ -135,6 +135,8 @@ export interface Vendor {
 export interface LogicalModel {
     id: string;
     name: string;
+    /** 拉取模型时的自动归类正则（真实模型名命中即归入该逻辑模型）；空 = 不参与正则匹配。 */
+    matchPattern: string;
 }
 
 /** Group 条目：Vendor + Key。同一 Vendor 可在同一 Group 中挂多个条目。 */

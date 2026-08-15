@@ -84,7 +84,33 @@ export function normalizeLogicalModel(raw: Record<string, any> | undefined): Log
     return {
         id: normalizeText(raw?.id) || makeId('logical'),
         name: sanitizeName(raw?.name) || 'Logical Model',
+        matchPattern: String(raw?.matchPattern ?? '').slice(0, 500),
     };
+}
+
+/** 按 matchPattern 正则匹配真实模型名；返回第一个命中（无正则的模型不参与）。非法正则视为未命中。 */
+export function findLogicalModelByPattern(logicalModels: LogicalModel[], realModel: string): LogicalModel | null {
+    for (const model of logicalModels) {
+        const pattern = String(model?.matchPattern || '').trim();
+        if (!pattern) continue;
+        try {
+            if (new RegExp(pattern).test(realModel)) return model;
+        } catch {
+            // 非法正则跳过
+        }
+    }
+    return null;
+}
+
+/** 拉取模型后的归类：正则命中 → 名称精确匹配 → 新建逻辑模型兜底。返回归属的逻辑模型。 */
+export function assignRealModel(logicalModels: LogicalModel[], realModel: string): LogicalModel {
+    const byPattern = findLogicalModelByPattern(logicalModels, realModel);
+    if (byPattern) return byPattern;
+    const byName = logicalModels.find(model => model.name === realModel);
+    if (byName) return byName;
+    const model = normalizeLogicalModel({ name: realModel });
+    logicalModels.push(model);
+    return model;
 }
 
 export function normalizeLogicalModels(raw: unknown): LogicalModel[] {
@@ -175,7 +201,7 @@ export function recordVendorFailure(vendor: Vendor, error: string, threshold: nu
 function ensureLogicalModelId(models: Map<string, LogicalModel>, name: string, id: string): string {
     const existing = models.get(name);
     if (existing) return existing.id;
-    const model: LogicalModel = { id: id || makeId('logical'), name };
+    const model: LogicalModel = { id: id || makeId('logical'), name, matchPattern: '' };
     models.set(name, model);
     return model.id;
 }

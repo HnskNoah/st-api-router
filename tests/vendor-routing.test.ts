@@ -35,7 +35,7 @@ describe('domain/vendor normalization', () => {
     });
 
     it('normalizeLogicalModels and normalizeGroups normalize arrays', () => {
-        expect(normalizeLogicalModels([{ id: ' l1 ', name: '  Grok ' }])).toEqual([{ id: 'l1', name: 'Grok' }]);
+        expect(normalizeLogicalModels([{ id: ' l1 ', name: '  Grok ' }])).toEqual([{ id: 'l1', name: 'Grok', matchPattern: '' }]);
         const groups = normalizeGroups([{ id: 'g1', name: ' 主 ', currentLogicalModelId: 'l1', entries: [{ vendorId: 'v1', apiKey: ' k ', label: 'A' }] }]);
         expect(groups[0].name).toBe('主');
         expect(groups[0].entries[0].apiKey).toBe('k');

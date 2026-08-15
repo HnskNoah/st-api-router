@@ -8,6 +8,7 @@ import { Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
 import {
+    assignRealModel,
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
@@ -29,14 +30,6 @@ const FORMAT_LABELS: Record<string, string> = { 'custom': 'OpenAI 兼容', 'deep
 function statusBadge(reason: string | null): string {
     const label: Record<string, string> = { disabled: '禁用', rpm: '限流' };
     return `<span class="st-router-badge st-router-badge--${reason ?? 'ok'}">${reason ? (label[reason] ?? reason) : '可用'}</span>`;
-}
-
-function ensureLogicalModel(logicalModels: LogicalModel[], name: string): LogicalModel {
-    const existing = logicalModels.find(model => model.name === name);
-    if (existing) return existing;
-    const model = normalizeLogicalModel({ name });
-    logicalModels.push(model);
-    return model;
 }
 
 export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>; render(): void } {
@@ -121,6 +114,11 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             .st-router-model-name { font-weight: 600; }
             .st-router-model-providers { font-size: 11px; color: #999; }
+            .st-router-model-edit {
+                font-size: 11px; color: #999; cursor: pointer; padding: 0 2px;
+                border-radius: 4px; display: inline-flex; align-items: center;
+            }
+            .st-router-model-edit:hover { color: #5b9bd5; background: rgba(91, 155, 213, 0.15); }
 
             /* ── 空状态 ── */
             .st-router-empty { font-size: 12px; color: #999; padding: 8px 2px; line-height: 1.6; }
@@ -169,7 +167,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
             <div class="st-router-section">
                 <div class="st-router-section-head">
-                    <span class="st-router-step-badge">2</span><span class="st-router-section-title">模型商（Vendor）</span>
+                    <span class="st-router-step-badge">2</span><span class="st-router-section-title">Vendor（模型商）</span>
                     <div class="st-router-section-tools">
                         <button id="st_router_add_provider" class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>
                     </div>
@@ -190,6 +188,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             <div class="st-router-section">
                 <div class="st-router-section-head">
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
+                    <div class="st-router-section-tools">
+                        <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
+                    </div>
                 </div>
                 <div id="st_router_model_list" class="st-router-model-list"></div>
             </div>
@@ -224,7 +225,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const group = activeGroup();
         groupSummary.empty();
         if (!group) {
-            groupSummary.text('还没有分组。点击"新增分组"创建一套独立的模型 + Key 环境。');
+            groupSummary.text('还没有分组。点击"新增分组"创建一套独立的 Vendor + Key 环境。');
             return;
         }
         const model = deps.getLogicalModels().find(item => item.id === group.currentLogicalModelId);
@@ -248,13 +249,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             return;
         }
         if (deps.getVendors().length === 0) {
-            groupEntriesList.append($('<div class="st-router-empty">').text('先在上方"模型商"区新增 Vendor，再为该分组添加 Key。'));
+            groupEntriesList.append($('<div class="st-router-empty">').text('先在上方"Vendor"区新增 Vendor，再为该分组添加 Key。'));
             return;
         }
         const header = $('<div class="st-router-key-row st-router-key-row--header"></div>');
         header.append(
             $('<span class="st-router-key-col">').text('Vendor'),
-            $('<span class="st-router-key-col" style="flex:2 1 0;">').text('API Key'),
+            $('<span class="st-router-key-col" style="flex:2 1 0;">').text('Key'),
             $('<span class="st-router-key-col">').text('名称'),
             $('<span class="st-router-key-col" style="flex:0 0 30px;">').text('启用'),
             $('<span class="st-router-key-col" style="flex:0 0 26px;">').text('拉取'),
@@ -262,7 +263,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         );
         groupEntriesList.append(header);
         if (group.entries.length === 0) {
-            groupEntriesList.append($('<div class="st-router-empty">').text('该分组还没有 Key。点击右上角"添加 Key"，选 Vendor、填真实 API Key 后点 ↻ 拉取模型。'));
+            groupEntriesList.append($('<div class="st-router-empty">').text('该分组还没有 Key。点击右上角"添加 Key"，选 Vendor、填真实 Key 后点 ↻ 拉取模型。'));
             return;
         }
         for (const entry of group.entries) {
@@ -280,13 +281,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 entry.vendorId = String($(this).val() || '');
                 deps.save();
             });
-            const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="API Key">')
+            const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">')
                 .val(entry.apiKey || '')
                 .on('input', function () {
                     entry.apiKey = String($(this).val() ?? '').trim();
                     deps.save();
                 });
-            const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="Key 名称">')
+            const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="名称，如：主号 / 备用">')
                 .val(entry.label || '')
                 .on('input', function () {
                     entry.label = String($(this).val() ?? '').trim() || 'Key';
@@ -306,7 +307,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     }
                     const key = String(entry.apiKey || '').trim();
                     if (!key) {
-                        toastr.warning(`请在条目中填写 Vendor「${vendor.name}」的 API Key 后再拉取。`);
+                        toastr.warning(`请先填写 Vendor「${vendor.name}」的 Key 再拉取。`);
                         return;
                     }
                     const models = await fetchModelsForVendor(vendor, key);
@@ -331,16 +332,20 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function renderModelList(): void {
         const group = activeGroup();
         const models = deps.getLogicalModels();
+        const vendors = deps.getVendors();
         modelList.empty();
         if (models.length === 0) {
-            modelList.append($('<div class="st-router-empty">').text('还没有逻辑模型。在"当前分组 Key"里填好 Key 后点 ↻ 拉取模型，会自动创建逻辑模型并映射。'));
+            modelList.append($('<div class="st-router-empty">').text('还没有逻辑模型。可在下方"当前分组 Key"填 Key 后点 ↻ 拉取自动生成，或点击右上角"添加逻辑模型"手动创建。'));
             return;
         }
         for (const model of models) {
             const chip = $('<button class="st-router-model-chip" type="button"></button>')
                 .append($('<span class="st-router-model-name">').text(model.name));
-            const vendorCount = deps.getVendors().filter(vendor => vendor.mappings.some(mapping => mapping.logicalModelId === model.id)).length;
-            chip.append($('<span class="st-router-model-providers">').text(`${vendorCount} 个 Vendor`));
+            const mappedVendors = vendors.filter(vendor => vendor.mappings.some(mapping => mapping.logicalModelId === model.id));
+            const mappedCount = mappedVendors.reduce((sum, vendor) => sum + vendor.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
+            chip.append($('<span class="st-router-model-providers">').text(
+                model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor` : `${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor`,
+            ));
             if (group?.currentLogicalModelId === model.id) chip.addClass('is-selected');
             chip.attr('title', group ? '点击设为当前分组的逻辑模型' : '');
             chip.on('click', () => {
@@ -350,6 +355,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 renderModelList();
                 renderGroupSummary();
             });
+            const editBtn = $('<span class="st-router-model-edit" role="button" tabindex="0" title="编辑正则与名称"><i class="fa-solid fa-sliders"></i></span>')
+                .on('click', event => {
+                    event.stopPropagation();
+                    void openLogicalModelEditor(model);
+                });
+            chip.append(editBtn);
             modelList.append(chip);
         }
     }
@@ -372,7 +383,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const vendors = deps.getVendors();
         providerList.empty();
         if (vendors.length === 0) {
-            providerList.append($('<div class="st-router-empty">').text('还没有模型商。点击右上角"新增 Vendor"，填名称与站点地址（Endpoint）。'));
+            providerList.append($('<div class="st-router-empty">').text('还没有 Vendor。点击右上角"新增 Vendor"，填名称与站点地址（Endpoint）。'));
             return;
         }
         for (const vendor of vendors) {
@@ -464,7 +475,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             const models: string[] = [...new Set(list.map((item: any) => String(item?.id || item?.model || '').trim()).filter(Boolean))].slice(0, 1000);
             vendor.fetchedModels = models;
             for (const model of models) {
-                const logical = ensureLogicalModel(deps.getLogicalModels(), model);
+                const logical = assignRealModel(deps.getLogicalModels(), model);
                 if (!vendor.mappings.some(mapping => mapping.realModel === model)) {
                     vendor.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id });
                 }
@@ -537,7 +548,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 draft.format = String(formatSelect.val() || 'custom') as Vendor['format'];
                 const realKey = firstKeyForVendor(draft);
                 if (!realKey) {
-                    toastr.warning('该 Vendor 尚未配置 Key：请先在上方分组条目中填写该 Vendor 的真实 API Key。');
+                    toastr.warning('该 Vendor 尚未配置 Key：请先在上方分组条目中填写该 Vendor 的真实 Key。');
                     return;
                 }
                 const models = await fetchModelsForVendor(draft, realKey);
@@ -555,7 +566,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             field('权重', weightInput, '选路权重：数值越大越容易被随机选中（实际概率还会叠加历史成功率加成）'),
             $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用（参与路由）'),
             field('模型映射', $('<div></div>').append(
-                $('<div class="st-router-empty">').text('点击下方按钮，用分组条目里该 Vendor 的真实 API Key 拉取模型并自动建立映射。'),
+                $('<div class="st-router-empty">').text('点击下方按钮，用分组条目里该 Vendor 的真实 Key 拉取模型并自动建立映射。'),
                 mappingList,
                 addMappingBtn,
                 fetchBtn,
@@ -602,7 +613,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             for (const entry of draft.entries) {
                 const row = $('<div class="st-router-key-row"></div>');
                 const vendorSelect = $('<select class="text_pole"></select>').html(`<option value="">— 选择 Vendor —</option>${vendorOptions()}`).val(entry.vendorId);
-                const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="Key 名称">').val(entry.label);
+                const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="名称，如：主号 / 备用">').val(entry.label);
                 const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">').val(entry.apiKey);
                 const enabled = $('<input type="checkbox">').prop('checked', entry.enabled);
                 vendorSelect.on('change', function () { entry.vendorId = String($(this).val() || ''); });
@@ -653,6 +664,85 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         void popup.show();
     }
 
+    function openLogicalModelEditor(model: LogicalModel | null): void {
+        const isNew = !model;
+        const draft = isNew
+            ? normalizeLogicalModel({ name: '', matchPattern: '' })
+            : normalizeLogicalModel(structuredClone(model));
+        const content = $('<div class="st-router-editor"></div>');
+        const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="逻辑模型名称，如：DeepSeek 系 / Grok 系">').val(draft.name);
+        const patternInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="正则，如：deepseek|grok（留空 = 不自动归类）">').val(draft.matchPattern);
+
+        const testRow = $('<div class="st-router-key-row"></div>');
+        const testInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="输入一个真实模型名测试正则…">');
+        const testBtn = $('<button class="menu_button" type="button"><span>测试</span></button>');
+        const testResult = $('<span class="st-router-key-col"></span>');
+        const runTest = () => {
+            const pattern = String(patternInput.val() ?? '').trim();
+            const sample = String(testInput.val() ?? '').trim();
+            testResult.empty();
+            if (!pattern) {
+                testResult.text('未填正则，不做自动归类。');
+                return;
+            }
+            try {
+                const regex = new RegExp(pattern);
+                testResult.text(regex.test(sample) ? `✅ "${sample}" 命中该逻辑模型` : `❌ "${sample}" 未命中`);
+            } catch {
+                testResult.text('⚠️ 正则语法错误');
+            }
+        };
+        testBtn.on('click', runTest);
+        testInput.on('keydown', event => { if (event.key === 'Enter') runTest(); });
+        testRow.append(testInput, testBtn, testResult);
+
+        const mappingCount = isNew ? null : deps.getVendors().reduce((sum, vendor) => sum + vendor.mappings.filter(mapping => mapping.logicalModelId === draft.id).length, 0);
+
+        content.append(
+            field('名称', nameInput, '逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型'),
+            field('自动归类正则', patternInput, '拉取模型时，真实模型名命中该正则会自动归入此逻辑模型（如 deepseek 会把 deepseek-chat/deepseek-reasoner 归进来）。留空则不参与自动归类'),
+            $('<div class="quicker-api__field"></div>').append($('<label><span>测试正则</span></label>'), testRow),
+            ...(isNew || mappingCount === null ? [] : [$('<div class="quicker-api__status">').text(`当前已有 ${mappingCount} 个真实模型名映射到该逻辑模型。`)]),
+        );
+
+        const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
+        const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
+        const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
+        content.append(actions);
+        const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
+        saveBtn.on('click', async () => {
+            const name = String(nameInput.val() ?? '').trim().slice(0, 120);
+            if (!name) {
+                toastr.warning('请填写逻辑模型名称。');
+                return;
+            }
+            const pattern = String(patternInput.val() ?? '').trim().slice(0, 500);
+            if (pattern) {
+                try {
+                    new RegExp(pattern);
+                } catch {
+                    toastr.warning('正则语法错误，请修正后再保存。');
+                    return;
+                }
+            }
+            draft.name = name;
+            draft.matchPattern = pattern;
+            const normalized = normalizeLogicalModel(draft);
+            if (isNew) {
+                deps.getLogicalModels().push(normalized);
+            } else if (model) {
+                Object.assign(model, normalized);
+            }
+            deps.save();
+            renderModelList();
+            renderGroupSummary();
+            await popup.completeCancelled();
+            toastr.success(`逻辑模型「${name}」已保存。`);
+        });
+        cancelBtn.on('click', () => void popup.completeCancelled());
+        void popup.show();
+    }
+
     panel.find('#st_router_enable').on('change', function () {
         const routing = deps.getRouting();
         routing.enabled = $(this).prop('checked');
@@ -686,12 +776,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const group = activeGroup();
         if (group) void openGroupEditor(group);
     });
+    panel.find('#st_router_add_logical').on('click', () => void openLogicalModelEditor(null));
     panel.find('#st_router_add_provider').on('click', async () => {
         const content = $('<div class="st-router-editor"></div>');
         const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="如：硅基流动 / OpenRouter">');
         const endpointInput = $('<input class="text_pole" type="text" maxlength="2048" placeholder="站点 API 地址，如 https://api.example.com/v1">');
         content.append(
-            $('<div class="st-router-empty">').text('名称用于在列表中识别该 Vendor，随便起；Endpoint 填模型商站点的 API 地址（之后也可在主面板直接改）。'),
+            $('<div class="st-router-empty">').text('名称用于在列表中识别该 Vendor，随便起；Endpoint 填站点 API 地址（之后也可在主面板直接改）。'),
             field('名称（识别用）', nameInput),
             field('Endpoint（站点 API 地址）', endpointInput),
         );
