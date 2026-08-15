@@ -140,7 +140,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 user-select: none; font-size: 13px; color: #ccc; padding: 3px 2px;
             }
             .st-router-unmapped-head:hover { color: #fff; }
-            .st-router-unmapped-arrow { font-family: monospace; color: #5b9bd5; flex: none; }
+            .st-router-unmapped-arrow { color: #5b9bd5; flex: none; font-size: 11px; transition: transform 0.15s; }
+            .st-router-unmapped-arrow--open { transform: rotate(90deg); }
             .st-router-unmapped-count { font-size: 11px; color: #999; }
             .st-router-unmapped-rows { display: flex; flex-direction: column; gap: 4px; }
             .st-router-unmapped-title { font-size: 12px; color: #999; margin-bottom: 4px; }
@@ -405,7 +406,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         unmappedList.empty();
         if (unmapped.length === 0) return;
         const head = $('<div class="st-router-unmapped-head" role="button" tabindex="0"></div>');
-        head.append($('<span class="st-router-unmapped-arrow"></span>').text(unmappedExpanded ? '>----▼' : '>----▶'));
+        const arrow = $('<i class="fa-solid fa-chevron-right st-router-unmapped-arrow"></i>');
+        if (unmappedExpanded) arrow.addClass('st-router-unmapped-arrow--open');
+        head.append(arrow);
         head.append($('<span>').text('未归类模型'));
         head.append($('<span class="st-router-unmapped-count"></span>').text(`${unmapped.length} 个`));
         head.on('click', () => {
