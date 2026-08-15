@@ -466,7 +466,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const pill = $('<button class="st-router-model-chip st-router-real-pill" type="button"></button>');
         pill.append($('<span class="st-router-model-name">').text(realModel));
         pill.append($('<span class="st-router-model-providers">').text(subtitle));
-        const ops = $('<div class="st-router-real-ops" hidden></div>');
+        const ops = $('<div class="st-router-real-ops"></div>').hide();
         const buildOps = () => {
             if (ops.children().length > 0) return;
             const select = $('<select class="text_pole"></select>').html(logicalOptionsHtml);
@@ -491,12 +491,11 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         pill.on('click', () => {
             const rows = wrap.parent();
             rows.find('.st-router-real-ops').not(ops).hide();
-            const willOpen = ops.prop('hidden') !== false;
-            if (willOpen) {
-                buildOps();
-                ops.prop('hidden', false);
+            if (ops.is(':visible')) {
+                ops.hide();
             } else {
-                ops.prop('hidden', true);
+                buildOps();
+                ops.show();
             }
         });
         wrap.append(pill, ops);
