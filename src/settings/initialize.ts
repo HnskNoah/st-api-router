@@ -104,7 +104,7 @@ export function initializeSettings(): boolean {
         ? value.quickActionPlacement
         : 'rightSendForm';
     value.quickActions = Array.isArray(value.quickActions)
-        ? value.quickActions.map(normalizeQuickAction).filter(action => action.preset || action.profileId || action.model)
+        ? value.quickActions.map(normalizeQuickAction).filter(action => action.preset || action.model)
         : [];
     value.quickActions.sort((a, b) => a.sequence - b.sequence).forEach((action, index) => { action.sequence = index; });
     for (const key of Object.keys(value.blockedSecretKeys)) {

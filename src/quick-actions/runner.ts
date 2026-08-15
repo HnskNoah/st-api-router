@@ -1,4 +1,4 @@
-// 便捷方案执行器（预设 → Profile → 模型 顺序安全切换）
+// 便捷方案执行器（预设 → 模型 顺序安全切换）
 
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
@@ -117,16 +117,6 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
             return;
         }
         if (token !== runtimeState.quickActionTransaction) return;
-        let profile: Profile | null = null;
-        if (action.profileId) {
-            profile = profiles().find(item => item.id === action.profileId) || null;
-            const applyModel = !action.preset && !action.model;
-            if (!profile || !await applyProfileById(action.profileId, token, { applyModel, manageTransition: false })) {
-                if (token === runtimeState.quickActionTransaction) toastr.error('便捷方案的 Profile 未能安全应用。');
-                return;
-            }
-        }
-        if (token !== runtimeState.quickActionTransaction) return;
         let switchedLogicalModel: LogicalModel | null = null;
         if (action.model) {
             // 逻辑模型：只切换当前 Group 的逻辑模型（保存，不立即写 ST 连接，下次生成由路由钩子选 Vendor/Key）
@@ -144,7 +134,7 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
                 const routedModel = routingSettings().enabled && isRoutedModel(providers(), groups(), logicalModels(), action.model);
                 const applied = routedModel
                     ? setRoutedModel(action.model)
-                    : applyExplicitModel(action.model, profile?.format || '');
+                    : applyExplicitModel(action.model);
                 if (!applied) {
                     toastr.error('便捷方案模型写入验证失败。');
                     return;
@@ -153,7 +143,7 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
         }
         if (token !== runtimeState.quickActionTransaction) return;
         renderProfiles(settings().selectedProfileId);
-        if (action.model) renderModelControl(profile || selectedProfile(), action.model);
+        if (action.model) renderModelControl(selectedProfile(), action.model);
         if (switchedLogicalModel) {
             saveSettingsDebounced();
             $(document).trigger('quickerApi:logical-model-changed');

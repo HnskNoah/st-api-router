@@ -15,6 +15,7 @@ import {
     findUnmappedModels,
     isSpecialVariant,
     mappedRealModels,
+    mergeImportedRoutingConfig,
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
@@ -234,6 +235,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         <button id="st_router_reset_models" class="menu_button" type="button" title="删除全部逻辑模型与映射并重新拉取（破坏性操作，需确认）"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>
                         <button id="st_router_refresh_models" class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表（无 Key 的 Vendor 跳过）"><i class="fa-solid fa-arrows-rotate"></i><span>刷新模型</span></button>
                         <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
+                        <button id="st_router_export_data" class="menu_button" type="button" title="导出完整路由配置 JSON（含各 Key 的 API Key，注意保管）"><i class="fa-solid fa-file-export"></i><span>导出数据</span></button>
+                        <button id="st_router_import_data" class="menu_button" type="button" title="从 JSON 导入路由配置（按 id 合并，含 Key）"><i class="fa-solid fa-file-import"></i><span>导入数据</span></button>
                         <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
@@ -1108,6 +1111,66 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         URL.revokeObjectURL(url);
         const total = text.split('\n').filter(Boolean).length;
         toastr.success(`已导出模型列表：共 ${total} 个模型。`);
+    });
+    panel.find('#st_router_export_data').on('click', () => {
+        const payload = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            vendors: deps.getVendors(),
+            logicalModels: deps.getLogicalModels(),
+            groups: deps.getGroups(),
+            activeGroupId: deps.getActiveGroupId(),
+            routing: deps.getRouting(),
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `quicker-api-data-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        toastr.success('已导出完整路由配置 JSON（含 Key，注意保管）。');
+    });
+    panel.find('#st_router_import_data').on('click', () => {
+        const input = $('<input type="file" accept=".json,application/json">');
+        input.on('change', async function () {
+            const file = (this as HTMLInputElement).files?.[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                const importedVendors = Array.isArray(parsed?.vendors) ? parsed.vendors : [];
+                const importedLogicalModels = Array.isArray(parsed?.logicalModels) ? parsed.logicalModels : [];
+                const importedGroups = Array.isArray(parsed?.groups) ? parsed.groups : [];
+                const merged = mergeImportedRoutingConfig({
+                    vendors: deps.getVendors(),
+                    logicalModels: deps.getLogicalModels(),
+                    groups: deps.getGroups(),
+                }, {
+                    vendors: importedVendors,
+                    logicalModels: importedLogicalModels,
+                    groups: importedGroups,
+                });
+                const vendors = deps.getVendors();
+                const logicalModels = deps.getLogicalModels();
+                const groups = deps.getGroups();
+                vendors.splice(0, vendors.length, ...merged.vendors);
+                logicalModels.splice(0, logicalModels.length, ...merged.logicalModels);
+                groups.splice(0, groups.length, ...merged.groups);
+                deps.save();
+                renderProviderList();
+                renderGroupEntries();
+                renderModelList();
+                renderGroupSummary();
+                toastr.success(`已导入配置：Vendor ${merged.vendors.length} 个、逻辑模型 ${merged.logicalModels.length} 个、分组 ${merged.groups.length} 个（按 id 合并）。`);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                toastr.error(`导入失败：${message}。`);
+            }
+        });
+        input.trigger('click');
     });
     panel.find('#st_router_add_provider').on('click', async () => {
         const content = $('<div class="st-router-editor"></div>');

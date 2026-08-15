@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveLogicalModelForAction } from '../src/domain/quick-action.js';
+import { normalizeQuickAction, resolveLogicalModelForAction } from '../src/domain/quick-action.js';
 import { normalizeLogicalModels } from '../src/domain/vendor.js';
 
 function sampleLogicalModels() {
@@ -8,6 +8,37 @@ function sampleLogicalModels() {
         { id: 'lm-gemini-flash', name: 'gemini-flash' },
     ]);
 }
+
+describe('quick-action normalizeQuickAction', () => {
+    it('keeps id/name/preset/model and drops profileId', () => {
+        const action = normalizeQuickAction({
+            id: 'qa1',
+            name: '日常',
+            preset: 'Preset A',
+            profileId: 'profile-old',
+            model: 'grok-4.5',
+            sequence: 2,
+        });
+        expect(action).toEqual({
+            id: 'qa1',
+            name: '日常',
+            preset: 'Preset A',
+            model: 'grok-4.5',
+            sequence: 2,
+        });
+        expect('profileId' in action).toBe(false);
+    });
+
+    it('fills defaults when empty', () => {
+        const action = normalizeQuickAction({}, 3);
+        expect(action.id.startsWith('quick-action-')).toBe(true);
+        expect(action.name).toBe('');
+        expect(action.preset).toBe('');
+        expect(action.model).toBe('');
+        expect(action.sequence).toBe(3);
+        expect('profileId' in action).toBe(false);
+    });
+});
 
 describe('quick-action resolveLogicalModelForAction', () => {
     it('matches by logical model id', () => {

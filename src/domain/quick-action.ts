@@ -10,7 +10,6 @@ export function normalizeQuickAction(raw: Record<string, any> | undefined, index
         id: normalizeText(raw?.id) || makeId('quick-action'),
         name: sanitizeName(raw?.name),
         preset: normalizeText(raw?.preset).slice(0, 500),
-        profileId: normalizeText(raw?.profileId),
         model: normalizeText(raw?.model).slice(0, 500),
         sequence: Number.isFinite(Number(raw?.sequence)) ? Number(raw?.sequence) : index,
     };

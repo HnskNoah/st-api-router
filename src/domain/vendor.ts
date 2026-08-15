@@ -169,6 +169,67 @@ export function allGroupEntries(groups: Group[]): GroupEntry[] {
     return entries;
 }
 
+/** 导入配置合并：vendors / logicalModels / groups 按 id 更新或新增，不删除现有数据；
+ *  group 的 entries 按 entry.id 合并。返回合并后的新快照（不修改入参）。 */
+export function mergeImportedRoutingConfig(
+    current: { vendors: Vendor[]; logicalModels: LogicalModel[]; groups: Group[] },
+    imported: { vendors: Vendor[]; logicalModels: LogicalModel[]; groups: Group[] },
+): { vendors: Vendor[]; logicalModels: LogicalModel[]; groups: Group[] } {
+    const vendors = current.vendors.map(vendor => normalizeVendor(structuredClone(vendor)));
+    const logicalModels = current.logicalModels.map(model => normalizeLogicalModel(structuredClone(model)));
+    const groups = current.groups.map(group => normalizeGroup(structuredClone(group)));
+
+    const vendorById = new Map(vendors.map(vendor => [vendor.id, vendor]));
+    for (const raw of imported.vendors || []) {
+        const vendor = normalizeVendor(structuredClone(raw));
+        if (!vendor.id) continue;
+        const existing = vendorById.get(vendor.id);
+        if (existing) Object.assign(existing, vendor);
+        else {
+            vendorById.set(vendor.id, vendor);
+            vendors.push(vendor);
+        }
+    }
+
+    const logicalById = new Map(logicalModels.map(model => [model.id, model]));
+    for (const raw of imported.logicalModels || []) {
+        const model = normalizeLogicalModel(structuredClone(raw));
+        if (!model.id) continue;
+        const existing = logicalById.get(model.id);
+        if (existing) Object.assign(existing, model);
+        else {
+            logicalById.set(model.id, model);
+            logicalModels.push(model);
+        }
+    }
+
+    const groupById = new Map(groups.map(group => [group.id, group]));
+    for (const rawGroup of imported.groups || []) {
+        const group = normalizeGroup(structuredClone(rawGroup));
+        if (!group.id) continue;
+        const existing = groupById.get(group.id);
+        if (existing) {
+            const entryById = new Map(existing.entries.map(entry => [entry.id, entry]));
+            for (const entry of group.entries) {
+                const currentEntry = entryById.get(entry.id);
+                if (currentEntry) Object.assign(currentEntry, entry);
+                else {
+                    entryById.set(entry.id, entry);
+                    existing.entries.push(entry);
+                }
+            }
+            existing.name = group.name;
+            existing.enabled = group.enabled;
+            existing.currentLogicalModelId = group.currentLogicalModelId;
+        } else {
+            groupById.set(group.id, group);
+            groups.push(group);
+        }
+    }
+
+    return { vendors, logicalModels, groups };
+}
+
 /** 已归类真实模型：所有 Key 已有映射的真实模型（跨 Key 去重，按名称排序，带归属逻辑模型 id）。 */
 export function mappedRealModels(groups: Group[]): { realModel: string; logicalModelId: string }[] {
     const byName = new Map<string, string>();
@@ -236,13 +297,14 @@ export function isSpecialVariant(name: string): boolean {
     return SPECIAL_VARIANT_RE.test(String(name || '').trim());
 }
 
-/** 提取核心模型名：剥离渠道/变体前缀（[xx]、gcli-、假流式-、xxx/），同一核心模型的不同变体归并。 */
+/** 提取核心模型名：剥离渠道/变体前缀（[xx]、gcli-、假流式-、xxx/）与末尾的 -假流式，同一核心模型的不同变体归并。 */
 export function canonicalModelName(raw: string): string {
     let name = String(raw || '').trim();
     name = name.replace(/^\[[^\]]*\]/, '');
     const slashIndex = name.lastIndexOf('/');
     if (slashIndex >= 0) name = name.slice(slashIndex + 1);
     name = name.replace(/^gcli-/, '').replace(/^假流式-/, '');
+    name = name.replace(/-假流式$/, '');
     return name;
 }
 

@@ -67,6 +67,12 @@ describe('domain/vendor > canonicalModelName 核心模型名提取', () => {
         expect(canonicalModelName('deepseek-v4-flash')).toBe('deepseek-v4-flash');
         expect(canonicalModelName('claude-opus-5')).toBe('claude-opus-5');
     });
+
+    it('剥离末尾的 -假流式 后缀，匹配无后缀核心名', () => {
+        expect(canonicalModelName('gemini-3.1-pro-preview-假流式')).toBe('gemini-3.1-pro-preview');
+        expect(canonicalModelName('[1]claude-opus-4-8-假流式')).toBe('claude-opus-4-8');
+        expect(canonicalModelName('假流式-gemini-3.1-pro-preview-假流式')).toBe('gemini-3.1-pro-preview');
+    });
 });
 
 describe('domain/vendor > 从已拉取模型批量创建逻辑模型', () => {

@@ -37,7 +37,6 @@ export interface QuickAction {
     id: string;
     name: string;
     preset: string;
-    profileId: string;
     model: string;
     sequence: number;
 }
