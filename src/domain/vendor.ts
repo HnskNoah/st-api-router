@@ -102,13 +102,18 @@ export function findLogicalModelByPattern(logicalModels: LogicalModel[], realMod
     return null;
 }
 
-/** 拉取模型后的归类：正则命中 → 名称精确匹配 → 新建逻辑模型兜底。返回归属的逻辑模型。 */
+/** 拉取模型后的归类：正则命中 → 名称精确匹配 → 核心模型名合并（剥渠道/变体前缀）→ 新建（用核心名）。返回归属的逻辑模型。 */
 export function assignRealModel(logicalModels: LogicalModel[], realModel: string): LogicalModel {
     const byPattern = findLogicalModelByPattern(logicalModels, realModel);
     if (byPattern) return byPattern;
     const byName = logicalModels.find(model => model.name === realModel);
     if (byName) return byName;
-    const model = normalizeLogicalModel({ name: realModel });
+    const canonical = canonicalModelName(realModel);
+    if (canonical && canonical !== realModel) {
+        const byCanonical = logicalModels.find(model => model.name === canonical);
+        if (byCanonical) return byCanonical;
+    }
+    const model = normalizeLogicalModel({ name: canonical || realModel });
     logicalModels.push(model);
     return model;
 }

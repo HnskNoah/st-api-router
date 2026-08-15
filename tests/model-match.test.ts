@@ -75,4 +75,38 @@ describe('domain/vendor > 逻辑模型正则归类', () => {
         expect(result.name).toBe('grok-4.5');
         expect(models).toHaveLength(2);
     });
+
+    it('assignRealModel 无正则时按核心模型名合并渠道变体（不新建）', () => {
+        const models: LogicalModel[] = [
+            { id: 'lm-1', name: 'gemini-3.1-pro-preview', ...base },
+        ];
+        const result = assignRealModel(models, '[新渠道]gemini-3.1-pro-preview');
+        expect(result.id).toBe('lm-1');
+        expect(models).toHaveLength(1);
+    });
+
+    it('assignRealModel 合并假流式/gcli 前缀变体到已有核心模型', () => {
+        const models: LogicalModel[] = [
+            { id: 'lm-1', name: 'gemini-2.5-pro', ...base },
+        ];
+        expect(assignRealModel(models, '假流式-gemini-2.5-pro').id).toBe('lm-1');
+        expect(assignRealModel(models, 'gcli-gemini-2.5-pro').id).toBe('lm-1');
+        expect(models).toHaveLength(1);
+    });
+
+    it('assignRealModel 无匹配时新建逻辑模型使用核心名（剥前缀）', () => {
+        const models: LogicalModel[] = [];
+        const result = assignRealModel(models, '[新渠道]deepseek-v4-flash');
+        expect(result.name).toBe('deepseek-v4-flash');
+        expect(models.map(model => model.name)).toEqual(['deepseek-v4-flash']);
+    });
+
+    it('assignRealModel 正则优先于核心名合并', () => {
+        const models: LogicalModel[] = [
+            { id: 'lm-1', name: 'Gemini 系', ...base, matchPattern: 'gemini' },
+            { id: 'lm-2', name: 'gemini-2.5-pro', ...base },
+        ];
+        const result = assignRealModel(models, '[新渠道]gemini-2.5-pro');
+        expect(result.id).toBe('lm-1'); // 正则命中 Gemini 系，而不是按核心名进 lm-2
+    });
 });
