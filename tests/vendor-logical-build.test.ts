@@ -4,7 +4,7 @@
 // 跳过 search/thinking/image 变体。
 
 import { describe, expect, it } from 'vitest';
-import { buildLogicalModelsFromFetched, canonicalModelName, isSpecialVariant } from '../src/domain/vendor.js';
+import { buildLogicalModelsFromFetched, canonicalModelName, isSpecialVariant, sortedLogicalModels } from '../src/domain/vendor.js';
 import type { Group, LogicalModel } from '../src/types.js';
 
 function makeGroup(overrides: Partial<Group> = {}): Group {
@@ -222,5 +222,30 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
         expect(result.created).toEqual([]);
         expect(groups[0].entries[0].mappings).toEqual([]);
         expect(result.mapped).toBe(0);
+    });
+});
+
+describe('domain/vendor > sortedLogicalModels 逻辑模型排序', () => {
+    it('按名称排序（大小写不敏感，英文在前）', () => {
+        const models: LogicalModel[] = [
+            { id: 'l1', name: 'Zeta', matchPattern: '' },
+            { id: 'l2', name: 'Alpha', matchPattern: '' },
+            { id: 'l3', name: 'beta', matchPattern: '' },
+            { id: 'l4', name: 'Gemini 系', matchPattern: '' },
+        ];
+        expect(sortedLogicalModels(models).map(model => model.name)).toEqual(['Alpha', 'beta', 'Gemini 系', 'Zeta']);
+    });
+
+    it('不修改原数组', () => {
+        const models: LogicalModel[] = [
+            { id: 'l1', name: 'b', matchPattern: '' },
+            { id: 'l2', name: 'a', matchPattern: '' },
+        ];
+        sortedLogicalModels(models);
+        expect(models.map(model => model.name)).toEqual(['b', 'a']);
+    });
+
+    it('空数组返回空数组', () => {
+        expect(sortedLogicalModels([])).toEqual([]);
     });
 });

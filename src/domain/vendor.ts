@@ -370,6 +370,11 @@ export function normalizeLogicalModels(raw: unknown): LogicalModel[] {
     });
 }
 
+/** 逻辑模型按名称排序（大小写不敏感，localeCompare 兼顾中文）。不修改原数组。 */
+export function sortedLogicalModels(logicalModels: LogicalModel[]): LogicalModel[] {
+    return [...(logicalModels || [])].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
+}
+
 export function normalizeGroupEntry(raw: Record<string, any> | undefined): GroupEntry {
     return {
         id: normalizeText(raw?.id) || makeId('group-entry'),

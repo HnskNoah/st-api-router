@@ -22,6 +22,7 @@ import {
     pruneOrphanLogicalModels,
     reconcileEntryMappings,
     resetModelData,
+    sortedLogicalModels,
 } from '../domain/vendor.js';
 import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
@@ -401,14 +402,14 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     let logicalOptionsHtml = '';
 
     function refreshLogicalOptionsHtml(): void {
-        const options = deps.getLogicalModels().map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
+        const options = sortedLogicalModels(deps.getLogicalModels()).map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
         logicalOptionsHtml = `<option value="">— 选择逻辑模型 —</option>${options}`;
     }
 
     function renderModelList(): void {
         refreshLogicalOptionsHtml();
         const group = activeGroup();
-        const models = deps.getLogicalModels();
+        const models = sortedLogicalModels(deps.getLogicalModels());
         const entries = deps.getGroups().flatMap(item => item.entries);
         logicalList.empty();
         const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
@@ -820,7 +821,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="分组名称，如：日常 / 深挖">').val(draft.name);
         const enabledCheck = $('<input type="checkbox">').prop('checked', draft.enabled);
         const logicalSelect = $('<select class="text_pole"></select>');
-        for (const model of deps.getLogicalModels()) logicalSelect.append($('<option>').val(model.id).text(model.name));
+        for (const model of sortedLogicalModels(deps.getLogicalModels())) logicalSelect.append($('<option>').val(model.id).text(model.name));
         logicalSelect.val(draft.currentLogicalModelId);
 
         const entryList = $('<div class="st-router-list"></div>');
@@ -992,7 +993,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     panel.find('#st_router_add_group').on('click', async () => {
         const name = await Popup.show.input('新增分组', '');
         if (!name) return;
-        const group = normalizeGroup({ name, currentLogicalModelId: deps.getLogicalModels()[0]?.id || '' });
+        const group = normalizeGroup({ name, currentLogicalModelId: sortedLogicalModels(deps.getLogicalModels())[0]?.id || '' });
         deps.getGroups().push(group);
         deps.setActiveGroupId(group.id);
         renderGroupSelect();
