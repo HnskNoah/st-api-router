@@ -143,6 +143,27 @@ export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors:
     return removed;
 }
 
+/** 重置模型数据：删光全部逻辑模型、所有 Vendor 的映射与已拉取模型列表，分组当前逻辑模型指针置空。
+ *  供"重置模型数据"按钮使用（重置后由前端重新拉取重建）。返回删除的统计。 */
+export function resetModelData(
+    logicalModels: LogicalModel[],
+    vendors: Vendor[],
+    groups: Group[],
+): { removedLogicalModels: number; removedMappings: number } {
+    const removedLogicalModels = logicalModels.length;
+    let removedMappings = 0;
+    logicalModels.splice(0, logicalModels.length);
+    for (const vendor of vendors) {
+        removedMappings += vendor.mappings.length;
+        vendor.mappings = [];
+        vendor.fetchedModels = [];
+    }
+    for (const group of groups) {
+        group.currentLogicalModelId = '';
+    }
+    return { removedLogicalModels, removedMappings };
+}
+
 /** 已归类真实模型：所有 Vendor 已有映射的真实模型（跨 Vendor 去重，按名称排序，带归属逻辑模型 id）。 */
 export function mappedRealModels(vendors: Vendor[]): { realModel: string; logicalModelId: string }[] {
     const byName = new Map<string, string>();
@@ -220,15 +241,18 @@ export function canonicalModelName(raw: string): string {
     return name;
 }
 
-/** 从已拉取模型批量创建逻辑模型：每个核心模型独立创建一个（渠道/假流式变体合并），跳过 search/thinking/image 变体。 */
+/** 从已拉取模型批量创建逻辑模型并自动映射：每个核心模型独立创建一个（渠道/假流式变体合并），跳过 search/thinking/image 变体。
+ *  自动映射：核心名匹配的逻辑模型建立后，把未映射的真实模型映射过去（已有映射不动）。返回 created / skipped / mapped 数。 */
 export function buildLogicalModelsFromFetched(
     models: string[],
     logicalModels: LogicalModel[],
-): { created: LogicalModel[]; skipped: string[] } {
+    vendors: Vendor[] = [],
+): { created: LogicalModel[]; skipped: string[]; mapped: number } {
     const existingNames = new Set(logicalModels.map(model => model.name));
     const seen = new Set<string>();
     const created: LogicalModel[] = [];
     const skipped: string[] = [];
+    let mapped = 0;
     for (const raw of models) {
         const name = String(raw || '').trim();
         if (!name || seen.has(name)) continue;
@@ -238,13 +262,22 @@ export function buildLogicalModelsFromFetched(
             continue;
         }
         const canonical = canonicalModelName(name);
-        if (existingNames.has(canonical)) continue;
-        const model = normalizeLogicalModel({ name: canonical });
-        logicalModels.push(model);
-        existingNames.add(canonical);
-        created.push(model);
+        if (!existingNames.has(canonical)) {
+            const model = normalizeLogicalModel({ name: canonical });
+            logicalModels.push(model);
+            existingNames.add(canonical);
+            created.push(model);
+        }
+        const target = logicalModels.find(model => model.name === canonical);
+        if (!target) continue;
+        for (const vendor of vendors) {
+            if (!vendor.fetchedModels.includes(name)) continue;
+            if (vendor.mappings.some(mapping => mapping.realModel === name)) continue;
+            vendor.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id });
+            mapped++;
+        }
     }
-    return { created, skipped };
+    return { created, skipped, mapped };
 }
 
 export function normalizeLogicalModels(raw: unknown): LogicalModel[] {
@@ -353,7 +386,10 @@ export function migrateProvidersToVendorModel(providers: Provider[] | undefined)
             for (const model of key?.fetchedModels || []) {
                 if (!model) continue;
                 fetched.add(model);
-                const logicalId = ensureLogicalModelId(logicalModels, model, `lm-${model}`);
+                // 跳过 search/thinking/image/cache 特殊变体：不建逻辑模型也不建映射（与拉取时一致）
+                if (isSpecialVariant(model)) continue;
+                const canonical = canonicalModelName(model);
+                const logicalId = ensureLogicalModelId(logicalModels, canonical, `lm-${canonical}`);
                 vendorMappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logicalId });
             }
         }

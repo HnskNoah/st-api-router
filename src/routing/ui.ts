@@ -20,6 +20,7 @@ import {
     normalizeVendor,
     pruneOrphanLogicalModels,
     reconcileVendorMappings,
+    resetModelData,
 } from '../domain/vendor.js';
 import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
@@ -150,16 +151,16 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 background: rgba(255, 255, 255, 0.07); border-radius: 10px; padding: 1px 8px;
             }
             .st-router-real-rows { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 12px 12px; }
-            .st-router-real-chip {
-                display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
-                border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 16px;
-                padding: 3px 6px 3px 10px; background: rgba(255, 255, 255, 0.04);
-                transition: border-color 0.15s, background 0.15s;
+            /* 真实模型 pill：复用逻辑模型 chip 外观；点击展开下方操作行（下拉 + 🔗） */
+            .st-router-real-pill-wrap { display: contents; }
+            .st-router-real-pill { max-width: 100%; }
+            .st-router-real-pill .st-router-model-name { font-family: monospace; font-size: 12px; word-break: break-all; min-width: 0; }
+            .st-router-real-ops {
+                display: flex; align-items: center; gap: 6px; flex-basis: 100%;
+                padding: 2px 2px 8px; flex-wrap: wrap;
             }
-            .st-router-real-chip:hover { border-color: #5b9bd5; }
-            .st-router-real-chip-name { font-family: monospace; font-size: 12px; word-break: break-all; min-width: 0; }
-            .st-router-real-chip > select.text_pole { width: auto; max-width: 160px; margin: 0; flex: none; font-size: 12px; }
-            .st-router-real-chip > .menu_button { flex: none; padding: 1px 6px; }
+            .st-router-real-ops > select.text_pole { width: auto; max-width: 220px; margin: 0; flex: none; font-size: 12px; }
+            .st-router-real-ops > .menu_button { flex: none; padding: 2px 8px; }
 
             /* ── 空状态 ── */
             .st-router-empty { font-size: 12px; color: #999; padding: 8px 2px; line-height: 1.6; }
@@ -230,9 +231,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 <div class="st-router-section-head">
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
+                        <button id="st_router_reset_models" class="menu_button" type="button" title="删除全部逻辑模型与映射并重新拉取（破坏性操作，需确认）"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>
                         <button id="st_router_refresh_models" class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表（无 Key 的 Vendor 跳过）"><i class="fa-solid fa-arrows-rotate"></i><span>刷新模型</span></button>
                         <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
-                        <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
+                        <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
                 </div>
@@ -454,34 +456,51 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderUnmapped();
     }
 
-    function buildRealChip(realModel: string, currentLogicalId: string): JQuery<HTMLElement> {
-        const chip = $('<div class="st-router-real-chip"></div>');
-        chip.append($('<span class="st-router-real-chip-name">').text(realModel));
-        const select = $('<select class="text_pole"></select>').html(logicalOptionsHtml);
-        if (currentLogicalId) select.val(currentLogicalId);
-        const applyBtn = $('<button class="menu_button" type="button" title="建立/改归属到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
-            .on('click', () => {
-                const logicalId = String(select.val() || '');
-                if (!logicalId) {
-                    toastr.warning('请先为模型选择逻辑模型。');
-                    return;
-                }
-                const touched = assignModelToLogical(deps.getVendors(), realModel, logicalId);
-                if (touched > 0) {
-                    deps.save();
-                    renderModelList();
-                    renderGroupSummary();
-                    toastr.success(`已为「${realModel}」更新归属（影响 ${touched} 个 Vendor）。`);
-                }
-            });
-        chip.append(select, applyBtn);
-        return chip;
+    function buildRealPill(realModel: string, currentLogicalId: string, subtitle: string): JQuery<HTMLElement> {
+        const wrap = $('<div class="st-router-real-pill-wrap"></div>');
+        const pill = $('<button class="st-router-model-chip st-router-real-pill" type="button"></button>');
+        pill.append($('<span class="st-router-model-name">').text(realModel));
+        pill.append($('<span class="st-router-model-providers">').text(subtitle));
+        const ops = $('<div class="st-router-real-ops" hidden></div>');
+        const buildOps = () => {
+            if (ops.children().length > 0) return;
+            const select = $('<select class="text_pole"></select>').html(logicalOptionsHtml);
+            if (currentLogicalId) select.val(currentLogicalId);
+            const applyBtn = $('<button class="menu_button" type="button" title="建立/改归属到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
+                .on('click', () => {
+                    const logicalId = String(select.val() || '');
+                    if (!logicalId) {
+                        toastr.warning('请先为模型选择逻辑模型。');
+                        return;
+                    }
+                    const touched = assignModelToLogical(deps.getVendors(), realModel, logicalId);
+                    if (touched > 0) {
+                        deps.save();
+                        renderModelList();
+                        renderGroupSummary();
+                        toastr.success(`已为「${realModel}」更新归属（影响 ${touched} 个 Vendor）。`);
+                    }
+                });
+            ops.append(select, applyBtn);
+        };
+        pill.on('click', () => {
+            const rows = wrap.parent();
+            rows.find('.st-router-real-ops').not(ops).hide();
+            const willOpen = ops.prop('hidden') !== false;
+            if (willOpen) {
+                buildOps();
+                ops.prop('hidden', false);
+            } else {
+                ops.prop('hidden', true);
+            }
+        });
+        wrap.append(pill, ops);
+        return wrap;
     }
 
     function renderMapped(): void {
         const mapped = mappedRealModels(deps.getVendors());
         mappedList.empty();
-        if (mapped.length === 0) return;
         const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
         const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
         if (mappedExpanded) arrow.addClass('st-router-real-arrow--open');
@@ -490,8 +509,14 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         head.append($('<span class="st-router-real-count"></span>').text(`${mapped.length} 个`));
         const rows = $('<div class="st-router-real-rows"></div>');
         const ensureRows = () => {
-            if (rows.children().length === 0) {
-                for (const item of mapped) rows.append(buildRealChip(item.realModel, item.logicalModelId));
+            if (rows.children().length > 0) return;
+            if (mapped.length === 0) {
+                rows.append($('<div class="st-router-empty">').text('还没有已归类的真实模型。在"未归类真实模型"里为模型选择逻辑模型并点 🔗 即可归类。'));
+                return;
+            }
+            for (const item of mapped) {
+                const logical = deps.getLogicalModels().find(model => model.id === item.logicalModelId);
+                rows.append(buildRealPill(item.realModel, item.logicalModelId, logical ? `归属：${logical.name}` : '归属：未知'));
             }
         };
         head.on('click', () => {
@@ -517,7 +542,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function renderUnmapped(): void {
         const unmapped = findUnmappedModels(deps.getVendors());
         unmappedList.empty();
-        if (unmapped.length === 0) return;
         const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
         const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
         if (unmappedExpanded) arrow.addClass('st-router-real-arrow--open');
@@ -526,9 +550,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         head.append($('<span class="st-router-real-count"></span>').text(`${unmapped.length} 个`));
         const rows = $('<div class="st-router-real-rows"></div>');
         const ensureRows = () => {
-            if (rows.children().length === 0) {
-                for (const realModel of unmapped) rows.append(buildRealChip(realModel, ''));
+            if (rows.children().length > 0) return;
+            if (unmapped.length === 0) {
+                rows.append($('<div class="st-router-empty">').text('没有未归类的真实模型。所有已拉取的模型都已归类。'));
+                return;
             }
+            for (const realModel of unmapped) rows.append(buildRealPill(realModel, '', '未归类'));
         };
         head.on('click', () => {
             unmappedExpanded = !unmappedExpanded;
@@ -678,7 +705,11 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         } catch (error) {
             console.error('[QuickerApi] fetch vendor models failed:', error);
             const message = error instanceof Error ? error.message : String(error);
-            toastr.error(`Vendor「${vendor.name}」获取模型失败：${message}。`);
+            // 拉取失败视为该 Vendor 数据失效：清空已拉取模型与映射，避免残留旧模型一直显示
+            vendor.fetchedModels = [];
+            vendor.mappings = [];
+            deps.save();
+            toastr.error(`Vendor「${vendor.name}」获取模型失败，已清空其模型数据：${message}。`);
             return null;
         } finally {
             // 恢复拉取前活动密钥，避免临时 Key 残留占用 ST 密钥槽
@@ -696,6 +727,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             if (entry) return entry.apiKey;
         }
         return '';
+    }
+
+    /** 拉取间隔抖动：200~400ms 随机，避免多个 Vendor 连发触发限流。 */
+    function jitterDelay(): Promise<void> {
+        const wait = 200 + Math.floor(Math.random() * 200);
+        return new Promise(resolve => setTimeout(resolve, wait));
     }
 
     function openVendorEditor(vendor: Vendor): void {
@@ -989,7 +1026,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         let skipped = 0;
         const failed: string[] = [];
         try {
-            for (const vendor of vendors) {
+            for (let index = 0; index < vendors.length; index++) {
+                const vendor = vendors[index];
                 const key = firstKeyForVendor(vendor);
                 if (!key) {
                     skipped++;
@@ -998,6 +1036,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 const models = await fetchModelsForVendor(vendor, key);
                 if (models) ok++;
                 else failed.push(vendor.name);
+                if (index < vendors.length - 1) await jitterDelay();
             }
             renderProviderList();
             renderGroupEntries();
@@ -1011,6 +1050,55 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             btn.prop('disabled', false);
         }
     });
+    panel.find('#st_router_reset_models').on('click', async () => {
+        const vendors = deps.getVendors();
+        const logicalCount = deps.getLogicalModels().length;
+        if (vendors.length === 0 && logicalCount === 0) {
+            toastr.info('还没有可重置的数据。');
+            return;
+        }
+        const confirmed = await Popup.show.confirm(
+            '重置模型数据',
+            `将删除全部逻辑模型（${logicalCount} 个）、所有 Vendor 的模型映射与已拉取列表（${vendors.length} 个 Vendor），然后重新拉取重建。此操作不可撤销，确定继续？`,
+        );
+        if (!confirmed) return;
+        const btn = panel.find('#st_router_reset_models');
+        btn.prop('disabled', true);
+        let ok = 0;
+        let skipped = 0;
+        const failed: string[] = [];
+        try {
+            const stats = resetModelData(deps.getLogicalModels(), deps.getVendors(), deps.getGroups());
+            deps.save();
+            renderProviderList();
+            renderGroupEntries();
+            renderModelList();
+            renderGroupSummary();
+            for (let index = 0; index < vendors.length; index++) {
+                const vendor = vendors[index];
+                const key = firstKeyForVendor(vendor);
+                if (!key) {
+                    skipped++;
+                    continue;
+                }
+                const models = await fetchModelsForVendor(vendor, key);
+                if (models) ok++;
+                else failed.push(vendor.name);
+                if (index < vendors.length - 1) await jitterDelay();
+            }
+            renderProviderList();
+            renderGroupEntries();
+            renderModelList();
+            renderGroupSummary();
+            const parts = [`已删除 ${stats.removedLogicalModels} 个逻辑模型、${stats.removedMappings} 条映射`];
+            parts.push(`重新拉取成功 ${ok} 个`);
+            if (skipped > 0) parts.push(`无 Key 跳过 ${skipped} 个`);
+            if (failed.length > 0) parts.push(`失败 ${failed.length} 个（${failed.join('、')}）`);
+            toastr.success(`模型数据已重置：${parts.join('，')}。`);
+        } finally {
+            btn.prop('disabled', false);
+        }
+    });
     panel.find('#st_router_build_logical').on('click', () => {
         const allModels: string[] = [];
         for (const vendor of deps.getVendors()) {
@@ -1020,15 +1108,18 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             toastr.info('还没有已拉取的模型。先在"当前分组 Key"里点 ↻ 拉取模型，再回来创建逻辑模型。');
             return;
         }
-        const { created, skipped } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels());
-        if (created.length === 0) {
+        const { created, skipped, mapped } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels(), deps.getVendors());
+        if (created.length === 0 && mapped === 0) {
             toastr.info(skipped.length > 0 ? `无新模型可创建（${skipped.length} 个 search/thinking/image 变体已跳过）。` : '逻辑模型已是最新，无需创建。');
             return;
         }
         deps.save();
         renderModelList();
         renderGroupSummary();
-        toastr.success(`已为 ${created.length} 个真实模型创建独立逻辑模型${skipped.length > 0 ? `，跳过 ${skipped.length} 个特殊变体` : ''}。`);
+        const parts = [`已为 ${created.length} 个真实模型创建独立逻辑模型`];
+        if (mapped > 0) parts.push(`自动映射 ${mapped} 条`);
+        if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 个特殊变体`);
+        toastr.success(`${parts.join('，')}。`);
     });
     panel.find('#st_router_export_models').on('click', () => {
         const text = buildModelListText(deps.getVendors());

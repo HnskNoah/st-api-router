@@ -66,6 +66,37 @@ describe('domain/vendor migration', () => {
         expect(migrated.vendors).toEqual([]);
         expect(migrated.groups).toEqual([]);
     });
+
+    it('creates logical models with canonical names (prefix stripped), skipping special variants', () => {
+        const migrated = migrateProvidersToVendorModel(normalizeProviders([
+            {
+                name: 'A',
+                endpoint: 'https://a/v1',
+                keys: [{ label: 'A1', fetchedModels: ['[1]claude-opus-4-8', 'gemini-3.1-pro-preview-thinking'] }],
+            },
+        ]));
+        expect(migrated.logicalModels.map(model => model.name)).toEqual(['claude-opus-4-8']);
+        expect(migrated.vendors[0].mappings).toHaveLength(1);
+        expect(migrated.vendors[0].mappings[0].realModel).toBe('[1]claude-opus-4-8');
+        expect(migrated.vendors[0].mappings[0].logicalModelId).toBe(migrated.logicalModels[0].id);
+        expect(migrated.vendors[0].fetchedModels).toEqual(['[1]claude-opus-4-8', 'gemini-3.1-pro-preview-thinking']);
+    });
+
+    it('merges same-core models across keys into one logical model', () => {
+        const migrated = migrateProvidersToVendorModel(normalizeProviders([
+            {
+                name: 'A',
+                endpoint: 'https://a/v1',
+                keys: [
+                    { label: 'A1', fetchedModels: ['[1]claude-opus-4-8'] },
+                    { label: 'A2', fetchedModels: ['[2]claude-opus-4-8'] },
+                ],
+            },
+        ]));
+        expect(migrated.logicalModels.map(model => model.name)).toEqual(['claude-opus-4-8']);
+        expect(migrated.vendors[0].mappings).toHaveLength(2);
+        expect(migrated.vendors[0].mappings.every(mapping => mapping.logicalModelId === migrated.logicalModels[0].id)).toBe(true);
+    });
 });
 
 describe('domain/vendor health and success weight', () => {

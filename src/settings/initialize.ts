@@ -10,6 +10,7 @@ import { normalizeProfile } from '../domain/profile.js';
 import { normalizeQuickAction } from '../domain/quick-action.js';
 import { normalizeProviders, providerFromProfile, resetRoutingRuntimeState } from '../domain/provider.js';
 import {
+    canonicalModelName,
     migrateProvidersToVendorModel,
     normalizeGroups,
     normalizeLogicalModels,
@@ -78,7 +79,9 @@ export function initializeSettings(): boolean {
         for (const vendor of value.vendors) {
             for (const mapping of vendor.mappings) {
                 if (!known.has(mapping.logicalModelId)) {
-                    value.logicalModels.push({ id: mapping.logicalModelId, name: mapping.logicalModelId });
+                    // 补建逻辑模型：名字用真实模型的核心名（剥渠道/变体前缀），不用 id 当名字
+                    const name = canonicalModelName(mapping.realModel) || mapping.logicalModelId;
+                    value.logicalModels.push({ id: mapping.logicalModelId, name, matchPattern: '' });
                     known.add(mapping.logicalModelId);
                     added = true;
                 }
