@@ -40,41 +40,54 @@ function ensureLogicalModel(logicalModels: LogicalModel[], name: string): Logica
 }
 
 export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>; render(): void } {
+    if (!$('#st_router_styles').length) {
+        $('<style id="st_router_styles"></style>').text(`
+            .quicker-api__field-hint {
+                display: inline-block; margin-left: 6px; width: 15px; height: 15px; line-height: 15px;
+                border-radius: 50%; background: #6c757d; color: #fff; font-size: 11px;
+                text-align: center; cursor: help; vertical-align: middle;
+            }
+            .st-router-key-row--header { font-size: 12px; color: #888; border-bottom: 1px solid #444; }
+            .st-router-provider-endpoint { min-width: 280px; margin-left: 8px; }
+        `).appendTo(document.head);
+    }
     const panel = $(`
         <section id="st_router_panel" class="quicker-api">
             <div class="quicker-api__title">
                 <span><i class="fa-solid fa-route"></i> 供应商路由 / Vendor Routing</span>
                 <span class="st-router-title-actions">
                     <button id="st_router_toggle_legacy" class="menu_button" type="button" title="旧版 API Profile 设置（过渡兼容）"><i class="fa-solid fa-clock-rotate-left"></i><span>旧版设置</span></button>
-                    <span title="Group 选择逻辑模型；生成时按成功率从可用 Vendor 中随机路由"><i class="fa-solid fa-circle-info"></i></span>
+                    <span title="分组选择逻辑模型；生成时按成功率从可用 Vendor 中随机路由"><i class="fa-solid fa-circle-info"></i></span>
                 </span>
             </div>
             <div class="quicker-api__field">
                 <div class="st-router-controls">
                     <label class="checkbox_label" for="st_router_enable"><input id="st_router_enable" type="checkbox" /> 启用路由</label>
-                    <label for="st_router_sticky_seconds" class="st-router-strategy-label">固定时长（秒，0 = 每次随机）</label>
+                    <label for="st_router_sticky_seconds" class="st-router-strategy-label" title="选中的 Vendor 在 N 秒内保持复用；0 = 每次生成都重新随机">路由保持时长（秒，0 = 每次随机）</label>
                     <input id="st_router_sticky_seconds" class="text_pole st-router-strategy" type="number" min="0" step="1" />
                 </div>
+                <div class="quicker-api__status">启用后，每次生成前插件会按当前分组的逻辑模型，从可用 Vendor 中随机选一个改写 SillyTavern 连接（不发请求，只改连接字段）。</div>
             </div>
             <div class="quicker-api__field">
-                <label for="st_router_group_select">功能分组</label>
+                <label for="st_router_group_select">分组（Group）<span class="quicker-api__field-hint" title="分组是一套独立的“用哪个模型、用哪些 Vendor 的 Key”环境；不同分组可配不同 Vendor 与 Key">?</span></label>
                 <div class="st-router-controls">
                     <select id="st_router_group_select" class="text_pole st-router-strategy"></select>
-                    <button id="st_router_add_group" class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增 Group</span></button>
-                    <button id="st_router_edit_group" class="menu_button" type="button" title="编辑 Group 名称与逻辑模型"><i class="fa-solid fa-pen"></i><span>编辑 Group</span></button>
+                    <button id="st_router_add_group" class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增分组</span></button>
+                    <button id="st_router_edit_group" class="menu_button" type="button" title="编辑分组名称与当前逻辑模型"><i class="fa-solid fa-pen"></i><span>编辑分组</span></button>
                 </div>
             </div>
             <div class="quicker-api__field">
-                <label>Vendor（模型商）与 Key 条目</label>
-                <div class="quicker-api__status">每个 Vendor 填 endpoint；每个条目选 Vendor 并填对应 Key（同一 Vendor 可多 Key）。</div>
+                <label>Vendor（模型商）<span class="quicker-api__field-hint" title="Vendor = 一家模型站点。填好 endpoint 和 Key 后，拉取模型并映射到逻辑模型即可参与路由">?</span></label>
+                <div class="quicker-api__status">每个 Vendor 填站点地址（Endpoint）；下方"当前分组条目"给该分组选 Vendor 并填对应 Key（同一 Vendor 可配多个 Key）。</div>
                 <div id="st_router_provider_list" class="st-router-list"></div>
                 <button id="st_router_add_provider" class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>
-                <div class="quicker-api__field-inline-label">当前 Group 条目</div>
+                <div class="quicker-api__field-inline-label">当前分组使用的 Vendor + Key（生成时从这些里随机选）</div>
                 <div id="st_router_group_entries" class="st-router-list"></div>
                 <button id="st_router_add_entry" class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>添加 Vendor + Key</span></button>
             </div>
             <div class="quicker-api__field">
-                <label>逻辑模型</label>
+                <label>逻辑模型<span class="quicker-api__field-hint" title="逻辑模型是你在分组里选的“模型名”；多个 Vendor 的真实模型名（如 [希希2]grok-4.5）可映射到同一个逻辑模型">?</span></label>
+                <div class="quicker-api__status">点击一个逻辑模型，把它设为当前分组的模型；下次生成会从能提供它的 Vendor 中随机选。</div>
                 <div id="st_router_model_list" class="st-router-model-list"></div>
             </div>
         </section>
@@ -113,11 +126,11 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const group = activeGroup();
         groupEntriesList.empty();
         if (!group) {
-            groupEntriesList.append($('<div class="quicker-api__status">').text('还没有 Group。先新增 Group。'));
+            groupEntriesList.append($('<div class="quicker-api__status">').text('还没有分组。先新增分组。'));
             return;
         }
         if (deps.getVendors().length === 0) {
-            groupEntriesList.append($('<div class="quicker-api__status">').text('先新增 Vendor，再为 Group 添加 Vendor + Key 条目。'));
+            groupEntriesList.append($('<div class="quicker-api__status">').text('先新增 Vendor，再为该分组添加 Vendor + Key 条目。'));
             return;
         }
         const header = $('<div class="st-router-key-row st-router-key-row--header"></div>');
@@ -186,7 +199,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             const vendorCount = deps.getVendors().filter(vendor => vendor.mappings.some(mapping => mapping.logicalModelId === model.id)).length;
             chip.append($('<span class="st-router-model-providers">').text(`${vendorCount} 个 Vendor`));
             if (group?.currentLogicalModelId === model.id) chip.addClass('is-selected');
-            chip.attr('title', group ? '点击设为当前 Group 的逻辑模型' : '');
+            chip.attr('title', group ? '点击设为当前分组的逻辑模型' : '');
             chip.on('click', () => {
                 if (!group) return;
                 group.currentLogicalModelId = model.id;
@@ -272,8 +285,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         return `${Math.round((Number(vendor.successes) || 0) / total * 100)}%`;
     }
 
-    function field(labelText: string, control: JQuery<HTMLElement>): JQuery<HTMLElement> {
-        return $('<div class="quicker-api__field"></div>').append($('<label>').text(labelText), control);
+    function field(labelText: string, control: JQuery<HTMLElement>, hint = ''): JQuery<HTMLElement> {
+        const label = $('<label></label>').append($('<span>').text(labelText));
+        if (hint) label.append($('<span class="quicker-api__field-hint" title=""></span>').attr('title', hint).text('?'));
+        return $('<div class="quicker-api__field"></div>').append(label, control);
     }
 
     async function fetchModelsForVendor(vendor: Vendor, key: string): Promise<string[] | null> {
@@ -383,15 +398,15 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             });
 
         content.append(
-            field('名称', nameInput),
-            field('格式', formatSelect),
-            field('Endpoint', endpointInput),
-            field('RPM 上限（0 = 不限）', rpmInput),
-            field('Context 上限（0 = 不限制）', contextInput),
-            field('权重', weightInput),
-            field('拉取模型用 Key', keyInput),
-            $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用'),
-            field('模型映射', $('<div></div>').append(mappingList, addMappingBtn)),
+            field('名称', nameInput, '列表里用于识别，不会发给站点'),
+            field('格式', formatSelect, '决定请求协议：Custom 走 OpenAI 兼容接口；Custom Responses 走 OpenAI Responses 接口；DeepSeek 走 ST 原生 DeepSeek 源'),
+            field('Endpoint', endpointInput, '站点 API 地址。custom 系列填 Base URL（如 https://api.xxx.com/v1）；deepseek 填反代地址'),
+            field('RPM 上限（0 = 不限）', rpmInput, '该 Vendor 每分钟最多请求次数，所有分组共享此限制'),
+            field('最大上下文（0 = 不限制）', contextInput, '路由到该 Vendor 时，SillyTavern 的上下文上限会被钳制到不超过这个值（防止超出站点上下文）'),
+            field('权重', weightInput, '选路权重：数值越大越容易被随机选中（实际概率还会叠加历史成功率加成）'),
+            field('拉取模型用 Key', keyInput, '仅供拉取模型列表使用，不会保存到设置；真正请求用的 Key 在下方"当前分组条目"里填'),
+            $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用（参与路由）'),
+            field('模型映射', $('<div></div>').append(mappingList, addMappingBtn), '把该 Vendor 的真实模型名（如 [希希2]grok-4.5）归并到你选定的逻辑模型；多个 Vendor 可映射到同一个逻辑模型'),
         );
         content.append(fetchBtn);
 
@@ -422,7 +437,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function openGroupEditor(group: Group): void {
         const draft = normalizeGroup(structuredClone(group));
         const content = $('<div class="st-router-editor"></div>');
-        const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="Group 名称，如：日常 / 深挖">').val(draft.name);
+        const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="分组名称，如：日常 / 深挖">').val(draft.name);
         const enabledCheck = $('<input type="checkbox">').prop('checked', draft.enabled);
         const logicalSelect = $('<select class="text_pole"></select>');
         for (const model of deps.getLogicalModels()) logicalSelect.append($('<option>').val(model.id).text(model.name));
@@ -459,10 +474,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             });
 
         content.append(
-            field('名称', nameInput),
-            field('当前逻辑模型', logicalSelect),
-            $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用'),
-            field('Vendor + Key 条目', $('<div></div>').append(entryList, addEntryBtn)),
+            field('名称', nameInput, '分组名称，如"日常"、"深挖"，仅用于区分环境'),
+            field('当前逻辑模型', logicalSelect, '该分组路由时使用的模型；也可在主面板点击逻辑模型快捷切换'),
+            $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用（该分组参与路由）'),
+            field('Vendor + Key 条目', $('<div></div>').append(entryList, addEntryBtn), '每个条目 = 一个可用 Key：选 Vendor、填 Key；同一 Vendor 可多条（多条会一起参与随机，且共享该 Vendor 的 RPM 限制）'),
         );
 
         const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
@@ -471,7 +486,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         content.append(actions);
         const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
         saveBtn.on('click', async () => {
-            draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || 'Group';
+            draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || '分组';
             draft.enabled = enabledCheck.prop('checked');
             draft.currentLogicalModelId = String(logicalSelect.val() || '');
             Object.assign(group, normalizeGroup(draft));
@@ -479,7 +494,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             renderGroupSelect();
             renderModelList();
             await popup.completeCancelled();
-            toastr.success(`Group「${draft.name}」已保存。`);
+            toastr.success(`分组「${draft.name}」已保存。`);
         });
         cancelBtn.on('click', () => void popup.completeCancelled());
         void popup.show();
@@ -502,7 +517,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderModelList();
     });
     panel.find('#st_router_add_group').on('click', async () => {
-        const name = await Popup.show.input('新增 Group', '');
+        const name = await Popup.show.input('新增分组', '');
         if (!name) return;
         const group = normalizeGroup({ name, currentLogicalModelId: deps.getLogicalModels()[0]?.id || '' });
         deps.getGroups().push(group);
@@ -547,7 +562,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     panel.find('#st_router_add_entry').on('click', () => {
         const group = activeGroup();
         if (!group) {
-            toastr.warning('请先新增 Group。');
+            toastr.warning('请先新增分组。');
             return;
         }
         if (deps.getVendors().length === 0) {

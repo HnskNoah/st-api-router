@@ -104,14 +104,14 @@ export async function manageQuickActions(): Promise<void> {
     const renderEditor = () => {
         editor.empty().removeClass('has-unsaved-detail');
         if (!detailDraft) {
-            editor.append($('<div class="quicker-api__empty-state">').text('新增方案后，可自由组合 preset、Profile 与 model。'));
+            editor.append($('<div class="quicker-api__empty-state">').text('新增方案后，可组合 preset、Profile 与模型。模型填逻辑模型名时，点击按钮只切换当前分组的模型（不立即改连接）；填真实模型名时按原有逻辑写入。'));
             return;
         }
         const draft = detailDraft;
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
         const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
         const profileSelect = $(`<select class="text_pole">${profileOptionsHtml(draft.profileId)}</select>`);
-        const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="可直接输入自定义模型 ID">').val(draft.model);
+        const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="模型名：逻辑模型（点击只切换分组模型）或真实模型名">').val(draft.model);
         const modelSelect = $('<select class="text_pole" aria-label="从配置模型列表选择"></select>');
         const refreshModels = () => {
             // 聚合模型（供应商路由）优先入候选：快捷方案选模型即参与路由；逻辑模型名同样入候选
