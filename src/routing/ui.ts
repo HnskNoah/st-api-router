@@ -817,6 +817,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             deps.getVendors().push(vendor);
             deps.save();
             renderProviderList();
+            renderGroupEntries();
             await popup.completeCancelled();
             toastr.success(`Vendor「${name}」已添加。`);
         });
