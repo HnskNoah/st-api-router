@@ -61,17 +61,21 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 <div class="st-router-controls">
                     <select id="st_router_group_select" class="text_pole st-router-strategy"></select>
                     <button id="st_router_add_group" class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增 Group</span></button>
-                    <button id="st_router_edit_group" class="menu_button" type="button"><i class="fa-solid fa-pen"></i><span>编辑 Group</span></button>
+                    <button id="st_router_edit_group" class="menu_button" type="button" title="编辑 Group 名称与逻辑模型"><i class="fa-solid fa-pen"></i><span>编辑 Group</span></button>
                 </div>
+            </div>
+            <div class="quicker-api__field">
+                <label>Vendor（模型商）与 Key 条目</label>
+                <div class="quicker-api__status">每个 Vendor 填 endpoint；每个条目选 Vendor 并填对应 Key（同一 Vendor 可多 Key）。</div>
+                <div id="st_router_provider_list" class="st-router-list"></div>
+                <button id="st_router_add_provider" class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>
+                <div class="quicker-api__field-inline-label">当前 Group 条目</div>
+                <div id="st_router_group_entries" class="st-router-list"></div>
+                <button id="st_router_add_entry" class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>添加 Vendor + Key</span></button>
             </div>
             <div class="quicker-api__field">
                 <label>逻辑模型</label>
                 <div id="st_router_model_list" class="st-router-model-list"></div>
-            </div>
-            <div class="quicker-api__field">
-                <label>Vendor（模型商）</label>
-                <div id="st_router_provider_list" class="st-router-list"></div>
-                <button id="st_router_add_provider" class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>
             </div>
         </section>
     `);
@@ -101,6 +105,62 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function activeGroup(): Group | null {
         const id = String(panel.find('#st_router_group_select').val() || '');
         return deps.getGroups().find(group => group.id === id) || deps.getGroups()[0] || null;
+    }
+
+    const groupEntriesList = panel.find('#st_router_group_entries');
+
+    function renderGroupEntries(): void {
+        const group = activeGroup();
+        groupEntriesList.empty();
+        if (!group) {
+            groupEntriesList.append($('<div class="quicker-api__status">').text('还没有 Group。先新增 Group。'));
+            return;
+        }
+        if (deps.getVendors().length === 0) {
+            groupEntriesList.append($('<div class="quicker-api__status">').text('先新增 Vendor，再为 Group 添加 Vendor + Key 条目。'));
+            return;
+        }
+        for (const entry of group.entries) {
+            const row = $('<div class="st-router-key-row"></div>');
+            const vendorSelect = $('<select class="text_pole" title="Vendor"></select>');
+            for (const vendor of deps.getVendors()) {
+                vendorSelect.append($('<option>').val(vendor.id).text(vendor.name));
+            }
+            vendorSelect.val(entry.vendorId || '');
+            if (!entry.vendorId || !deps.getVendors().some(vendor => vendor.id === entry.vendorId)) {
+                vendorSelect.prepend($('<option value="">— 选择 Vendor —</option>'));
+                vendorSelect.val(entry.vendorId || '');
+            }
+            vendorSelect.on('change', function () {
+                entry.vendorId = String($(this).val() || '');
+                deps.save();
+            });
+            const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="API Key">')
+                .val(entry.apiKey || '')
+                .on('input', function () {
+                    entry.apiKey = String($(this).val() ?? '').trim();
+                    deps.save();
+                });
+            const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="Key 名称">')
+                .val(entry.label || '')
+                .on('input', function () {
+                    entry.label = String($(this).val() ?? '').trim() || 'Key';
+                    deps.save();
+                });
+            const enabled = $('<input type="checkbox" title="启用该 Key">').prop('checked', entry.enabled)
+                .on('change', function () {
+                    entry.enabled = $(this).prop('checked');
+                    deps.save();
+                });
+            const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
+                .on('click', () => {
+                    group.entries = group.entries.filter(item => item.id !== entry.id);
+                    deps.save();
+                    renderGroupEntries();
+                });
+            row.append(vendorSelect, keyInput, labelInput, enabled, removeBtn);
+            groupEntriesList.append(row);
+        }
     }
 
     function renderModelList(): void {
@@ -146,12 +206,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const vendors = deps.getVendors();
         providerList.empty();
         if (vendors.length === 0) {
-            providerList.append($('<div class="quicker-api__status">').text('还没有 Vendor。新增后填写 endpoint、添加 Key，拉取模型并映射到逻辑模型即可参与路由。'));
+            providerList.append($('<div class="quicker-api__status">').text('还没有 Vendor。点击"新增 Vendor"，填写名称与 endpoint 后即可添加 Key。'));
             return;
         }
         for (const vendor of vendors) {
             const row = $('<div class="st-router-provider"></div>');
-            const enabledCheck = $('<label class="checkbox_label"><input type="checkbox" class="st-router-provider-enabled"></label>');
+            const enabledCheck = $('<label class="checkbox_label" title="启用/禁用 Vendor"><input type="checkbox" class="st-router-provider-enabled"></label>');
             enabledCheck.find('input').prop('checked', vendor.enabled).on('change', function () {
                 vendor.enabled = $(this).prop('checked');
                 if (vendor.enabled) vendor.disabledReason = '';
@@ -160,18 +220,22 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 renderModelList();
             });
             row.append(enabledCheck);
-            const info = $('<div class="st-router-provider-info"></div>');
-            info.append(
-                $('<span class="st-router-provider-name">').text(vendor.name),
-                $('<span class="st-router-provider-endpoint">').text(vendor.endpoint || '（无 endpoint）'),
-                $('<span class="st-router-provider-meta">').text(
-                    `${FORMAT_LABELS[vendor.format] ?? vendor.format} · rpm ${vendor.rpm === 0 ? '∞' : vendor.rpm} · context ${vendor.maxContext || '未限制'} · 模型 ${vendor.fetchedModels.length} · 成功率 ${successRateText(vendor)}`,
-                ),
-            );
+            const info = $('<div class="st-router-provider-info st-router-provider-info--editable"></div>');
+            info.append($('<span class="st-router-provider-name">').text(vendor.name));
+            const endpointInput = $('<input class="text_pole st-router-provider-endpoint" type="text" maxlength="2048" placeholder="Endpoint（custom 填 Base URL；deepseek 填反代地址）">')
+                .val(vendor.endpoint || '')
+                .on('input', function () {
+                    vendor.endpoint = String($(this).val() ?? '').trim();
+                    deps.save();
+                });
+            info.append(endpointInput);
+            info.append($('<span class="st-router-provider-meta">').text(
+                `${FORMAT_LABELS[vendor.format] ?? vendor.format} · rpm ${vendor.rpm === 0 ? '∞' : vendor.rpm} · context ${vendor.maxContext || '未限制'} · 模型 ${vendor.fetchedModels.length} · 成功率 ${successRateText(vendor)}`,
+            ));
             if (vendor.disabledReason) info.append($('<span class="st-router-provider-meta">').text(vendor.disabledReason));
             row.append(info);
             row.append(statusBadge(vendorStatus(vendor)));
-            const editBtn = $('<button class="menu_button" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button>')
+            const editBtn = $('<button class="menu_button" type="button" title="编辑（格式/RPM/上下文/映射）"><i class="fa-solid fa-pen"></i></button>')
                 .on('click', () => void openVendorEditor(vendor));
             const deleteBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除"><i class="fa-solid fa-trash"></i></button>')
                 .on('click', async () => {
@@ -183,6 +247,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     for (const group of deps.getGroups()) group.entries = group.entries.filter(entry => entry.vendorId !== vendor.id);
                     deps.save();
                     renderProviderList();
+                    renderGroupEntries();
                     renderModelList();
                 });
             const actions = $('<div class="st-router-provider-actions"></div>');
@@ -424,6 +489,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     });
     panel.find('#st_router_group_select').on('change', function () {
         deps.setActiveGroupId(String($(this).val() || ''));
+        renderGroupEntries();
         renderModelList();
     });
     panel.find('#st_router_add_group').on('click', async () => {
@@ -433,6 +499,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         deps.getGroups().push(group);
         deps.setActiveGroupId(group.id);
         renderGroupSelect();
+        renderGroupEntries();
         renderModelList();
         await openGroupEditor(group);
     });
@@ -449,6 +516,20 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderProviderList();
         await openVendorEditor(vendor);
     });
+    panel.find('#st_router_add_entry').on('click', () => {
+        const group = activeGroup();
+        if (!group) {
+            toastr.warning('请先新增 Group。');
+            return;
+        }
+        if (deps.getVendors().length === 0) {
+            toastr.warning('请先新增 Vendor。');
+            return;
+        }
+        group.entries.push({ id: makeId('group-entry'), vendorId: deps.getVendors()[0].id, apiKey: '', label: 'Key', enabled: true });
+        deps.save();
+        renderGroupEntries();
+    });
 
     // 路由面板为主界面：插到旧版 Profile 区之前；旧版区默认折叠（保留功能，快捷方案仍引用 profiles）
     panel.insertBefore('#quicker_api');
@@ -462,6 +543,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     renderRoutingControls();
     renderGroupSelect();
     renderProviderList();
+    renderGroupEntries();
     renderModelList();
 
     // 便捷方案切换逻辑模型后刷新模型列表高亮
@@ -469,5 +551,5 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     $(document).on('quickerApi:logical-model-changed', onLogicalModelChanged);
     panel.on('remove', () => $(document).off('quickerApi:logical-model-changed', onLogicalModelChanged));
 
-    return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderModelList(); } };
+    return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderGroupEntries(); renderModelList(); } };
 }
