@@ -4,7 +4,7 @@
 
 import { getRequestHeaders } from '@sillytavern/script';
 import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
-import { Popup } from '@sillytavern/scripts/popup';
+import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
 import {
@@ -595,7 +595,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
         const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
         content.append(actions);
-        const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
+        const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
         saveBtn.on('click', async () => {
             draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || 'Vendor';
             draft.format = String(formatSelect.val() || 'custom') as Vendor['format'];
@@ -665,7 +665,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
         const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
         content.append(actions);
-        const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
+        const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
         saveBtn.on('click', async () => {
             draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || '分组';
             draft.enabled = enabledCheck.prop('checked');
@@ -727,7 +727,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
         const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
         content.append(actions);
-        const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
+        const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
         saveBtn.on('click', async () => {
             const name = String(nameInput.val() ?? '').trim().slice(0, 120);
             if (!name) {
@@ -808,7 +808,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
         const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
         content.append(actions);
-        const popup = new Popup(content, 'text', '', { large: false, wide: true, okButton: false, cancelButton: false });
+        const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
         saveBtn.on('click', async () => {
             const name = String(nameInput.val() ?? '').trim().slice(0, 120);
             if (!name) return toastr.warning('请填写 Vendor 名称。');
