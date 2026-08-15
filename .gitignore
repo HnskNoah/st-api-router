@@ -2,3 +2,9 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# 工作区本地文档：保留在工作区，但不进入版本控制
+AGENTS.md
+README.md
+docs/
+
