@@ -138,6 +138,40 @@ export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors:
     return removed;
 }
 
+/** 模型清单导出：本地已拉取模型 + 映射 + 逻辑模型。刻意不含任何密钥字段。 */
+export function buildModelExport(vendors: Vendor[], logicalModels: LogicalModel[]): {
+    exportedAt: string;
+    vendors: {
+        name: string;
+        format: string;
+        endpoint: string;
+        fetchedModels: string[];
+        mappings: { realModel: string; logicalModelId: string; logicalModelName: string }[];
+    }[];
+    logicalModels: { id: string; name: string; matchPattern: string }[];
+} {
+    const logicalNameById = new Map(logicalModels.map(model => [model.id, model.name]));
+    return {
+        exportedAt: new Date().toISOString(),
+        vendors: vendors.map(vendor => ({
+            name: vendor.name,
+            format: vendor.format,
+            endpoint: vendor.endpoint,
+            fetchedModels: [...vendor.fetchedModels],
+            mappings: vendor.mappings.map(mapping => ({
+                realModel: mapping.realModel,
+                logicalModelId: mapping.logicalModelId,
+                logicalModelName: logicalNameById.get(mapping.logicalModelId) || '',
+            })),
+        })),
+        logicalModels: logicalModels.map(model => ({
+            id: model.id,
+            name: model.name,
+            matchPattern: model.matchPattern || '',
+        })),
+    };
+}
+
 export function normalizeLogicalModels(raw: unknown): LogicalModel[] {
     if (!Array.isArray(raw)) return [];
     const seen = new Set<string>();

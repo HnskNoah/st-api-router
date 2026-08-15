@@ -9,6 +9,7 @@ import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
 import {
     assignRealModel,
+    buildModelExport,
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
@@ -194,6 +195,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 <div class="st-router-section-head">
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
+                        <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型清单（JSON，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型清单</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
                 </div>
@@ -795,6 +797,20 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         if (group) void openGroupEditor(group);
     });
     panel.find('#st_router_add_logical').on('click', () => void openLogicalModelEditor(null));
+    panel.find('#st_router_export_models').on('click', () => {
+        const data = buildModelExport(deps.getVendors(), deps.getLogicalModels());
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `quicker-api-models-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        const total = data.vendors.reduce((sum, vendor) => sum + vendor.fetchedModels.length, 0);
+        toastr.success(`已导出模型清单：${data.vendors.length} 个 Vendor，共 ${total} 个模型。`);
+    });
     panel.find('#st_router_add_provider').on('click', async () => {
         const content = $('<div class="st-router-editor"></div>');
         const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="如：硅基流动 / OpenRouter">');
