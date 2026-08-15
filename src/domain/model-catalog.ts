@@ -2,7 +2,7 @@
 // 模型记录自己的承载供应商（unit = { provider, key }），承载判定按 key.fetchedModels。
 // 纯计算。
 
-import type { LogicalModel, ModelEntry, Provider, RoutingUnit, Vendor } from '../types.js';
+import type { Group, LogicalModel, ModelEntry, Provider, RoutingUnit } from '../types.js';
 
 /** 展平全部路由单元：每个 provider 的每个 key 一个单元。 */
 export function keyUnits(providers: Provider[]): RoutingUnit[] {
@@ -44,19 +44,21 @@ export function aggregateModels(providers: Provider[]): string[] {
     return modelRegistry(providers).map(entry => entry.model);
 }
 
-/** 模型名是否参与路由：命中旧 Provider 聚合模型、新 Vendor 映射的真实模型名、或逻辑模型 id/name。 */
+/** 模型名是否参与路由：命中旧 Provider 聚合模型、新 Key 映射的真实模型名、或逻辑模型 id/name。 */
 export function isRoutedModel(
     providers: Provider[],
-    vendors: Vendor[],
+    groups: Group[],
     logicalModels: LogicalModel[],
     model: string,
 ): boolean {
     const value = String(model || '').trim();
     if (!value) return false;
     if (aggregateModels(providers).includes(value)) return true;
-    for (const vendor of vendors || []) {
-        for (const mapping of vendor?.mappings || []) {
-            if (mapping.realModel === value) return true;
+    for (const group of groups || []) {
+        for (const entry of group?.entries || []) {
+            for (const mapping of entry?.mappings || []) {
+                if (mapping.realModel === value) return true;
+            }
         }
     }
     for (const logical of logicalModels || []) {

@@ -5,29 +5,21 @@
 
 import { describe, expect, it } from 'vitest';
 import { buildLogicalModelsFromFetched, canonicalModelName, isSpecialVariant } from '../src/domain/vendor.js';
-import type { LogicalModel, Vendor } from '../src/types.js';
+import type { Group, LogicalModel } from '../src/types.js';
 
-function makeVendor(overrides: Partial<Vendor> = {}): Vendor {
+function makeGroup(overrides: Partial<Group> = {}): Group {
     return {
-        id: 'v1',
-        name: 'Vendor A',
-        format: 'custom',
-        endpoint: 'https://api.example.com/v1',
+        id: 'g1',
+        name: '默认分组',
         enabled: true,
-        weight: 1,
-        rpm: 0,
-        maxContext: 0,
-        failStreak: 0,
-        window: [],
-        successes: 0,
-        failures: 0,
-        lastError: '',
-        updatedAt: '',
-        mappings: [],
-        fetchedModels: [],
-        disabledReason: '',
+        currentLogicalModelId: '',
+        entries: [],
         ...overrides,
     };
+}
+
+function makeEntry(id: string, vendorId: string, fetchedModels: string[], mappings: { id: string; realModel: string; logicalModelId: string }[] = []) {
+    return { id, vendorId, apiKey: 'k', label: id, enabled: true, fetchedModels, mappings };
 }
 
 describe('domain/vendor > isSpecialVariant 特殊变体判断', () => {
@@ -138,26 +130,26 @@ describe('domain/vendor > 从已拉取模型批量创建逻辑模型', () => {
 });
 
 describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
-    it('创建逻辑模型并把核心名匹配的真实模型自动映射过去', () => {
-        const vendors = [
-            makeVendor({ id: 'v1', fetchedModels: ['[1]claude-opus-4-8', 'gemini-3.1-pro-preview'] }),
-            makeVendor({ id: 'v2', fetchedModels: ['[2]claude-opus-4-8'] }),
+    it('创建逻辑模型并把核心名匹配的真实模型自动映射到各 Key', () => {
+        const groups = [
+            makeGroup({ entries: [makeEntry('e1', 'v1', ['[1]claude-opus-4-8', 'gemini-3.1-pro-preview'])] }),
+            makeGroup({ id: 'g2', entries: [makeEntry('e2', 'v2', ['[2]claude-opus-4-8'])] }),
         ];
         const existing: LogicalModel[] = [];
         const result = buildLogicalModelsFromFetched(
             ['[1]claude-opus-4-8', '[2]claude-opus-4-8', 'gemini-3.1-pro-preview'],
             existing,
-            vendors,
+            groups,
         );
         expect(result.created.map(model => model.name).sort()).toEqual(['claude-opus-4-8', 'gemini-3.1-pro-preview']);
         const claude = existing.find(model => model.name === 'claude-opus-4-8')!;
-        expect(vendors[0].mappings).toEqual(
+        expect(groups[0].entries[0].mappings).toEqual(
             expect.arrayContaining([expect.objectContaining({ realModel: '[1]claude-opus-4-8', logicalModelId: claude.id })]),
         );
-        expect(vendors[1].mappings).toEqual(
+        expect(groups[1].entries[0].mappings).toEqual(
             expect.arrayContaining([expect.objectContaining({ realModel: '[2]claude-opus-4-8', logicalModelId: claude.id })]),
         );
-        expect(vendors[0].mappings).toEqual(
+        expect(groups[0].entries[0].mappings).toEqual(
             expect.arrayContaining([expect.objectContaining({ realModel: 'gemini-3.1-pro-preview' })]),
         );
         expect(result.mapped).toBe(3);
@@ -165,36 +157,34 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
 
     it('核心名已存在的逻辑模型不重复创建，但补映射未映射的真实模型', () => {
         const existing: LogicalModel[] = [{ id: 'l1', name: 'claude-opus-4-8', matchPattern: '' }];
-        const vendors = [makeVendor({ id: 'v1', fetchedModels: ['[1]claude-opus-4-8'] })];
-        const result = buildLogicalModelsFromFetched(['[1]claude-opus-4-8'], existing, vendors);
+        const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', ['[1]claude-opus-4-8'])] })];
+        const result = buildLogicalModelsFromFetched(['[1]claude-opus-4-8'], existing, groups);
         expect(result.created).toEqual([]);
-        expect(vendors[0].mappings).toEqual(
+        expect(groups[0].entries[0].mappings).toEqual(
             expect.arrayContaining([expect.objectContaining({ realModel: '[1]claude-opus-4-8', logicalModelId: 'l1' })]),
         );
         expect(result.mapped).toBe(1);
     });
 
     it('已有映射的真实模型不动（不覆盖不重复）', () => {
-        const vendors = [
-            makeVendor({
-                id: 'v1',
-                fetchedModels: ['[1]claude-opus-4-8'],
-                mappings: [{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'keep' }],
+        const groups = [
+            makeGroup({
+                entries: [makeEntry('e1', 'v1', ['[1]claude-opus-4-8'], [{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'keep' }])],
             }),
         ];
         const existing: LogicalModel[] = [{ id: 'keep', name: 'claude-opus-4-8', matchPattern: '' }];
-        const result = buildLogicalModelsFromFetched(['[1]claude-opus-4-8'], existing, vendors);
-        expect(vendors[0].mappings).toHaveLength(1);
-        expect(vendors[0].mappings[0].logicalModelId).toBe('keep');
+        const result = buildLogicalModelsFromFetched(['[1]claude-opus-4-8'], existing, groups);
+        expect(groups[0].entries[0].mappings).toHaveLength(1);
+        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('keep');
         expect(result.mapped).toBe(0);
     });
 
     it('特殊变体不建映射', () => {
-        const vendors = [makeVendor({ id: 'v1', fetchedModels: ['gemini-3.1-pro-preview-search'] })];
+        const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', ['gemini-3.1-pro-preview-search'])] })];
         const existing: LogicalModel[] = [];
-        const result = buildLogicalModelsFromFetched(['gemini-3.1-pro-preview-search'], existing, vendors);
+        const result = buildLogicalModelsFromFetched(['gemini-3.1-pro-preview-search'], existing, groups);
         expect(result.created).toEqual([]);
-        expect(vendors[0].mappings).toEqual([]);
+        expect(groups[0].entries[0].mappings).toEqual([]);
         expect(result.mapped).toBe(0);
     });
 });

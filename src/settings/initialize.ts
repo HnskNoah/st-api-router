@@ -10,6 +10,7 @@ import { normalizeProfile } from '../domain/profile.js';
 import { normalizeQuickAction } from '../domain/quick-action.js';
 import { normalizeProviders, providerFromProfile, resetRoutingRuntimeState } from '../domain/provider.js';
 import {
+    allGroupEntries,
     canonicalModelName,
     migrateProvidersToVendorModel,
     normalizeGroups,
@@ -73,11 +74,11 @@ export function initializeSettings(): boolean {
         value.groups = migrated.groups;
         changed = true;
     }
-    if (value.vendors.length > 0) {
+    if (value.groups.some(group => group.entries.length > 0)) {
         const known = new Set(value.logicalModels.map(model => model.id));
         let added = false;
-        for (const vendor of value.vendors) {
-            for (const mapping of vendor.mappings) {
+        for (const entry of allGroupEntries(value.groups)) {
+            for (const mapping of entry.mappings) {
                 if (!known.has(mapping.logicalModelId)) {
                     // 补建逻辑模型：名字用真实模型的核心名（剥渠道/变体前缀），不用 id 当名字
                     const name = canonicalModelName(mapping.realModel) || mapping.logicalModelId;

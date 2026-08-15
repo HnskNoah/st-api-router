@@ -111,7 +111,7 @@ export interface VendorModelMapping {
     logicalModelId: string;
 }
 
-/** Vendor（模型商）：全局限流、健康状态、模型映射都挂在 Vendor 级。 */
+/** Vendor（模型商）：全局限流、健康状态、RPM/上下文限制都挂在 Vendor 级；模型数据按 Key 挂在 GroupEntry。 */
 export interface Vendor {
     id: string;
     name: string;
@@ -122,8 +122,6 @@ export interface Vendor {
     weight: number;
     enabled: boolean;
     disabledReason: string;
-    fetchedModels: string[];
-    mappings: VendorModelMapping[];
     window: number[];
     failStreak: number;
     successes: number;
@@ -139,13 +137,15 @@ export interface LogicalModel {
     matchPattern: string;
 }
 
-/** Group 条目：Vendor + Key。同一 Vendor 可在同一 Group 中挂多个条目。 */
+/** Group 条目：Vendor + Key。同一 Vendor 可在同一 Group 中挂多个条目；每个 Key 独立持有模型数据（部分模型只在特定 Key 上可获取）。 */
 export interface GroupEntry {
     id: string;
     vendorId: string;
     apiKey: string;
     label: string;
     enabled: boolean;
+    fetchedModels: string[];
+    mappings: VendorModelMapping[];
 }
 
 /** Group（功能分组）：全局使用环境，持有当前逻辑模型和 Vendor + Key 条目。 */

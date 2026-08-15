@@ -19,7 +19,7 @@ import {
     summarizeGroupUnavailable,
     vendorRpmAvailable,
 } from '../src/domain/group-routing.js';
-import type { Vendor } from '../src/types.js';
+import type { Group, Vendor } from '../src/types.js';
 
 describe('domain/vendor normalization', () => {
     it('normalizeVendor fills defaults and caps', () => {
@@ -41,24 +41,45 @@ describe('domain/vendor normalization', () => {
         expect(groups[0].entries[0].apiKey).toBe('k');
         expect(normalizeGroup(undefined).id.startsWith('group-')).toBe(true);
     });
+
+    it('GroupEntry keeps its own fetchedModels and mappings (model data is per Key)', () => {
+        const groups = normalizeGroups([{
+            id: 'g1',
+            entries: [{
+                vendorId: 'v1',
+                apiKey: 'k',
+                label: 'A',
+                fetchedModels: ['[1]claude-opus-4-8', '  ', 'gemini-3.1-pro-preview'],
+                mappings: [{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'l1' }],
+            }],
+        }]);
+        expect(groups[0].entries[0].fetchedModels).toEqual(['[1]claude-opus-4-8', 'gemini-3.1-pro-preview']);
+        expect(groups[0].entries[0].mappings).toEqual([{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'l1' }]);
+    });
 });
 
 describe('domain/vendor migration', () => {
-    it('migrates old Provider/Key into Vendor + LogicalModel + Group', () => {
+    it('migrates old Provider/Key into Vendor + Group structure, old model data is discarded', () => {
         const migrated = migrateProvidersToVendorModel(normalizeProviders([
             {
                 name: 'A',
                 endpoint: 'https://a/v1',
-                keys: [{ label: 'A1', fetchedModels: ['grok', 'gemini'] }, { label: 'A2', fetchedModels: ['grok'] }],
+                keys: [
+                    { label: 'A1', fetchedModels: ['grok', 'gemini'] },
+                    { label: 'A2', fetchedModels: ['grok'] },
+                ],
             },
         ]));
         expect(migrated.vendors).toHaveLength(1);
-        expect(migrated.vendors[0].fetchedModels).toEqual(['grok', 'gemini']);
-        expect(migrated.vendors[0].mappings).toHaveLength(2);
-        expect(migrated.logicalModels.map(model => model.name)).toEqual(['grok', 'gemini']);
+        expect(migrated.vendors[0]).not.toHaveProperty('fetchedModels');
+        expect(migrated.logicalModels).toEqual([]);
         expect(migrated.groups).toHaveLength(1);
         expect(migrated.groups[0].entries).toHaveLength(2);
-        expect(migrated.groups[0].currentLogicalModelId).toBe(migrated.logicalModels[0].id);
+        expect(migrated.groups[0].entries[0].fetchedModels).toEqual([]);
+        expect(migrated.groups[0].entries[0].mappings).toEqual([]);
+        expect(migrated.groups[0].entries[1].fetchedModels).toEqual([]);
+        expect(migrated.groups[0].entries[1].mappings).toEqual([]);
+        expect(migrated.groups[0].currentLogicalModelId).toBe('');
     });
 
     it('does not create empty group when no keys', () => {
@@ -67,35 +88,23 @@ describe('domain/vendor migration', () => {
         expect(migrated.groups).toEqual([]);
     });
 
-    it('creates logical models with canonical names (prefix stripped), skipping special variants', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [{ label: 'A1', fetchedModels: ['[1]claude-opus-4-8', 'gemini-3.1-pro-preview-thinking'] }],
-            },
-        ]));
-        expect(migrated.logicalModels.map(model => model.name)).toEqual(['claude-opus-4-8']);
-        expect(migrated.vendors[0].mappings).toHaveLength(1);
-        expect(migrated.vendors[0].mappings[0].realModel).toBe('[1]claude-opus-4-8');
-        expect(migrated.vendors[0].mappings[0].logicalModelId).toBe(migrated.logicalModels[0].id);
-        expect(migrated.vendors[0].fetchedModels).toEqual(['[1]claude-opus-4-8', 'gemini-3.1-pro-preview-thinking']);
-    });
-
-    it('merges same-core models across keys into one logical model', () => {
+    it('keeps key structure (apiKey/label/enabled) when migrating', () => {
         const migrated = migrateProvidersToVendorModel(normalizeProviders([
             {
                 name: 'A',
                 endpoint: 'https://a/v1',
                 keys: [
-                    { label: 'A1', fetchedModels: ['[1]claude-opus-4-8'] },
-                    { label: 'A2', fetchedModels: ['[2]claude-opus-4-8'] },
+                    { label: 'A1', apiKey: 'k1', enabled: true, fetchedModels: ['[1]claude-opus-4-8'] },
+                    { label: 'A2', apiKey: 'k2', enabled: false, fetchedModels: ['gemini-3.1-pro-preview-thinking'] },
                 ],
             },
         ]));
-        expect(migrated.logicalModels.map(model => model.name)).toEqual(['claude-opus-4-8']);
-        expect(migrated.vendors[0].mappings).toHaveLength(2);
-        expect(migrated.vendors[0].mappings.every(mapping => mapping.logicalModelId === migrated.logicalModels[0].id)).toBe(true);
+        expect(migrated.vendors[0].name).toBe('A');
+        expect(migrated.groups[0].entries.map(entry => ({ apiKey: entry.apiKey, label: entry.label, enabled: entry.enabled }))).toEqual([
+            { apiKey: 'k1', label: 'A1', enabled: true },
+            { apiKey: 'k2', label: 'A2', enabled: false },
+        ]);
+        expect(migrated.groups[0].entries.every(entry => entry.mappings.length === 0)).toBe(true);
     });
 });
 
@@ -133,85 +142,84 @@ describe('domain/vendor health and success weight', () => {
 });
 
 describe('domain/group-routing', () => {
-    it('finds entries carrying logical model within the same migration graph', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [{ label: 'A1', fetchedModels: ['[希希2]grok-4.5'] }, { label: 'A2', fetchedModels: ['[希希2]grok-4.5'] }],
-            },
-        ]));
-        const group = migrated.groups[0];
-        const units = groupUnitsForLogicalModel(migrated.vendors, group, group.currentLogicalModelId);
+    function makeVendor(id: string, name: string, rpm = 0): Vendor {
+        return normalizeVendor({ id, name, rpm });
+    }
+
+    function makeGroupWithEntries(entries: Array<{ id: string; vendorId: string; label: string; enabled?: boolean; mapping?: { realModel: string; logicalModelId: string } }>): Group {
+        return normalizeGroup({
+            currentLogicalModelId: entries[0]?.mapping?.logicalModelId || '',
+            entries: entries.map(entry => ({
+                id: entry.id,
+                vendorId: entry.vendorId,
+                apiKey: `k-${entry.id}`,
+                label: entry.label,
+                enabled: entry.enabled === undefined ? true : entry.enabled,
+                fetchedModels: entry.mapping ? [entry.mapping.realModel] : [],
+                mappings: entry.mapping ? [{ id: `m-${entry.id}`, realModel: entry.mapping.realModel, logicalModelId: entry.mapping.logicalModelId }] : [],
+            })),
+        });
+    }
+
+    it('finds entries carrying logical model within the same group graph', () => {
+        const vendors = [makeVendor('v1', 'A')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: '[希希2]grok-4.5', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v1', label: 'A2', mapping: { realModel: '[希希2]grok-4.5', logicalModelId: 'l1' } },
+        ]);
+        const units = groupUnitsForLogicalModel(vendors, group, 'l1');
         expect(units.length).toBe(2);
         expect(units[0].realModel).toBe('[希希2]grok-4.5');
     });
 
     it('vendor rpm is shared across entries in same group', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [
-                    { label: 'A1', fetchedModels: ['m'], rpm: 1 },
-                    { label: 'A2', fetchedModels: ['m'], rpm: 1 },
-                ],
-            },
-        ]));
-        migrated.vendors[0].rpm = 1;
-        const group = migrated.groups[0];
-        const r1 = routeGroupOnce(migrated.vendors, group, group.currentLogicalModelId, { now: 1000 });
+        const vendors = [makeVendor('v1', 'A', 1)];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v1', label: 'A2', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        const r1 = routeGroupOnce(vendors, group, 'l1', { now: 1000 });
         expect(r1.unit).not.toBeNull();
         expect(r1.unit!.vendor.window).toEqual([1000]);
-        const r2 = routeGroupOnce(migrated.vendors, group, group.currentLogicalModelId, { now: 2000 });
+        const r2 = routeGroupOnce(vendors, group, 'l1', { now: 2000 });
         expect(r2.unit).toBeNull();
         expect(r2.reasons.join()).toContain('rpm');
     });
 
     it('excludes disabled vendor and disabled entry', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [{ label: 'A1', fetchedModels: ['m'] }, { label: 'A2', fetchedModels: ['m'] }],
-            },
-        ]));
-        const group = migrated.groups[0];
-        migrated.vendors[0].enabled = false;
-        expect(candidateGroupUnits(migrated.vendors, group, group.currentLogicalModelId)).toHaveLength(0);
-        migrated.vendors[0].enabled = true;
+        const vendors = [makeVendor('v1', 'A')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v1', label: 'A2', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        vendors[0].enabled = false;
+        expect(candidateGroupUnits(vendors, group, 'l1')).toHaveLength(0);
+        vendors[0].enabled = true;
         group.entries[0].enabled = false;
-        expect(candidateGroupUnits(migrated.vendors, group, group.currentLogicalModelId)).toHaveLength(1);
+        expect(candidateGroupUnits(vendors, group, 'l1')).toHaveLength(1);
     });
 
     it('summarize unavailable lists disabled vendor reasons', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            { name: 'A', endpoint: 'https://a/v1', keys: [{ label: 'A1', fetchedModels: ['m'] }] },
-        ]));
-        const group = migrated.groups[0];
-        migrated.vendors[0].enabled = false;
-        expect(summarizeGroupUnavailable(migrated.vendors, group, group.currentLogicalModelId).join()).toContain('disabled');
+        const vendors = [makeVendor('v1', 'A')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        vendors[0].enabled = false;
+        expect(summarizeGroupUnavailable(vendors, group, 'l1').join()).toContain('disabled');
     });
 
     it('route picks one of available candidates and records vendor rpm', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [{ label: 'A1', fetchedModels: ['m'], rpm: 1 }, { label: 'A2', fetchedModels: ['m'], rpm: 1 }],
-            },
-            { name: 'B', endpoint: 'https://b/v1', keys: [{ label: 'B1', fetchedModels: ['m'], rpm: 1 }] },
-        ]));
-        const group = migrated.groups[0];
-        const result = routeGroupOnce(migrated.vendors, group, group.currentLogicalModelId, { now: 1000 });
+        const vendors = [makeVendor('v1', 'A', 1), makeVendor('v2', 'B', 1)];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v2', label: 'B1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        const result = routeGroupOnce(vendors, group, 'l1', { now: 1000 });
         expect(result.unit).not.toBeNull();
-        // A/B 同权重候选，随机选路选到哪个都合法
         expect(['A', 'B']).toContain(result.unit!.vendor.name);
-        // 被选中 Vendor 的 window 记录了本次选路时间
         expect(result.unit!.vendor.window).toEqual([1000]);
         expect(vendorRpmAvailable(result.unit!.vendor, 2000)).toBe(false);
-        // 未选中的 Vendor 不受影响
-        const other = migrated.vendors.find(vendor => vendor.id !== result.unit!.vendor.id)!;
+        const other = vendors.find(vendor => vendor.id !== result.unit!.vendor.id)!;
         expect(other.window).toEqual([]);
         expect(vendorRpmAvailable(other, 2000)).toBe(true);
     });
@@ -224,26 +232,51 @@ describe('domain/group-routing', () => {
         expect(result.reasons.length).toBeGreaterThan(0);
     });
 
+    it('route only considers entries whose own mappings carry the logical model (per-Key data)', () => {
+        const vendors = normalizeVendors([
+            { id: 'v1', name: 'A' },
+            { id: 'v2', name: 'B' },
+        ]);
+        const group = normalizeGroup({
+            currentLogicalModelId: 'l1',
+            entries: [
+                {
+                    id: 'e1',
+                    vendorId: 'v1',
+                    apiKey: 'k1',
+                    label: 'K1',
+                    enabled: true,
+                    fetchedModels: ['m'],
+                    mappings: [{ id: 'm1', realModel: 'm', logicalModelId: 'l1' }],
+                },
+                {
+                    id: 'e2',
+                    vendorId: 'v2',
+                    apiKey: 'k2',
+                    label: 'K2',
+                    enabled: true,
+                    fetchedModels: ['m'],
+                    mappings: [], // 该 Key 没拉到/没映射该模型 → 不可选
+                },
+            ],
+        });
+        const units = groupUnitsForLogicalModel(vendors, group, 'l1');
+        expect(units).toHaveLength(1);
+        expect(units[0].entry.id).toBe('e1');
+        expect(units[0].vendor.id).toBe('v1');
+    });
+
     it('same logical model can be served by multiple vendors', () => {
-        // 在同一个迁移图里：两个 Vendor 都提供同一个真实模型名，归并到同一个逻辑模型
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'X',
-                endpoint: 'https://x/v1',
-                keys: [{ label: 'K1', fetchedModels: ['grok-4.5'] }],
-            },
-            {
-                name: 'Y',
-                endpoint: 'https://y/v1',
-                keys: [{ label: 'K2', fetchedModels: ['grok-4.5'] }],
-            },
-        ]));
-        const group = migrated.groups[0];
+        const vendors = [makeVendor('v1', 'X'), makeVendor('v2', 'Y')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'K1', mapping: { realModel: 'grok-4.5', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v2', label: 'K2', mapping: { realModel: 'grok-4.5', logicalModelId: 'l1' } },
+        ]);
         expect(group.entries).toHaveLength(2);
-        const units = groupUnitsForLogicalModel(migrated.vendors, group, group.currentLogicalModelId);
+        const units = groupUnitsForLogicalModel(vendors, group, 'l1');
         expect(units.length).toBe(2);
         expect(new Set(units.map(unit => unit.vendor.name))).toEqual(new Set(['X', 'Y']));
-        expect(migrated.vendors[0].id).not.toBe(migrated.vendors[1].id);
+        expect(vendors[0].id).not.toBe(vendors[1].id);
         for (const unit of units) expect(unit.realModel).toBe('grok-4.5');
     });
 });

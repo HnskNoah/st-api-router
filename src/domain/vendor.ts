@@ -41,7 +41,6 @@ function normalizeMappings(raw: unknown): VendorModelMapping[] {
 
 export function normalizeVendor(raw: Record<string, any> | undefined): Vendor {
     const format: VendorFormat = normalizeProviderFormat(raw?.format);
-    const fetchedModels = normalizeModelList(raw?.fetchedModels);
     return {
         id: normalizeText(raw?.id) || makeId('vendor'),
         name: sanitizeName(raw?.name) || 'Vendor',
@@ -58,8 +57,6 @@ export function normalizeVendor(raw: Record<string, any> | undefined): Vendor {
             : VENDOR_WEIGHT_DEFAULT,
         enabled: raw?.enabled === undefined ? true : Boolean(raw.enabled),
         disabledReason: String(raw?.disabledReason ?? '').slice(0, 500),
-        fetchedModels,
-        mappings: normalizeMappings(raw?.mappings),
         window: Array.isArray(raw?.window) ? raw.window.filter((value: unknown) => typeof value === 'number') : [],
         failStreak: Number.isFinite(Number(raw?.failStreak)) && Number(raw?.failStreak) >= 0
             ? Math.floor(Number(raw?.failStreak))
@@ -118,19 +115,19 @@ export function assignRealModel(logicalModels: LogicalModel[], realModel: string
     return model;
 }
 
-/** 拉取后收敛映射：只保留仍在新模型列表中的真实模型映射（以最新拉取结果为权威），返回移除条数。 */
-export function reconcileVendorMappings(vendor: Vendor, models: string[]): number {
+/** 拉取后收敛 Key 级映射：只保留仍在新模型列表中的真实模型映射（以最新拉取结果为权威），返回移除条数。 */
+export function reconcileEntryMappings(entry: GroupEntry, models: string[]): number {
     const kept = new Set(models);
-    const before = vendor.mappings.length;
-    vendor.mappings = vendor.mappings.filter(mapping => kept.has(mapping.realModel));
-    return before - vendor.mappings.length;
+    const before = entry.mappings.length;
+    entry.mappings = entry.mappings.filter(mapping => kept.has(mapping.realModel));
+    return before - entry.mappings.length;
 }
 
-/** 回收孤儿逻辑模型：没有任何 Vendor 映射引用、且未配置自动归类正则的逻辑模型；返回被回收的 id 列表。 */
-export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors: Vendor[]): string[] {
+/** 回收孤儿逻辑模型：没有任何 Key 映射引用、且未配置自动归类正则的逻辑模型；返回被回收的 id 列表。 */
+export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], groups: Group[]): string[] {
     const referenced = new Set<string>();
-    for (const vendor of vendors) {
-        for (const mapping of vendor.mappings) referenced.add(mapping.logicalModelId);
+    for (const entry of allGroupEntries(groups)) {
+        for (const mapping of entry.mappings) referenced.add(mapping.logicalModelId);
     }
     const removed: string[] = [];
     for (let index = logicalModels.length - 1; index >= 0; index--) {
@@ -143,20 +140,19 @@ export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors:
     return removed;
 }
 
-/** 重置模型数据：删光全部逻辑模型、所有 Vendor 的映射与已拉取模型列表，分组当前逻辑模型指针置空。
+/** 重置模型数据：删光全部逻辑模型、所有 Key 的映射与已拉取模型列表，分组当前逻辑模型指针置空。
  *  供"重置模型数据"按钮使用（重置后由前端重新拉取重建）。返回删除的统计。 */
 export function resetModelData(
     logicalModels: LogicalModel[],
-    vendors: Vendor[],
     groups: Group[],
 ): { removedLogicalModels: number; removedMappings: number } {
     const removedLogicalModels = logicalModels.length;
     let removedMappings = 0;
     logicalModels.splice(0, logicalModels.length);
-    for (const vendor of vendors) {
-        removedMappings += vendor.mappings.length;
-        vendor.mappings = [];
-        vendor.fetchedModels = [];
+    for (const entry of allGroupEntries(groups)) {
+        removedMappings += entry.mappings.length;
+        entry.mappings = [];
+        entry.fetchedModels = [];
     }
     for (const group of groups) {
         group.currentLogicalModelId = '';
@@ -164,11 +160,20 @@ export function resetModelData(
     return { removedLogicalModels, removedMappings };
 }
 
-/** 已归类真实模型：所有 Vendor 已有映射的真实模型（跨 Vendor 去重，按名称排序，带归属逻辑模型 id）。 */
-export function mappedRealModels(vendors: Vendor[]): { realModel: string; logicalModelId: string }[] {
+/** 聚合所有 Group 的 Key 条目（模型数据按 Key 级存放）。 */
+export function allGroupEntries(groups: Group[]): GroupEntry[] {
+    const entries: GroupEntry[] = [];
+    for (const group of groups || []) {
+        for (const entry of group?.entries || []) entries.push(entry);
+    }
+    return entries;
+}
+
+/** 已归类真实模型：所有 Key 已有映射的真实模型（跨 Key 去重，按名称排序，带归属逻辑模型 id）。 */
+export function mappedRealModels(groups: Group[]): { realModel: string; logicalModelId: string }[] {
     const byName = new Map<string, string>();
-    for (const vendor of vendors) {
-        for (const mapping of vendor.mappings) {
+    for (const entry of allGroupEntries(groups)) {
+        for (const mapping of entry.mappings) {
             if (byName.has(mapping.realModel)) continue;
             if (!mapping.logicalModelId) continue;
             byName.set(mapping.realModel, mapping.logicalModelId);
@@ -179,15 +184,15 @@ export function mappedRealModels(vendors: Vendor[]): { realModel: string; logica
         .sort((a, b) => a.realModel < b.realModel ? -1 : a.realModel > b.realModel ? 1 : 0);
 }
 
-/** 未归类模型：所有 Vendor 已拉取但无任何映射的真实模型（跨 Vendor 去重，排除特殊变体）。 */
-export function findUnmappedModels(vendors: Vendor[]): string[] {
+/** 未归类模型：所有 Key 已拉取但无任何映射的真实模型（跨 Key 去重，排除特殊变体）。 */
+export function findUnmappedModels(groups: Group[]): string[] {
     const mapped = new Set<string>();
-    for (const vendor of vendors) {
-        for (const mapping of vendor.mappings) mapped.add(mapping.realModel);
+    for (const entry of allGroupEntries(groups)) {
+        for (const mapping of entry.mappings) mapped.add(mapping.realModel);
     }
     const result = new Set<string>();
-    for (const vendor of vendors) {
-        for (const raw of vendor.fetchedModels) {
+    for (const entry of allGroupEntries(groups)) {
+        for (const raw of entry.fetchedModels) {
             const name = String(raw || '').trim();
             if (!name || mapped.has(name) || isSpecialVariant(name)) continue;
             result.add(name);
@@ -196,27 +201,27 @@ export function findUnmappedModels(vendors: Vendor[]): string[] {
     return [...result];
 }
 
-/** 手动补选：给真实模型指定逻辑模型，对所有包含该模型的 Vendor 生效（已存在则更新）。返回受影响的 Vendor 数。 */
-export function assignModelToLogical(vendors: Vendor[], realModel: string, logicalModelId: string): number {
+/** 手动补选：给真实模型指定逻辑模型，对所有包含该模型的 Key 生效（已存在则更新）。返回受影响的 Key 数。 */
+export function assignModelToLogical(groups: Group[], realModel: string, logicalModelId: string): number {
     let touched = 0;
-    for (const vendor of vendors) {
-        if (!vendor.fetchedModels.includes(realModel)) continue;
-        const existing = vendor.mappings.find(mapping => mapping.realModel === realModel);
+    for (const entry of allGroupEntries(groups)) {
+        if (!entry.fetchedModels.includes(realModel)) continue;
+        const existing = entry.mappings.find(mapping => mapping.realModel === realModel);
         if (existing) {
             existing.logicalModelId = logicalModelId;
         } else {
-            vendor.mappings.push({ id: makeId('mapping'), realModel, logicalModelId });
+            entry.mappings.push({ id: makeId('mapping'), realModel, logicalModelId });
         }
         touched++;
     }
     return touched;
 }
 
-/** 模型列表导出（txt）：所有 Vendor 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
-export function buildModelListText(vendors: Vendor[]): string {
+/** 模型列表导出（txt）：所有 Key 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
+export function buildModelListText(groups: Group[]): string {
     const names = new Set<string>();
-    for (const vendor of vendors) {
-        for (const model of vendor.fetchedModels) {
+    for (const entry of allGroupEntries(groups)) {
+        for (const model of entry.fetchedModels) {
             const trimmed = String(model || '').trim();
             if (trimmed) names.add(trimmed);
         }
@@ -242,11 +247,11 @@ export function canonicalModelName(raw: string): string {
 }
 
 /** 从已拉取模型批量创建逻辑模型并自动映射：每个核心模型独立创建一个（渠道/假流式变体合并），跳过 search/thinking/image 变体。
- *  自动映射：核心名匹配的逻辑模型建立后，把未映射的真实模型映射过去（已有映射不动）。返回 created / skipped / mapped 数。 */
+ *  自动映射：核心名匹配的逻辑模型建立后，把各 Key 中未映射的真实模型映射过去（已有映射不动）。返回 created / skipped / mapped 数。 */
 export function buildLogicalModelsFromFetched(
     models: string[],
     logicalModels: LogicalModel[],
-    vendors: Vendor[] = [],
+    groups: Group[] = [],
 ): { created: LogicalModel[]; skipped: string[]; mapped: number } {
     const existingNames = new Set(logicalModels.map(model => model.name));
     const seen = new Set<string>();
@@ -270,10 +275,10 @@ export function buildLogicalModelsFromFetched(
         }
         const target = logicalModels.find(model => model.name === canonical);
         if (!target) continue;
-        for (const vendor of vendors) {
-            if (!vendor.fetchedModels.includes(name)) continue;
-            if (vendor.mappings.some(mapping => mapping.realModel === name)) continue;
-            vendor.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id });
+        for (const entry of allGroupEntries(groups)) {
+            if (!entry.fetchedModels.includes(name)) continue;
+            if (entry.mappings.some(mapping => mapping.realModel === name)) continue;
+            entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id });
             mapped++;
         }
     }
@@ -297,6 +302,8 @@ export function normalizeGroupEntry(raw: Record<string, any> | undefined): Group
         apiKey: normalizeText(raw?.apiKey).slice(0, 2048),
         label: sanitizeName(raw?.label) || 'Key',
         enabled: raw?.enabled === undefined ? true : Boolean(raw.enabled),
+        fetchedModels: normalizeModelList(raw?.fetchedModels),
+        mappings: normalizeMappings(raw?.mappings),
     };
 }
 
@@ -373,26 +380,14 @@ function ensureLogicalModelId(models: Map<string, LogicalModel>, name: string, i
     return model.id;
 }
 
-/** 旧 Provider/Key 过渡实现 → Vendor / LogicalModel / Group 迁移。 */
+/** 旧 Provider/Key 过渡实现 → Vendor / Group 迁移。
+ *  只建立 Vendor 与 GroupEntry（Key）结构：apiKey/label/enabled 保留；旧模型数据（fetchedModels/mappings/逻辑模型）丢弃，等拉取重建。 */
 export function migrateProvidersToVendorModel(providers: Provider[] | undefined): VendorMigrationResult {
     const logicalModels = new Map<string, LogicalModel>();
     const vendors: Vendor[] = [];
     const entries: GroupEntry[] = [];
 
     for (const provider of providers || []) {
-        const vendorMappings: VendorModelMapping[] = [];
-        const fetched = new Set<string>();
-        for (const key of provider?.keys || []) {
-            for (const model of key?.fetchedModels || []) {
-                if (!model) continue;
-                fetched.add(model);
-                // 跳过 search/thinking/image/cache 特殊变体：不建逻辑模型也不建映射（与拉取时一致）
-                if (isSpecialVariant(model)) continue;
-                const canonical = canonicalModelName(model);
-                const logicalId = ensureLogicalModelId(logicalModels, canonical, `lm-${canonical}`);
-                vendorMappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logicalId });
-            }
-        }
         const firstKey = provider?.keys?.[0];
         vendors.push(normalizeVendor({
             id: provider.id,
@@ -402,18 +397,15 @@ export function migrateProvidersToVendorModel(providers: Provider[] | undefined)
             enabled: provider.enabled,
             rpm: firstKey?.rpm ?? VENDOR_RPM_DEFAULT,
             weight: firstKey?.weight ?? VENDOR_WEIGHT_DEFAULT,
-            fetchedModels: [...fetched],
-            mappings: vendorMappings,
             updatedAt: provider.updatedAt,
         }));
         for (const key of provider?.keys || []) {
-            entries.push({
-                id: makeId('group-entry'),
+            entries.push(normalizeGroupEntry({
                 vendorId: provider.id,
                 apiKey: key.apiKey,
                 label: key.label || 'Key',
                 enabled: key.enabled,
-            });
+            }));
         }
     }
 

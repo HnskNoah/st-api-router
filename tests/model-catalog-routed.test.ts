@@ -1,13 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { isRoutedModel } from '../src/domain/model-catalog.js';
-import { migrateProvidersToVendorModel, normalizeLogicalModels } from '../src/domain/vendor.js';
+import { normalizeGroup, normalizeLogicalModels } from '../src/domain/vendor.js';
 import { normalizeProviders } from '../src/domain/provider.js';
 
-function sampleVendors() {
-    const migrated = migrateProvidersToVendorModel(normalizeProviders([
-        { name: 'A', endpoint: 'https://a/v1', keys: [{ label: 'A1', fetchedModels: ['[希希2]grok-4.5'] }] },
-    ]));
-    return migrated.vendors;
+function sampleGroups() {
+    return [normalizeGroup({
+        entries: [{
+            vendorId: 'v1',
+            apiKey: 'k1',
+            label: 'K1',
+            fetchedModels: ['[希希2]grok-4.5'],
+            mappings: [{ id: 'm1', realModel: '[希希2]grok-4.5', logicalModelId: 'lm-grok-4.5' }],
+        }],
+    })];
 }
 
 describe('model-catalog isRoutedModel', () => {
@@ -19,16 +24,16 @@ describe('model-catalog isRoutedModel', () => {
         expect(isRoutedModel(providers, [], [], 'other')).toBe(false);
     });
 
-    it('matches real model names from vendor mappings', () => {
-        const vendors = sampleVendors();
-        const logicalModels = normalizeLogicalModels([{ id: 'lm-[希希2]grok-4.5', name: '[希希2]grok-4.5' }]);
-        expect(isRoutedModel([], vendors, logicalModels, '[希希2]grok-4.5')).toBe(true);
+    it('matches real model names from Key-level mappings', () => {
+        const groups = sampleGroups();
+        const logicalModels = normalizeLogicalModels([{ id: 'lm-grok-4.5', name: 'Grok 4.5' }]);
+        expect(isRoutedModel([], groups, logicalModels, '[希希2]grok-4.5')).toBe(true);
     });
 
-    it('matches logical model ids even when no vendor carries the raw name', () => {
-        const vendors = sampleVendors();
+    it('matches logical model ids even when no Key carries the raw name', () => {
+        const groups = sampleGroups();
         const logicalModels = normalizeLogicalModels([{ id: 'lm-grok-4.5', name: 'Grok 4.5' }]);
-        expect(isRoutedModel([], vendors, logicalModels, 'lm-grok-4.5')).toBe(true);
+        expect(isRoutedModel([], groups, logicalModels, 'lm-grok-4.5')).toBe(true);
     });
 
     it('returns false for empty inputs and unknown models', () => {

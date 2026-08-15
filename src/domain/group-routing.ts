@@ -38,13 +38,14 @@ export function groupUnitUnavailabilityReason(unit: GroupRouteUnit, now: number)
     return null;
 }
 
-/** 该 Group 中能承载指定逻辑模型的所有条目（不做可用性过滤）。 */
+/** 该 Group 中能承载指定逻辑模型的所有条目（不做可用性过滤）。
+ *  模型数据按 Key 级存放：只有该 Key 自己的 mappings 含该逻辑模型才可承载（部分模型只在特定 Key 上可获取）。 */
 export function groupUnitsForLogicalModel(vendors: Vendor[], group: Group | null | undefined, logicalModelId: string): GroupRouteUnit[] {
     if (!group || !logicalModelId || !Array.isArray(group.entries)) return [];
     const units: GroupRouteUnit[] = [];
     for (const entry of group.entries) {
         const vendor = (vendors || []).find(item => item.id === entry.vendorId);
-        const mapping = vendor?.mappings?.find(item => item.logicalModelId === logicalModelId);
+        const mapping = entry?.mappings?.find(item => item.logicalModelId === logicalModelId);
         if (!vendor || !mapping) continue;
         units.push({ vendor, entry, mapping, realModel: mapping.realModel });
     }

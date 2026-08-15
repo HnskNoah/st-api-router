@@ -1,6 +1,6 @@
 // Vendor / LogicalModel / Group 管理面板。
 // deps 由 lifecycle 注入，避免循环 import。
-// 模型获取复用宿主后端通道（/api/backends/chat-completions/status），并把结果落到 vendor.fetchedModels。
+// 模型获取复用宿主后端通道（/api/backends/chat-completions/status），并把结果落到 entry.fetchedModels。
 
 import { getRequestHeaders } from '@sillytavern/script';
 import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
@@ -19,7 +19,7 @@ import {
     normalizeLogicalModel,
     normalizeVendor,
     pruneOrphanLogicalModels,
-    reconcileVendorMappings,
+    reconcileEntryMappings,
     resetModelData,
 } from '../domain/vendor.js';
 import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
@@ -307,6 +307,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             $('<span class="st-router-key-col">').text('Vendor'),
             $('<span class="st-router-key-col" style="flex:2 1 0;">').text('Key'),
             $('<span class="st-router-key-col">').text('名称'),
+            $('<span class="st-router-key-col" style="flex:0 0 54px;">').text('模型数'),
             $('<span class="st-router-key-col" style="flex:0 0 30px;">').text('启用'),
             $('<span class="st-router-key-col" style="flex:0 0 26px;">').text('拉取'),
             $('<span class="st-router-key-col" style="flex:0 0 26px;">'),
@@ -343,6 +344,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     entry.label = String($(this).val() ?? '').trim() || 'Key';
                     deps.save();
                 });
+            const modelCount = $('<span class="st-router-key-col" title="该 Key 已拉取的模型数">').text(`${entry.fetchedModels.length} 模型`);
             const enabled = $('<input type="checkbox" title="启用该 Key">').prop('checked', entry.enabled)
                 .on('change', function () {
                     entry.enabled = $(this).prop('checked');
@@ -360,7 +362,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         toastr.warning(`请先填写 Vendor「${vendor.name}」的 Key 再拉取。`);
                         return;
                     }
-                    const models = await fetchModelsForVendor(vendor, key);
+                    const models = await fetchModelsForVendor(vendor, entry);
                     if (!models) return;
                     renderProviderList();
                     renderGroupEntries();
@@ -374,7 +376,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     renderGroupEntries();
                     renderGroupSummary();
                 });
-            row.append(vendorSelect, keyInput, labelInput, enabled, fetchBtn, removeBtn);
+            row.append(vendorSelect, keyInput, labelInput, modelCount, enabled, fetchBtn, removeBtn);
             groupEntriesList.append(row);
         }
     }
@@ -393,7 +395,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         refreshLogicalOptionsHtml();
         const group = activeGroup();
         const models = deps.getLogicalModels();
-        const vendors = deps.getVendors();
+        const entries = deps.getGroups().flatMap(item => item.entries);
         logicalList.empty();
         const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
         const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
@@ -411,10 +413,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             for (const model of models) {
                 const chip = $('<button class="st-router-model-chip" type="button"></button>')
                     .append($('<span class="st-router-model-name">').text(model.name));
-                const mappedVendors = vendors.filter(vendor => vendor.mappings.some(mapping => mapping.logicalModelId === model.id));
-                const mappedCount = mappedVendors.reduce((sum, vendor) => sum + vendor.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
+                const mappedEntries = entries.filter(entry => entry.mappings.some(mapping => mapping.logicalModelId === model.id));
+                const mappedCount = mappedEntries.reduce((sum, entry) => sum + entry.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
                 chip.append($('<span class="st-router-model-providers">').text(
-                    model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor` : `${mappedCount} 个模型 · ${mappedVendors.length} 个 Vendor`,
+                    model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedEntries.length} 个 Key` : `${mappedCount} 个模型 · ${mappedEntries.length} 个 Key`,
                 ));
                 if (group?.currentLogicalModelId === model.id) chip.addClass('is-selected');
                 chip.attr('title', group ? '点击设为当前分组的逻辑模型' : '');
@@ -473,12 +475,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         toastr.warning('请先为模型选择逻辑模型。');
                         return;
                     }
-                    const touched = assignModelToLogical(deps.getVendors(), realModel, logicalId);
+                    const touched = assignModelToLogical(deps.getGroups(), realModel, logicalId);
                     if (touched > 0) {
                         deps.save();
                         renderModelList();
                         renderGroupSummary();
-                        toastr.success(`已为「${realModel}」更新归属（影响 ${touched} 个 Vendor）。`);
+                        toastr.success(`已为「${realModel}」更新归属（影响 ${touched} 个 Key）。`);
                     }
                 });
             ops.append(select, applyBtn);
@@ -499,7 +501,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     }
 
     function renderMapped(): void {
-        const mapped = mappedRealModels(deps.getVendors());
+        const mapped = mappedRealModels(deps.getGroups());
         mappedList.empty();
         const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
         const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
@@ -540,7 +542,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     }
 
     function renderUnmapped(): void {
-        const unmapped = findUnmappedModels(deps.getVendors());
+        const unmapped = findUnmappedModels(deps.getGroups());
         unmappedList.empty();
         const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
         const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
@@ -618,8 +620,15 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     deps.save();
                 });
             info.append(endpointInput);
+            const vendorModels = new Set<string>();
+            for (const group of deps.getGroups()) {
+                for (const entry of group.entries) {
+                    if (entry.vendorId !== vendor.id) continue;
+                    for (const model of entry.fetchedModels) vendorModels.add(model);
+                }
+            }
             info.append($('<span class="st-router-provider-meta">').text(
-                `${FORMAT_LABELS[vendor.format] ?? vendor.format} · rpm ${vendor.rpm === 0 ? '∞' : vendor.rpm} · 上下文 ${vendor.maxContext || '不限制'} · 已拉取 ${vendor.fetchedModels.length} 个模型 · 成功率 ${successRateText(vendor)}`,
+                `${FORMAT_LABELS[vendor.format] ?? vendor.format} · rpm ${vendor.rpm === 0 ? '∞' : vendor.rpm} · 上下文 ${vendor.maxContext || '不限制'} · 已拉取 ${vendorModels.size} 个模型 · 成功率 ${successRateText(vendor)}`,
             ));
             if (vendor.disabledReason) info.append($('<span class="st-router-provider-meta">').text(`已停用：${vendor.disabledReason}`));
             row.append(info);
@@ -659,13 +668,14 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         return $('<div class="quicker-api__field"></div>').append(label, control);
     }
 
-    async function fetchModelsForVendor(vendor: Vendor, key: string): Promise<string[] | null> {
+    async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): Promise<string[] | null> {
+        const key = entry.apiKey;
         const isDeepseek = vendor.format === 'deepseek';
         const secretKey = isDeepseek ? SECRET_KEYS.DEEPSEEK : SECRET_KEYS.CUSTOM;
         let previousActiveId = '';
         try {
             const authoritative = await readAuthoritativeSecretState();
-            previousActiveId = String((authoritative?.[secretKey] || []).find((entry: any) => entry.active)?.id || '');
+            previousActiveId = String((authoritative?.[secretKey] || []).find((item: any) => item.active)?.id || '');
             let secretId: string | null = null;
             if (key) {
                 secretId = await writeSecret(secretKey, key, `quicker-api:${vendor.name}`);
@@ -688,28 +698,29 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             const raw = statusData?.data;
             const list: any[] = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
             const models: string[] = [...new Set(list.map((item: any) => String(item?.id || item?.model || '').trim()).filter(Boolean))].slice(0, 1000);
-            vendor.fetchedModels = models;
+            entry.fetchedModels = models;
             for (const model of models) {
                 // 跳过 search/thinking/image/cache 特殊变体：不建逻辑模型也不建映射
                 if (isSpecialVariant(model)) continue;
                 const logical = assignRealModel(deps.getLogicalModels(), model);
-                if (!vendor.mappings.some(mapping => mapping.realModel === model)) {
-                    vendor.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id });
+                if (!entry.mappings.some(mapping => mapping.realModel === model)) {
+                    entry.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id });
                 }
             }
-            // 以最新拉取结果为权威：清除该 Vendor 不再存在的真实模型映射，并回收孤儿逻辑模型
-            reconcileVendorMappings(vendor, models);
-            pruneOrphanLogicalModels(deps.getLogicalModels(), deps.getVendors());
+            // 以最新拉取结果为权威：清除该 Key 不再存在的真实模型映射，并回收孤儿逻辑模型
+            reconcileEntryMappings(entry, models);
+            pruneOrphanLogicalModels(deps.getLogicalModels(), deps.getGroups());
             deps.save();
             return models;
         } catch (error) {
             console.error('[QuickerApi] fetch vendor models failed:', error);
             const message = error instanceof Error ? error.message : String(error);
-            // 拉取失败视为该 Vendor 数据失效：清空已拉取模型与映射，避免残留旧模型一直显示
-            vendor.fetchedModels = [];
-            vendor.mappings = [];
+            // 拉取失败视为该 Key 失效：禁用该 Key（enabled=false），保留其他 Key 的模型数据
+            entry.enabled = false;
+            entry.fetchedModels = [];
+            entry.mappings = [];
             deps.save();
-            toastr.error(`Vendor「${vendor.name}」获取模型失败，已清空其模型数据：${message}。`);
+            toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）获取模型失败，已禁用该 Key：${message}。`);
             return null;
         } finally {
             // 恢复拉取前活动密钥，避免临时 Key 残留占用 ST 密钥槽
@@ -721,12 +732,14 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         }
     }
 
-    function firstKeyForVendor(vendor: Vendor): string {
+    function enabledEntriesForVendor(vendor: Vendor): GroupEntry[] {
+        const entries: GroupEntry[] = [];
         for (const group of deps.getGroups()) {
-            const entry = group.entries.find(item => item.vendorId === vendor.id && item.apiKey);
-            if (entry) return entry.apiKey;
+            for (const entry of group.entries) {
+                if (entry.vendorId === vendor.id && entry.apiKey && entry.enabled) entries.push(entry);
+            }
         }
-        return '';
+        return entries;
     }
 
     /** 拉取间隔抖动：200~400ms 随机，避免多个 Vendor 连发触发限流。 */
@@ -750,50 +763,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const weightInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.weight);
         const enabledCheck = $('<input type="checkbox">').prop('checked', draft.enabled);
 
-        const mappingList = $('<div class="st-router-list"></div>');
-        const logicalOptions = () => {
-            const options = deps.getLogicalModels().map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
-            return `<option value="">— 选择逻辑模型 —</option>${options}`;
-        };
-        const renderMappings = () => {
-            mappingList.empty();
-            for (const mapping of draft.mappings) {
-                const row = $('<div class="st-router-key-row"></div>');
-                const realInput = $('<input class="text_pole" type="text" maxlength="500">').val(mapping.realModel);
-                const logicalSelect = $('<select class="text_pole"></select>').html(logicalOptions()).val(mapping.logicalModelId);
-                realInput.on('input', function () { mapping.realModel = String($(this).val() ?? '').trim(); });
-                logicalSelect.on('change', function () { mapping.logicalModelId = String($(this).val() || ''); });
-                const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除映射"><i class="fa-solid fa-trash"></i></button>')
-                    .on('click', () => {
-                        draft.mappings = draft.mappings.filter(item => item.id !== mapping.id);
-                        renderMappings();
-                    });
-                row.append(realInput, logicalSelect, removeBtn);
-                mappingList.append(row);
-            }
-        };
-        renderMappings();
-
-        const addMappingBtn = $('<button class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>添加映射</span></button>')
-            .on('click', () => {
-                draft.mappings.push({ id: makeId('mapping'), realModel: '', logicalModelId: '' });
-                renderMappings();
-            });
-        const fetchBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-arrows-rotate"></i><span>拉取模型并自动映射</span></button>')
-            .on('click', async () => {
-                draft.endpoint = String(endpointInput.val() ?? '').trim();
-                draft.format = String(formatSelect.val() || 'custom') as Vendor['format'];
-                const realKey = firstKeyForVendor(draft);
-                if (!realKey) {
-                    toastr.warning('该 Vendor 尚未配置 Key：请先在上方分组条目中填写该 Vendor 的真实 Key。');
-                    return;
-                }
-                const models = await fetchModelsForVendor(draft, realKey);
-                if (!models) return;
-                renderMappings();
-                toastr.success(`Vendor「${draft.name}」获取 ${models.length} 个模型。`);
-            });
-
         content.append(
             field('名称', nameInput, '列表里用于识别，不会发给站点'),
             field('格式', formatSelect, '决定请求协议：Custom 走 OpenAI 兼容接口；DeepSeek 走 ST 原生 DeepSeek 源'),
@@ -802,12 +771,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             field('最大上下文（0 = 不限制）', contextInput, '路由到该 Vendor 时，SillyTavern 的上下文上限会被钳制到不超过这个值（防止超出站点上下文）'),
             field('权重', weightInput, '选路权重：数值越大越容易被随机选中（实际概率还会叠加历史成功率加成）'),
             $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用（参与路由）'),
-            field('模型映射', $('<div></div>').append(
-                $('<div class="st-router-empty">').text('点击下方按钮，用分组条目里该 Vendor 的真实 Key 拉取模型并自动建立映射。'),
-                mappingList,
-                addMappingBtn,
-                fetchBtn,
-            ), '把该 Vendor 的真实模型名（如 [希希2]grok-4.5）归并到你选定的逻辑模型；多个 Vendor 可映射到同一个逻辑模型'),
+            field('模型数据', $('<div class="st-router-empty">').text('模型列表与归属按 Key 单独存放。请在"当前分组 Key"中为每个 Key 拉取模型，再到"逻辑模型"区的真实模型胶囊里归类。'), '每个 Key 独立保存它拉到的模型；同一个 Vendor 的不同 Key 可能拿到不同模型列表'),
         );
 
         const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
@@ -869,7 +833,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderEntries();
         const addEntryBtn = $('<button class="menu_button st-router-add" type="button"><i class="fa-solid fa-plus"></i><span>添加 Vendor + Key</span></button>')
             .on('click', () => {
-                draft.entries.push({ id: makeId('group-entry'), vendorId: '', apiKey: '', label: 'Key', enabled: true });
+                draft.entries.push({ id: makeId('group-entry'), vendorId: '', apiKey: '', label: 'Key', enabled: true, fetchedModels: [], mappings: [] });
                 renderEntries();
             });
 
@@ -933,7 +897,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         testInput.on('keydown', event => { if (event.key === 'Enter') runTest(); });
         testRow.append(testInput, testBtn, testResult);
 
-        const mappingCount = isNew ? null : deps.getVendors().reduce((sum, vendor) => sum + vendor.mappings.filter(mapping => mapping.logicalModelId === draft.id).length, 0);
+        const mappingCount = isNew ? null : deps.getGroups().reduce((sum, group) => sum + group.entries.reduce((entrySum, entry) => entrySum + entry.mappings.filter(mapping => mapping.logicalModelId === draft.id).length, 0), 0);
 
         content.append(
             field('名称', nameInput, '逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型'),
@@ -1026,24 +990,28 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         let skipped = 0;
         const failed: string[] = [];
         try {
-            for (let index = 0; index < vendors.length; index++) {
-                const vendor = vendors[index];
-                const key = firstKeyForVendor(vendor);
-                if (!key) {
+            const workItems: { vendor: Vendor; entry: GroupEntry }[] = [];
+            for (const vendor of vendors) {
+                const entries = enabledEntriesForVendor(vendor);
+                if (entries.length === 0) {
                     skipped++;
                     continue;
                 }
-                const models = await fetchModelsForVendor(vendor, key);
+                for (const entry of entries) workItems.push({ vendor, entry });
+            }
+            for (let index = 0; index < workItems.length; index++) {
+                const { vendor, entry } = workItems[index];
+                const models = await fetchModelsForVendor(vendor, entry);
                 if (models) ok++;
-                else failed.push(vendor.name);
-                if (index < vendors.length - 1) await jitterDelay();
+                else failed.push(`${vendor.name} / ${entry.label || 'Key'}`);
+                if (index < workItems.length - 1) await jitterDelay();
             }
             renderProviderList();
             renderGroupEntries();
             renderModelList();
             renderGroupSummary();
             const parts = [`成功 ${ok} 个`];
-            if (skipped > 0) parts.push(`无 Key 跳过 ${skipped} 个`);
+            if (skipped > 0) parts.push(`无可用 Key 跳过 ${skipped} 个 Vendor`);
             if (failed.length > 0) parts.push(`失败 ${failed.length} 个（${failed.join('、')}）`);
             toastr.success(`模型刷新完成：${parts.join('，')}。`);
         } finally {
@@ -1059,7 +1027,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         }
         const confirmed = await Popup.show.confirm(
             '重置模型数据',
-            `将删除全部逻辑模型（${logicalCount} 个）、所有 Vendor 的模型映射与已拉取列表（${vendors.length} 个 Vendor），然后重新拉取重建。此操作不可撤销，确定继续？`,
+            `将删除全部逻辑模型（${logicalCount} 个）、所有 Key 的模型映射与已拉取列表，然后重新拉取重建。此操作不可撤销，确定继续？`,
         );
         if (!confirmed) return;
         const btn = panel.find('#st_router_reset_models');
@@ -1068,23 +1036,27 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         let skipped = 0;
         const failed: string[] = [];
         try {
-            const stats = resetModelData(deps.getLogicalModels(), deps.getVendors(), deps.getGroups());
+            const stats = resetModelData(deps.getLogicalModels(), deps.getGroups());
             deps.save();
             renderProviderList();
             renderGroupEntries();
             renderModelList();
             renderGroupSummary();
-            for (let index = 0; index < vendors.length; index++) {
-                const vendor = vendors[index];
-                const key = firstKeyForVendor(vendor);
-                if (!key) {
+            const workItems: { vendor: Vendor; entry: GroupEntry }[] = [];
+            for (const vendor of vendors) {
+                const entries = enabledEntriesForVendor(vendor);
+                if (entries.length === 0) {
                     skipped++;
                     continue;
                 }
-                const models = await fetchModelsForVendor(vendor, key);
+                for (const entry of entries) workItems.push({ vendor, entry });
+            }
+            for (let index = 0; index < workItems.length; index++) {
+                const { vendor, entry } = workItems[index];
+                const models = await fetchModelsForVendor(vendor, entry);
                 if (models) ok++;
-                else failed.push(vendor.name);
-                if (index < vendors.length - 1) await jitterDelay();
+                else failed.push(`${vendor.name} / ${entry.label || 'Key'}`);
+                if (index < workItems.length - 1) await jitterDelay();
             }
             renderProviderList();
             renderGroupEntries();
@@ -1092,7 +1064,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             renderGroupSummary();
             const parts = [`已删除 ${stats.removedLogicalModels} 个逻辑模型、${stats.removedMappings} 条映射`];
             parts.push(`重新拉取成功 ${ok} 个`);
-            if (skipped > 0) parts.push(`无 Key 跳过 ${skipped} 个`);
+            if (skipped > 0) parts.push(`无可用 Key 跳过 ${skipped} 个 Vendor`);
             if (failed.length > 0) parts.push(`失败 ${failed.length} 个（${failed.join('、')}）`);
             toastr.success(`模型数据已重置：${parts.join('，')}。`);
         } finally {
@@ -1101,14 +1073,16 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     });
     panel.find('#st_router_build_logical').on('click', () => {
         const allModels: string[] = [];
-        for (const vendor of deps.getVendors()) {
-            for (const model of vendor.fetchedModels) allModels.push(model);
+        for (const group of deps.getGroups()) {
+            for (const entry of group.entries) {
+                for (const model of entry.fetchedModels) allModels.push(model);
+            }
         }
         if (allModels.length === 0) {
             toastr.info('还没有已拉取的模型。先在"当前分组 Key"里点 ↻ 拉取模型，再回来创建逻辑模型。');
             return;
         }
-        const { created, skipped, mapped } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels(), deps.getVendors());
+        const { created, skipped, mapped } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels(), deps.getGroups());
         if (created.length === 0 && mapped === 0) {
             toastr.info(skipped.length > 0 ? `无新模型可创建（${skipped.length} 个 search/thinking/image 变体已跳过）。` : '逻辑模型已是最新，无需创建。');
             return;
@@ -1122,7 +1096,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         toastr.success(`${parts.join('，')}。`);
     });
     panel.find('#st_router_export_models').on('click', () => {
-        const text = buildModelListText(deps.getVendors());
+        const text = buildModelListText(deps.getGroups());
         const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
@@ -1174,7 +1148,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             toastr.warning('请先新增 Vendor。');
             return;
         }
-        group.entries.push({ id: makeId('group-entry'), vendorId: deps.getVendors()[0].id, apiKey: '', label: 'Key', enabled: true });
+        group.entries.push({ id: makeId('group-entry'), vendorId: deps.getVendors()[0].id, apiKey: '', label: 'Key', enabled: true, fetchedModels: [], mappings: [] });
         deps.save();
         renderGroupEntries();
         renderGroupSummary();

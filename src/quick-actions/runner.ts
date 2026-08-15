@@ -141,7 +141,7 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
                 switchedLogicalModel = logical;
             } else {
                 // 路由命中的真实模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
-                const routedModel = routingSettings().enabled && isRoutedModel(providers(), vendors(), logicalModels(), action.model);
+                const routedModel = routingSettings().enabled && isRoutedModel(providers(), groups(), logicalModels(), action.model);
                 const applied = routedModel
                     ? setRoutedModel(action.model)
                     : applyExplicitModel(action.model, profile?.format || '');
