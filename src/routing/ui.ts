@@ -48,7 +48,18 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 text-align: center; cursor: help; vertical-align: middle;
             }
             .st-router-key-row--header { font-size: 12px; color: #888; border-bottom: 1px solid #444; }
-            .st-router-provider-endpoint { min-width: 280px; margin-left: 8px; }
+            .st-router-key-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
+            .st-router-key-row > select.text_pole { flex: 1 1 140px; min-width: 110px; }
+            .st-router-key-row > input[type="password"] { flex: 2 1 200px; min-width: 150px; }
+            .st-router-key-row > input[type="text"] { flex: 1 1 100px; min-width: 80px; }
+            .st-router-key-row > input[type="checkbox"] { flex: none; }
+            .st-router-key-row > .menu_button { flex: none; }
+            .st-router-provider { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+            .st-router-provider-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+            .st-router-provider-name { flex: none; font-weight: 600; white-space: nowrap; }
+            .st-router-provider-endpoint { flex: 1 1 220px; min-width: 180px; }
+            .st-router-provider-meta { flex-basis: 100%; font-size: 12px; color: #888; opacity: 0.85; }
+            .st-router-provider-actions { flex: none; display: flex; gap: 4px; }
         `).appendTo(document.head);
     }
     const panel = $(`
