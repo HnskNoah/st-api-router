@@ -12,7 +12,10 @@ import {
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
+    pruneOrphanLogicalModels,
+    reconcileVendorMappings,
 } from '../domain/vendor.js';
+import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
 export interface RoutingUIDeps {
@@ -452,7 +455,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     async function fetchModelsForVendor(vendor: Vendor, key: string): Promise<string[] | null> {
         const isDeepseek = vendor.format === 'deepseek';
         const secretKey = isDeepseek ? SECRET_KEYS.DEEPSEEK : SECRET_KEYS.CUSTOM;
+        let previousActiveId = '';
         try {
+            const authoritative = await readAuthoritativeSecretState();
+            previousActiveId = String((authoritative?.[secretKey] || []).find((entry: any) => entry.active)?.id || '');
             let secretId: string | null = null;
             if (key) {
                 secretId = await writeSecret(secretKey, key, `quicker-api:${vendor.name}`);
@@ -482,6 +488,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     vendor.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id });
                 }
             }
+            // 以最新拉取结果为权威：清除该 Vendor 不再存在的真实模型映射，并回收孤儿逻辑模型
+            reconcileVendorMappings(vendor, models);
+            pruneOrphanLogicalModels(deps.getLogicalModels(), deps.getVendors());
             deps.save();
             return models;
         } catch (error) {
@@ -489,6 +498,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             const message = error instanceof Error ? error.message : String(error);
             toastr.error(`Vendor「${vendor.name}」获取模型失败：${message}。`);
             return null;
+        } finally {
+            // 恢复拉取前活动密钥，避免临时 Key 残留占用 ST 密钥槽
+            if (previousActiveId) {
+                await rotateSecretVerified(secretKey, previousActiveId);
+            } else {
+                await ensureEmptySecret(secretKey);
+            }
         }
     }
 

@@ -113,6 +113,31 @@ export function assignRealModel(logicalModels: LogicalModel[], realModel: string
     return model;
 }
 
+/** 拉取后收敛映射：只保留仍在新模型列表中的真实模型映射（以最新拉取结果为权威），返回移除条数。 */
+export function reconcileVendorMappings(vendor: Vendor, models: string[]): number {
+    const kept = new Set(models);
+    const before = vendor.mappings.length;
+    vendor.mappings = vendor.mappings.filter(mapping => kept.has(mapping.realModel));
+    return before - vendor.mappings.length;
+}
+
+/** 回收孤儿逻辑模型：没有任何 Vendor 映射引用、且未配置自动归类正则的逻辑模型；返回被回收的 id 列表。 */
+export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors: Vendor[]): string[] {
+    const referenced = new Set<string>();
+    for (const vendor of vendors) {
+        for (const mapping of vendor.mappings) referenced.add(mapping.logicalModelId);
+    }
+    const removed: string[] = [];
+    for (let index = logicalModels.length - 1; index >= 0; index--) {
+        const model = logicalModels[index];
+        if (!referenced.has(model.id) && !String(model.matchPattern || '').trim()) {
+            removed.push(model.id);
+            logicalModels.splice(index, 1);
+        }
+    }
+    return removed;
+}
+
 export function normalizeLogicalModels(raw: unknown): LogicalModel[] {
     if (!Array.isArray(raw)) return [];
     const seen = new Set<string>();
