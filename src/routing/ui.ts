@@ -60,6 +60,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             .st-router-provider-endpoint { flex: 1 1 220px; min-width: 180px; }
             .st-router-provider-meta { flex-basis: 100%; font-size: 12px; color: #888; opacity: 0.85; }
             .st-router-provider-actions { flex: none; display: flex; gap: 4px; }
+            .st-router-editor { max-height: 70vh; overflow-y: auto; padding-right: 4px; }
         `).appendTo(document.head);
     }
     const panel = $(`
@@ -367,7 +368,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const contextInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.maxContext);
         const weightInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.weight);
         const enabledCheck = $('<input type="checkbox">').prop('checked', draft.enabled);
-        const keyInput = $('<input class="text_pole" type="password" autocomplete="off" placeholder="拉取模型用 Key（不强制保存）">').val(firstKeyForVendor(draft));
 
         const mappingList = $('<div class="st-router-list"></div>');
         const logicalOptions = () => {
@@ -402,7 +402,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             .on('click', async () => {
                 draft.endpoint = String(endpointInput.val() ?? '').trim();
                 draft.format = String(formatSelect.val() || 'custom') as Vendor['format'];
-                const models = await fetchModelsForVendor(draft, String(keyInput.val() ?? '').trim());
+                const realKey = firstKeyForVendor(draft);
+                if (!realKey) {
+                    toastr.warning('该 Vendor 尚未配置 Key：请先在上方分组条目中填写该 Vendor 的真实 API Key。');
+                    return;
+                }
+                const models = await fetchModelsForVendor(draft, realKey);
                 if (!models) return;
                 renderMappings();
                 toastr.success(`Vendor「${draft.name}」获取 ${models.length} 个模型。`);
@@ -410,16 +415,19 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
         content.append(
             field('名称', nameInput, '列表里用于识别，不会发给站点'),
-            field('格式', formatSelect, '决定请求协议：Custom 走 OpenAI 兼容接口；Custom Responses 走 OpenAI Responses 接口；DeepSeek 走 ST 原生 DeepSeek 源'),
+            field('格式', formatSelect, '决定请求协议：Custom 走 OpenAI 兼容接口；DeepSeek 走 ST 原生 DeepSeek 源'),
             field('Endpoint', endpointInput, '站点 API 地址。custom 系列填 Base URL（如 https://api.xxx.com/v1）；deepseek 填反代地址'),
             field('RPM 上限（0 = 不限）', rpmInput, '该 Vendor 每分钟最多请求次数，所有分组共享此限制'),
             field('最大上下文（0 = 不限制）', contextInput, '路由到该 Vendor 时，SillyTavern 的上下文上限会被钳制到不超过这个值（防止超出站点上下文）'),
             field('权重', weightInput, '选路权重：数值越大越容易被随机选中（实际概率还会叠加历史成功率加成）'),
-            field('拉取模型用 Key', keyInput, '仅供拉取模型列表使用，不会保存到设置；真正请求用的 Key 在下方"当前分组条目"里填'),
             $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用（参与路由）'),
-            field('模型映射', $('<div></div>').append(mappingList, addMappingBtn), '把该 Vendor 的真实模型名（如 [希希2]grok-4.5）归并到你选定的逻辑模型；多个 Vendor 可映射到同一个逻辑模型'),
+            field('模型映射', $('<div></div>').append(
+                $('<div class="quicker-api__status">').text('点击下方按钮，用分组条目里该 Vendor 的真实 API Key 拉取模型并自动建立映射。'),
+                mappingList,
+                addMappingBtn,
+                fetchBtn,
+            ), '把该 Vendor 的真实模型名（如 [希希2]grok-4.5）归并到你选定的逻辑模型；多个 Vendor 可映射到同一个逻辑模型'),
         );
-        content.append(fetchBtn);
 
         const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
         const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
