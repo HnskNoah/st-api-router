@@ -10,7 +10,7 @@ import type { Provider, ProviderFormat, ProviderKey } from '../types.js';
 
 export const PROVIDER_RPM_DEFAULT = 3;
 export const PROVIDER_WEIGHT_DEFAULT = 1;
-export const PROVIDER_FORMATS: ProviderFormat[] = ['custom', 'custom-responses', 'deepseek'];
+export const PROVIDER_FORMATS: ProviderFormat[] = ['custom', 'deepseek'];
 
 export function normalizeProviderFormat(value: unknown): ProviderFormat {
     const v = String(value ?? '').trim();

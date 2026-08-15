@@ -6,8 +6,8 @@ import type { Provider } from '../src/types.js';
 describe('domain/provider', () => {
     it('normalizeProviderFormat validates formats', () => {
         expect(normalizeProviderFormat('custom')).toBe('custom');
-        expect(normalizeProviderFormat('custom-responses')).toBe('custom-responses');
         expect(normalizeProviderFormat('deepseek')).toBe('deepseek');
+        expect(normalizeProviderFormat('custom-responses')).toBe('custom'); // 已移除的格式回退 custom
         expect(normalizeProviderFormat('openai')).toBe('custom');
         expect(normalizeProviderFormat('')).toBe('custom');
         expect(normalizeProviderFormat(undefined)).toBe('custom');

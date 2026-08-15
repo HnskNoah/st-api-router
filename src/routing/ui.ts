@@ -24,7 +24,7 @@ export interface RoutingUIDeps {
     save(): void;
 }
 
-const FORMAT_LABELS: Record<string, string> = { 'custom': 'OpenAI 兼容', 'custom-responses': 'OpenAI Responses', 'deepseek': 'DeepSeek' };
+const FORMAT_LABELS: Record<string, string> = { 'custom': 'OpenAI 兼容', 'deepseek': 'DeepSeek' };
 
 function statusBadge(reason: string | null): string {
     const label: Record<string, string> = { disabled: '禁用', rpm: '限流' };
@@ -301,7 +301,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             const statusBody: Record<string, any> = {
                 chat_completion_source: isDeepseek ? 'deepseek' : 'custom',
-                custom_api_format: vendor.format === 'custom-responses' ? 'openai_responses' : 'openai_compat',
+                custom_api_format: 'openai_compat',
                 ...(secretId ? { secret_id: secretId } : {}),
             };
             if (isDeepseek) statusBody.reverse_proxy = vendor.endpoint;

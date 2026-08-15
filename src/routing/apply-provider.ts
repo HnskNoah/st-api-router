@@ -1,9 +1,8 @@
 // 连接层（扳道工）：把选中单元的 provider/key 写回 ST 原生连接字段。
 // 只赋值不新增；请求仍由 ST 原生发出。附带轻量快照/回滚。
 // 格式映射：
-//   custom           → source=custom + custom_url + custom_api_format=openai_compat
-//   custom-responses → source=custom + custom_url + custom_api_format=openai_responses
-//   deepseek         → source=deepseek + reverse_proxy + deepseek_model + SECRET_KEYS.DEEPSEEK
+//   custom   → source=custom + custom_url + custom_api_format=openai_compat
+//   deepseek → source=deepseek + reverse_proxy + deepseek_model + SECRET_KEYS.DEEPSEEK
 
 import { oai_settings, chat_completion_sources } from '@sillytavern/scripts/openai';
 import { SECRET_KEYS, secret_state } from '@sillytavern/scripts/secrets';
@@ -12,7 +11,6 @@ import type { Provider, ProviderKey, Vendor } from '../types.js';
 
 const CUSTOM_API_FORMAT_VALUES: Record<string, string> = {
     'custom': 'openai_compat',
-    'custom-responses': 'openai_responses',
 };
 
 function syncInput(selector: string, value: string | number | null | undefined, eventType = 'input'): void {

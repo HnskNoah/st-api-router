@@ -46,7 +46,7 @@ export type QuickActionPlacement = 'leftSendForm' | 'rightSendForm' | 'qrButtons
 
 // ── Provider 聚合路由领域类型（v11）──
 
-export type ProviderFormat = 'custom' | 'custom-responses' | 'deepseek';
+export type ProviderFormat = 'custom' | 'deepseek';
 
 export interface ProviderKey {
     id: string;
