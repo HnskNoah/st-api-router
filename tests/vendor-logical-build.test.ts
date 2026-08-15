@@ -4,8 +4,28 @@
 // 跳过 search/thinking/image 变体。
 
 import { describe, expect, it } from 'vitest';
-import { buildLogicalModelsFromFetched, canonicalModelName } from '../src/domain/vendor.js';
+import { buildLogicalModelsFromFetched, canonicalModelName, isSpecialVariant } from '../src/domain/vendor.js';
 import type { LogicalModel } from '../src/types.js';
+
+describe('domain/vendor > isSpecialVariant 特殊变体判断', () => {
+    it('包含 search/thinking/image/cache（大小写不敏感）为真', () => {
+        expect(isSpecialVariant('gemini-3.1-pro-preview-search')).toBe(true);
+        expect(isSpecialVariant('[2]claude-opus-4-8-thinking')).toBe(true);
+        expect(isSpecialVariant('gpt-image-2')).toBe(true);
+        expect(isSpecialVariant('grok-4.5-Thinking')).toBe(true);
+        expect(isSpecialVariant('gcli-gemini-2.5-flash-maxthinking-search')).toBe(true);
+        expect(isSpecialVariant('gemini-2.5-pro-cache')).toBe(true);
+        expect(isSpecialVariant('假流式-gemini-3.1-pro-preview-cache')).toBe(true);
+    });
+
+    it('普通模型为假', () => {
+        expect(isSpecialVariant('gemini-2.5-pro')).toBe(false);
+        expect(isSpecialVariant('deepseek-v4-flash')).toBe(false);
+        expect(isSpecialVariant('[1]claude-opus-4-8')).toBe(false);
+        expect(isSpecialVariant('')).toBe(false);
+        expect(isSpecialVariant('grok-4.5')).toBe(false);
+    });
+});
 
 describe('domain/vendor > canonicalModelName 核心模型名提取', () => {
     it('剥离渠道标签前缀', () => {

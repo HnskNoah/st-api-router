@@ -155,7 +155,12 @@ export function buildModelListText(vendors: Vendor[]): string {
     return [...names].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).join('\n');
 }
 
-const SPECIAL_VARIANT_RE = /(?:search|thinking|image)/i;
+const SPECIAL_VARIANT_RE = /(?:search|thinking|image|cache)/i;
+
+/** 特殊变体判断：模型名含 search/thinking/image/cache（大小写不敏感）视为非对话用途，跳过。 */
+export function isSpecialVariant(name: string): boolean {
+    return SPECIAL_VARIANT_RE.test(String(name || '').trim());
+}
 
 /** 提取核心模型名：剥离渠道/变体前缀（[xx]、gcli-、假流式-、xxx/），同一核心模型的不同变体归并。 */
 export function canonicalModelName(raw: string): string {
@@ -180,7 +185,7 @@ export function buildLogicalModelsFromFetched(
         const name = String(raw || '').trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        if (SPECIAL_VARIANT_RE.test(name)) {
+        if (isSpecialVariant(name)) {
             skipped.push(name);
             continue;
         }

@@ -9,7 +9,9 @@ import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
 import {
     assignRealModel,
+    buildLogicalModelsFromFetched,
     buildModelListText,
+    isSpecialVariant,
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
@@ -196,6 +198,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
                         <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
+                        <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型（跳过 search/thinking/image 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
                 </div>
@@ -485,6 +488,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             const models: string[] = [...new Set(list.map((item: any) => String(item?.id || item?.model || '').trim()).filter(Boolean))].slice(0, 1000);
             vendor.fetchedModels = models;
             for (const model of models) {
+                // 跳过 search/thinking/image/cache 特殊变体：不建逻辑模型也不建映射
+                if (isSpecialVariant(model)) continue;
                 const logical = assignRealModel(deps.getLogicalModels(), model);
                 if (!vendor.mappings.some(mapping => mapping.realModel === model)) {
                     vendor.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id });
@@ -797,6 +802,25 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         if (group) void openGroupEditor(group);
     });
     panel.find('#st_router_add_logical').on('click', () => void openLogicalModelEditor(null));
+    panel.find('#st_router_build_logical').on('click', () => {
+        const allModels: string[] = [];
+        for (const vendor of deps.getVendors()) {
+            for (const model of vendor.fetchedModels) allModels.push(model);
+        }
+        if (allModels.length === 0) {
+            toastr.info('还没有已拉取的模型。先在"当前分组 Key"里点 ↻ 拉取模型，再回来创建逻辑模型。');
+            return;
+        }
+        const { created, skipped } = buildLogicalModelsFromFetched(allModels, deps.getLogicalModels());
+        if (created.length === 0) {
+            toastr.info(skipped.length > 0 ? `无新模型可创建（${skipped.length} 个 search/thinking/image 变体已跳过）。` : '逻辑模型已是最新，无需创建。');
+            return;
+        }
+        deps.save();
+        renderModelList();
+        renderGroupSummary();
+        toastr.success(`已为 ${created.length} 个真实模型创建独立逻辑模型${skipped.length > 0 ? `，跳过 ${skipped.length} 个特殊变体` : ''}。`);
+    });
     panel.find('#st_router_export_models').on('click', () => {
         const text = buildModelListText(deps.getVendors());
         const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
