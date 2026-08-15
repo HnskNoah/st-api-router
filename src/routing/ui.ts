@@ -645,7 +645,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 }
             }
             info.append($('<span class="st-router-provider-meta">').text(
-                `${FORMAT_LABELS[vendor.format] ?? vendor.format} · rpm ${vendor.rpm === 0 ? '∞' : vendor.rpm} · 上下文 ${vendor.maxContext || '不限制'} · 已拉取 ${vendorModels.size} 个模型 · 成功率 ${successRateText(vendor)}`,
+                `${FORMAT_LABELS[vendor.format] ?? vendor.format} · rpm ${vendor.rpm === 0 ? '∞' : vendor.rpm} · 上下文 ${vendor.maxContext || '不限制'} · 输入 ${vendor.maxInputTokens || '不限制'} · 输出 ${vendor.maxOutputTokens || '不限制'} · 已拉取 ${vendorModels.size} 个模型 · 成功率 ${successRateText(vendor)}`,
             ));
             if (vendor.disabledReason) info.append($('<span class="st-router-provider-meta">').text(`已停用：${vendor.disabledReason}`));
             row.append(info);
@@ -777,6 +777,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const endpointInput = $('<input class="text_pole" type="text" maxlength="2048" placeholder="custom 系列填 Base URL；deepseek 填反代地址">').val(draft.endpoint);
         const rpmInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.rpm);
         const contextInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.maxContext);
+        const inputTokensInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.maxInputTokens);
+        const outputTokensInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.maxOutputTokens);
         const weightInput = $('<input class="text_pole" type="number" min="0" step="1">').val(draft.weight);
         const enabledCheck = $('<input type="checkbox">').prop('checked', draft.enabled);
 
@@ -785,7 +787,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             field('格式', formatSelect, '决定请求协议：Custom 走 OpenAI 兼容接口；DeepSeek 走 ST 原生 DeepSeek 源'),
             field('Endpoint', endpointInput, '站点 API 地址。custom 系列填 Base URL（如 https://api.xxx.com/v1）；deepseek 填反代地址'),
             field('RPM 上限（0 = 不限）', rpmInput, '该 Vendor 每分钟最多请求次数，所有分组共享此限制'),
-            field('最大上下文（0 = 不限制）', contextInput, '路由到该 Vendor 时，SillyTavern 的上下文上限会被钳制到不超过这个值（防止超出站点上下文）'),
+            field('上下文上限（0 = 不限制）', contextInput, '路由到该 Vendor 时，SillyTavern 的总上下文预算会被钳制到不超过这个值'),
+            field('输入 token 上限（0 = 不限制）', inputTokensInput, '输入 token 预算 = 总上下文 - 输出上限。填了此项会按 输入 + 输出 推导并钳制总上下文'),
+            field('输出 token 上限（0 = 不限制）', outputTokensInput, '路由到该 Vendor 时，SillyTavern 的输出 token 上限会被钳制到不超过这个值'),
             field('权重', weightInput, '选路权重：数值越大越容易被随机选中（实际概率还会叠加历史成功率加成）'),
             $('<label class="checkbox_label st-router-editor-enabled"></label>').append(enabledCheck, ' 启用（参与路由）'),
             field('模型数据', $('<div class="st-router-empty">').text('模型列表与归属按 Key 单独存放。请在"当前分组 Key"中为每个 Key 拉取模型，再到"逻辑模型"区的真实模型胶囊里归类。'), '每个 Key 独立保存它拉到的模型；同一个 Vendor 的不同 Key 可能拿到不同模型列表'),
@@ -802,6 +806,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             draft.endpoint = String(endpointInput.val() ?? '').trim();
             draft.rpm = Math.max(0, Math.floor(Number(rpmInput.val()) || 0));
             draft.maxContext = Math.max(0, Math.floor(Number(contextInput.val()) || 0));
+            draft.maxInputTokens = Math.max(0, Math.floor(Number(inputTokensInput.val()) || 0));
+            draft.maxOutputTokens = Math.max(0, Math.floor(Number(outputTokensInput.val()) || 0));
             draft.weight = Math.max(0, Number(weightInput.val()) || 1);
             draft.enabled = enabledCheck.prop('checked');
             Object.assign(vendor, normalizeVendor(draft));
@@ -915,12 +921,24 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         testRow.append(testInput, testBtn, testResult);
 
         const mappingCount = isNew ? null : deps.getGroups().reduce((sum, group) => sum + group.entries.reduce((entrySum, entry) => entrySum + entry.mappings.filter(mapping => mapping.logicalModelId === draft.id).length, 0), 0);
+        const mappedRealModelNames = isNew
+            ? []
+            : [...new Set(deps.getGroups().flatMap(group => group.entries.flatMap(entry => entry.mappings.filter(mapping => mapping.logicalModelId === draft.id).map(mapping => mapping.realModel))))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
         content.append(
             field('名称', nameInput, '逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型'),
             field('自动归类正则', patternInput, '拉取模型时，真实模型名命中该正则会自动归入此逻辑模型（如 deepseek 会把 deepseek-chat/deepseek-reasoner 归进来）。留空则不参与自动归类'),
             $('<div class="quicker-api__field"></div>').append($('<label><span>测试正则</span></label>'), testRow),
-            ...(isNew || mappingCount === null ? [] : [$('<div class="quicker-api__status">').text(`当前已有 ${mappingCount} 个真实模型名映射到该逻辑模型。`)]),
+            ...(isNew ? [] : [
+                $('<div class="quicker-api__field"></div>').append(
+                    $('<label><span>名下真实模型</span></label>'),
+                    mappingCount === 0
+                        ? $('<div class="st-router-empty">').text('该逻辑模型名下还没有真实模型。')
+                        : $('<div class="st-router-model-list"></div>').append(
+                            mappedRealModelNames.map(name => $('<span class="st-router-model-chip st-router-real-pill" style="cursor:default"></span>').append($('<span class="st-router-model-name">').text(name))),
+                        ),
+                ),
+            ]),
         );
 
         const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');

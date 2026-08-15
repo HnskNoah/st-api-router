@@ -52,6 +52,12 @@ export function normalizeVendor(raw: Record<string, any> | undefined): Vendor {
         maxContext: Number.isFinite(Number(raw?.maxContext)) && Number(raw?.maxContext) >= 0
             ? Math.floor(Number(raw?.maxContext))
             : 0,
+        maxInputTokens: Number.isFinite(Number(raw?.maxInputTokens)) && Number(raw?.maxInputTokens) >= 0
+            ? Math.floor(Number(raw?.maxInputTokens))
+            : 0,
+        maxOutputTokens: Number.isFinite(Number(raw?.maxOutputTokens)) && Number(raw?.maxOutputTokens) >= 0
+            ? Math.floor(Number(raw?.maxOutputTokens))
+            : 0,
         weight: Number.isFinite(Number(raw?.weight)) && Number(raw?.weight) > 0
             ? Number(raw?.weight)
             : VENDOR_WEIGHT_DEFAULT,
@@ -288,6 +294,37 @@ export function buildModelListText(groups: Group[]): string {
         }
     }
     return [...names].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).join('\n');
+}
+
+/** Vendor token 限制换算（ST 语义：总上下文预算 = 输入预算 + 输出上限）。
+ *  Vendor 三个上限都可选（0 = 不限制）。返回需要钳制的目标值；无限制时对应字段为 undefined。 */
+export function computeVendorTokenClamps(
+    vendor: Pick<Vendor, 'maxContext' | 'maxInputTokens' | 'maxOutputTokens'>,
+    current: { maxContext: number; maxOutputTokens: number },
+): { maxContext?: number; maxOutputTokens?: number } {
+    const maxContext = Number(vendor?.maxContext) || 0;
+    const maxInputTokens = Number(vendor?.maxInputTokens) || 0;
+    const maxOutputTokens = Number(vendor?.maxOutputTokens) || 0;
+    const currentContext = Number(current?.maxContext) || 0;
+    const currentOutput = Number(current?.maxOutputTokens) || 0;
+
+    const result: { maxContext?: number; maxOutputTokens?: number } = {};
+
+    // 输出上限：直接钳制 ST openai_max_tokens
+    if (maxOutputTokens > 0 && maxOutputTokens !== currentOutput) {
+        result.maxOutputTokens = maxOutputTokens;
+    }
+
+    // 总上下文：优先显式 maxContext；否则若设置了输入上限，按 输入 + 输出预算 推导
+    if (maxContext > 0) {
+        if (maxContext !== currentContext) result.maxContext = maxContext;
+    } else if (maxInputTokens > 0) {
+        const outputBudget = maxOutputTokens > 0 ? maxOutputTokens : currentOutput;
+        const derived = maxInputTokens + outputBudget;
+        if (derived !== currentContext) result.maxContext = derived;
+    }
+
+    return result;
 }
 
 const SPECIAL_VARIANT_RE = /(?:search|thinking|image|cache)/i;

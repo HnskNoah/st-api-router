@@ -13,6 +13,8 @@ function makeVendor(id: string, name = 'Vendor'): Vendor {
         endpoint: 'https://api.example.com/v1',
         rpm: 3,
         maxContext: 0,
+        maxInputTokens: 0,
+        maxOutputTokens: 0,
         weight: 1,
         enabled: true,
         disabledReason: '',

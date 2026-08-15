@@ -118,6 +118,8 @@ export interface Vendor {
     endpoint: string;
     rpm: number;
     maxContext: number;
+    maxInputTokens: number;
+    maxOutputTokens: number;
     weight: number;
     enabled: boolean;
     disabledReason: string;

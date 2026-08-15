@@ -2,9 +2,11 @@
 // 结束后按失败观察结果记录 Vendor 成功/失败，连续失败自动禁用整个 Vendor。
 
 import { saveSettingsDebounced } from '@sillytavern/script';
+import { oai_settings } from '@sillytavern/scripts/openai';
+import { Popup } from '@sillytavern/scripts/popup';
 import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js';
-import { recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
-import { applyVendorConnection, snapshotConnection, restoreConnection } from './apply-provider.js';
+import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
+import { applyVendorConnection, applyVendorTokenClamps, snapshotConnection, restoreConnection } from './apply-provider.js';
 import type { Group, RoutingSettings, Vendor } from '../types.js';
 
 const USER_STOP_GRACE_MS = 50;
@@ -34,7 +36,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         userStopPending: false,
     };
 
-    function onGenerationStarted(): void {
+    async function onGenerationStarted(): Promise<void> {
         const routing = deps.getRouting();
         if (!routing.enabled) return;
         const groups = deps.getGroups();
@@ -52,6 +54,22 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         const snapshot = snapshotConnection();
         try {
+            // 路由前确认 token 限制：Vendor 设置了上下文/输入/输出上限且需要调整时，弹窗确认后再钳制
+            const clamps = computeVendorTokenClamps(result.unit.vendor, {
+                maxContext: Number(oai_settings.openai_max_context) || 0,
+                maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
+            });
+            const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
+            if (needsApply) {
+                const details: string[] = [];
+                if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
+                if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
+                const confirmed = await Popup.show.confirm(
+                    '调整 token 限制',
+                    `路由到 Vendor「${result.unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
+                );
+                if (confirmed) applyVendorTokenClamps(result.unit.vendor);
+            }
             applyVendorConnection(result.unit.vendor, result.unit.entry.apiKey, result.unit.realModel);
         } catch (error) {
             console.error('[QuickerApi] Vendor connection apply failed:', error);

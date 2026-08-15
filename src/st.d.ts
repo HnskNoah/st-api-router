@@ -4,6 +4,7 @@
 declare module '@sillytavern/script' {
     export function getRequestHeaders(options?: { omitContentType?: boolean }): Record<string, string>;
     export function saveSettingsDebounced(loopCounter?: number): void;
+    export function setOnlineStatus(value: string): void;
     export const eventSource: {
         emit(event: string, ...args: unknown[]): Promise<boolean>;
         on(event: string, listener: (...args: any[]) => unknown): void;

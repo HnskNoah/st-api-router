@@ -5,8 +5,10 @@
 //   deepseek → source=deepseek + reverse_proxy + deepseek_model + SECRET_KEYS.DEEPSEEK
 
 import { oai_settings, chat_completion_sources } from '@sillytavern/scripts/openai';
+import { setOnlineStatus } from '@sillytavern/script';
 import { SECRET_KEYS, secret_state } from '@sillytavern/scripts/secrets';
 import { clampContextLimit } from '../domain/context.js';
+import { computeVendorTokenClamps } from '../domain/vendor.js';
 import type { Provider, ProviderKey, Vendor } from '../types.js';
 
 const CUSTOM_API_FORMAT_VALUES: Record<string, string> = {
@@ -95,20 +97,33 @@ export function applyProviderConnection(provider: Provider, key: ProviderKey, mo
     const endpoint = String(provider?.endpoint || '').trim();
     const apiKey = String(key?.apiKey || '');
     applyConnectionFields(format, endpoint, apiKey, model);
+    setOnlineStatus('Valid');
 }
 
-/** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名，并钳制 ST 上下文。 */
+/** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名，并按 Vendor 限制钳制 ST token 设置。 */
 export function applyVendorConnection(vendor: Vendor, apiKey: string, model: string): void {
     const format = String(vendor?.format || 'custom');
     const endpoint = String(vendor?.endpoint || '').trim();
     applyConnectionFields(format, endpoint, String(apiKey || ''), model);
-    const maxContext = Number(vendor?.maxContext) || 0;
-    if (maxContext > 0) {
-        const clamped = clampContextLimit(Number(oai_settings.openai_max_context) || 0, maxContext);
-        if (clamped !== (Number(oai_settings.openai_max_context) || 0)) {
-            oai_settings.openai_max_context = clamped;
-            syncInput('#openai_max_context', clamped);
-            syncInput('#openai_max_context_counter', clamped);
-        }
+    applyVendorTokenClamps(vendor);
+    // 路由已按该 Vendor 写入连接字段，让 ST 立即显示已连接（否则输入框状态仍是 no_connection）
+    setOnlineStatus('Valid');
+}
+
+/** 按 Vendor 的上下文/输入/输出上限钳制 ST token 设置。 */
+export function applyVendorTokenClamps(vendor: Vendor): void {
+    const clamps = computeVendorTokenClamps(vendor, {
+        maxContext: Number(oai_settings.openai_max_context) || 0,
+        maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
+    });
+    if (clamps.maxContext !== undefined) {
+        const clamped = clampContextLimit(Number(oai_settings.openai_max_context) || 0, clamps.maxContext);
+        oai_settings.openai_max_context = clamped;
+        syncInput('#openai_max_context', clamped);
+        syncInput('#openai_max_context_counter', clamped);
+    }
+    if (clamps.maxOutputTokens !== undefined) {
+        oai_settings.openai_max_tokens = clamps.maxOutputTokens;
+        syncInput('#openai_max_tokens', clamps.maxOutputTokens);
     }
 }
