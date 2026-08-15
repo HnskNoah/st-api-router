@@ -100,12 +100,11 @@ export function applyProviderConnection(provider: Provider, key: ProviderKey, mo
     setOnlineStatus('Valid');
 }
 
-/** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名，并按 Vendor 限制钳制 ST token 设置。 */
+/** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名。token 钳制由调用方按确认结果决定。 */
 export function applyVendorConnection(vendor: Vendor, apiKey: string, model: string): void {
     const format = String(vendor?.format || 'custom');
     const endpoint = String(vendor?.endpoint || '').trim();
     applyConnectionFields(format, endpoint, String(apiKey || ''), model);
-    applyVendorTokenClamps(vendor);
     // 路由已按该 Vendor 写入连接字段，让 ST 立即显示已连接（否则输入框状态仍是 no_connection）
     setOnlineStatus('Valid');
 }
