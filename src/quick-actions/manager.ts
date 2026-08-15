@@ -3,7 +3,7 @@
 import { saveSettingsDebounced } from '@sillytavern/script';
 import { Popup, POPUP_TYPE } from '@sillytavern/scripts/popup';
 import { runtimeState, ownedPopups } from '../state.js';
-import { settings, profiles, providers } from '../settings/access.js';
+import { settings, profiles, providers, logicalModels } from '../settings/access.js';
 import { normalizeQuickAction, normalizeQuickActionPlacement, quickActionDisplayName } from '../domain/quick-action.js';
 import { aggregateModels } from '../domain/model-catalog.js';
 import { normalizeText, sanitizeName } from '../utils/text.js';
@@ -114,8 +114,9 @@ export async function manageQuickActions(): Promise<void> {
         const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="可直接输入自定义模型 ID">').val(draft.model);
         const modelSelect = $('<select class="text_pole" aria-label="从配置模型列表选择"></select>');
         const refreshModels = () => {
-            // 聚合模型（供应商路由）优先入候选：快捷方案选模型即参与路由
-            const models = normalizeModelList([...aggregateModels(providers()), ...modelSuggestionsForProfile(draft.profileId), ...detailCandidates, draft.model]);
+            // 聚合模型（供应商路由）优先入候选：快捷方案选模型即参与路由；逻辑模型名同样入候选
+            const logicalNames = logicalModels().map(model => model.name);
+            const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, ...modelSuggestionsForProfile(draft.profileId), ...detailCandidates, draft.model]);
             modelSelect.empty().append($('<option value="">— 从模型列表选择 —</option>'));
             models.forEach(model => modelSelect.append($('<option>').val(model).text(model)));
             modelSelect.val(models.includes(draft.model) ? draft.model : '');

@@ -4,16 +4,17 @@ import { oai_settings } from '@sillytavern/scripts/openai';
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
 import { FORMATS } from '../constants.js';
 import { runtimeState } from '../state.js';
-import { settings, profiles, providers, routingSettings, selectedProfile, currentPresetName } from '../settings/access.js';
+import { settings, profiles, providers, routingSettings, selectedProfile, currentPresetName, vendors, logicalModels, groups } from '../settings/access.js';
 import { normalizeText } from '../utils/text.js';
-import { aggregateModels } from '../domain/model-catalog.js';
+import { isRoutedModel } from '../domain/model-catalog.js';
+import { resolveLogicalModelForAction } from '../domain/quick-action.js';
 import { enqueueOperation, waitForStableOperationQueue } from '../operation-queue.js';
 import { applyProfile } from '../apply/profile.js';
 import { beginPresetTransition, endPresetTransition } from '../presets/transition.js';
 import { renderModelControl, renderProfiles } from '../ui/render.js';
 import { closeQuickActionMenu } from './menu-core.js';
 import { quickActionDisplayName } from '../domain/quick-action.js';
-import type { Profile, QuickAction } from '../types.js';
+import type { LogicalModel, Profile, QuickAction } from '../types.js';
 
 export function findFormatForCurrentSource(): string {
     return Object.entries(FORMATS).find(([, config]) => config.source === oai_settings.chat_completion_source)?.[0] || '';
@@ -126,21 +127,40 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
             }
         }
         if (token !== runtimeState.quickActionTransaction) return;
+        let switchedLogicalModel: LogicalModel | null = null;
         if (action.model) {
-            // 路由命中的模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
-            const routedModel = routingSettings().enabled && aggregateModels(providers()).includes(action.model);
-            const applied = routedModel
-                ? setRoutedModel(action.model)
-                : applyExplicitModel(action.model, profile?.format || '');
-            if (!applied) {
-                toastr.error('便捷方案模型写入验证失败。');
-                return;
+            // 逻辑模型：只切换当前 Group 的逻辑模型（保存，不立即写 ST 连接，下次生成由路由钩子选 Vendor/Key）
+            const logical = resolveLogicalModelForAction(action.model, logicalModels());
+            if (logical) {
+                const activeGroup = groups().find(group => group.id === settings().activeGroupId) || groups()[0] || null;
+                if (!activeGroup) {
+                    toastr.warning('Quicker Api：还没有 Group，无法切换逻辑模型。');
+                    return;
+                }
+                activeGroup.currentLogicalModelId = logical.id;
+                switchedLogicalModel = logical;
+            } else {
+                // 路由命中的真实模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
+                const routedModel = routingSettings().enabled && isRoutedModel(providers(), vendors(), logicalModels(), action.model);
+                const applied = routedModel
+                    ? setRoutedModel(action.model)
+                    : applyExplicitModel(action.model, profile?.format || '');
+                if (!applied) {
+                    toastr.error('便捷方案模型写入验证失败。');
+                    return;
+                }
             }
         }
         if (token !== runtimeState.quickActionTransaction) return;
         renderProfiles(settings().selectedProfileId);
         if (action.model) renderModelControl(profile || selectedProfile(), action.model);
-        toastr.success(`已应用${quickActionDisplayName(action)}。`);
+        if (switchedLogicalModel) {
+            saveSettingsDebounced();
+            $(document).trigger('quickerApi:logical-model-changed');
+            toastr.success(`已切换到逻辑模型「${switchedLogicalModel.name}」。`);
+        } else {
+            toastr.success(`已应用${quickActionDisplayName(action)}。`);
+        }
     } finally {
         if (runtimeState.quickActionBlockingToken === token) {
             runtimeState.quickActionBlockingToken = 0;

@@ -7,7 +7,8 @@
 
 import { oai_settings, chat_completion_sources } from '@sillytavern/scripts/openai';
 import { SECRET_KEYS, secret_state } from '@sillytavern/scripts/secrets';
-import type { Provider, ProviderKey } from '../types.js';
+import { clampContextLimit } from '../domain/context.js';
+import type { Provider, ProviderKey, Vendor } from '../types.js';
 
 const CUSTOM_API_FORMAT_VALUES: Record<string, string> = {
     'custom': 'openai_compat',
@@ -30,6 +31,7 @@ export function snapshotConnection(): Record<string, string> {
         custom_api_format: String(oai_settings.custom_api_format || 'openai_compat'),
         reverse_proxy: String(oai_settings.reverse_proxy || ''),
         deepseek_model: String(oai_settings.deepseek_model || ''),
+        max_context: String(oai_settings.openai_max_context || ''),
         apiKeyCustom: String(secret_state?.[SECRET_KEYS.CUSTOM] ?? ''),
         apiKeyDeepseek: String(secret_state?.[SECRET_KEYS.DEEPSEEK] ?? ''),
     };
@@ -42,6 +44,11 @@ export function restoreConnection(snapshot: Record<string, string>): void {
     oai_settings.custom_api_format = snapshot.custom_api_format;
     oai_settings.reverse_proxy = snapshot.reverse_proxy;
     oai_settings.deepseek_model = snapshot.deepseek_model;
+    if (snapshot.max_context) {
+        oai_settings.openai_max_context = Number(snapshot.max_context) || 0;
+        syncInput('#openai_max_context', oai_settings.openai_max_context);
+        syncInput('#openai_max_context_counter', oai_settings.openai_max_context);
+    }
     if (secret_state) {
         secret_state[SECRET_KEYS.CUSTOM] = snapshot.apiKeyCustom;
         secret_state[SECRET_KEYS.DEEPSEEK] = snapshot.apiKeyDeepseek;
@@ -57,12 +64,7 @@ export function restoreConnection(snapshot: Record<string, string>): void {
     }
 }
 
-/** 把路由单元（provider + key）写入 ST 连接字段。不触碰任何请求内容字段（include/exclude）。 */
-export function applyProviderConnection(provider: Provider, key: ProviderKey, model: string): void {
-    const format = String(provider?.format || 'custom');
-    const endpoint = String(provider?.endpoint || '').trim();
-    const apiKey = String(key?.apiKey || '');
-
+function applyConnectionFields(format: string, endpoint: string, apiKey: string, model: string): void {
     if (format === 'deepseek') {
         oai_settings.chat_completion_source = chat_completion_sources.DEEPSEEK;
         oai_settings.reverse_proxy = endpoint;
@@ -86,5 +88,29 @@ export function applyProviderConnection(provider: Provider, key: ProviderKey, mo
     if (apiKey) syncInput('#api_key_custom', apiKey);
     if (String(oai_settings.chat_completion_source) !== chat_completion_sources.CUSTOM) {
         syncInput('#chat_completion_source', chat_completion_sources.CUSTOM, 'change');
+    }
+}
+
+/** 把路由单元（provider + key）写入 ST 连接字段。不触碰任何请求内容字段（include/exclude）。 */
+export function applyProviderConnection(provider: Provider, key: ProviderKey, model: string): void {
+    const format = String(provider?.format || 'custom');
+    const endpoint = String(provider?.endpoint || '').trim();
+    const apiKey = String(key?.apiKey || '');
+    applyConnectionFields(format, endpoint, apiKey, model);
+}
+
+/** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名，并钳制 ST 上下文。 */
+export function applyVendorConnection(vendor: Vendor, apiKey: string, model: string): void {
+    const format = String(vendor?.format || 'custom');
+    const endpoint = String(vendor?.endpoint || '').trim();
+    applyConnectionFields(format, endpoint, String(apiKey || ''), model);
+    const maxContext = Number(vendor?.maxContext) || 0;
+    if (maxContext > 0) {
+        const clamped = clampContextLimit(Number(oai_settings.openai_max_context) || 0, maxContext);
+        if (clamped !== (Number(oai_settings.openai_max_context) || 0)) {
+            oai_settings.openai_max_context = clamped;
+            syncInput('#openai_max_context', clamped);
+            syncInput('#openai_max_context_counter', clamped);
+        }
     }
 }

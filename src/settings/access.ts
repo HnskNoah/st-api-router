@@ -4,7 +4,7 @@ import { extension_settings } from '@sillytavern/scripts/extensions';
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { MODULE_NAME } from '../constants.js';
 import { normalizeText } from '../utils/text.js';
-import type { Profile, Provider, QuickerApiSettings, RoutingSettings } from '../types.js';
+import type { Group, LogicalModel, Profile, Provider, QuickerApiSettings, RoutingSettings, Vendor } from '../types.js';
 
 export function settings(): QuickerApiSettings {
     return extension_settings[MODULE_NAME] as QuickerApiSettings;
@@ -16,6 +16,23 @@ export function profiles(): Profile[] {
 
 export function providers(): Provider[] {
     return settings().providers;
+}
+
+export function vendors(): Vendor[] {
+    return settings().vendors;
+}
+
+export function logicalModels(): LogicalModel[] {
+    return settings().logicalModels;
+}
+
+export function groups(): Group[] {
+    return settings().groups;
+}
+
+export function activeGroup(): Group | null {
+    const id = settings().activeGroupId;
+    return groups().find(group => group.id === id) || groups()[0] || null;
 }
 
 export function routingSettings(): RoutingSettings {

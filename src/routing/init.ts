@@ -2,12 +2,10 @@
 // initRouting 由 lifecycle 在 Profile 面板渲染后调用；teardownRouting 在 teardown 时清理。
 
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
-import { oai_settings } from '@sillytavern/scripts/openai';
-import { providers, routingSettings } from '../settings/access.js';
+import { activeGroup, groups, logicalModels, routingSettings, settings, vendors } from '../settings/access.js';
 import { createFailureObserver } from './failure-observer.js';
 import { createRoutingHooks } from './hooks.js';
 import { initRoutingUI } from './ui.js';
-import type { Provider, RoutingSettings } from '../types.js';
 
 interface RoutingRegistration {
     teardown(): void;
@@ -20,9 +18,10 @@ export function initRouting(): void {
     const failureObserver = createFailureObserver();
     failureObserver.install();
     const hooks = createRoutingHooks({
-        getProviders: providers,
+        getVendors: vendors,
+        getGroups: groups,
+        getActiveGroupId: () => activeGroup()?.id ?? null,
         getRouting: routingSettings,
-        getCurrentModel: () => String(oai_settings.custom_model || '').trim(),
         beginGeneration: () => failureObserver.begin(),
         endGeneration: () => failureObserver.end(),
     });
@@ -30,7 +29,14 @@ export function initRouting(): void {
     eventSource.on(event_types.GENERATION_ENDED, hooks.onGenerationEnded);
     eventSource.on(event_types.GENERATION_STOPPED, hooks.onGenerationStopped);
     initRoutingUI({
-        getProviders: providers,
+        getVendors: vendors,
+        getGroups: groups,
+        getLogicalModels: logicalModels,
+        getActiveGroupId: () => activeGroup()?.id ?? null,
+        setActiveGroupId: id => {
+            settings().activeGroupId = id;
+            saveSettingsDebounced();
+        },
         getRouting: routingSettings,
         save: () => saveSettingsDebounced(),
     });

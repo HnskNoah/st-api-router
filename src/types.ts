@@ -102,13 +102,76 @@ export interface RouteResult {
     nextLastPicked: LastPicked | null;
 }
 
+export type VendorFormat = ProviderFormat;
+
+/** Vendor 级模型映射：真实模型名归并到逻辑模型。 */
+export interface VendorModelMapping {
+    id: string;
+    realModel: string;
+    logicalModelId: string;
+}
+
+/** Vendor（模型商）：全局限流、健康状态、模型映射都挂在 Vendor 级。 */
+export interface Vendor {
+    id: string;
+    name: string;
+    format: VendorFormat;
+    endpoint: string;
+    rpm: number;
+    maxContext: number;
+    weight: number;
+    enabled: boolean;
+    disabledReason: string;
+    fetchedModels: string[];
+    mappings: VendorModelMapping[];
+    window: number[];
+    failStreak: number;
+    successes: number;
+    failures: number;
+    lastError: string;
+    updatedAt: string;
+}
+
+export interface LogicalModel {
+    id: string;
+    name: string;
+}
+
+/** Group 条目：Vendor + Key。同一 Vendor 可在同一 Group 中挂多个条目。 */
+export interface GroupEntry {
+    id: string;
+    vendorId: string;
+    apiKey: string;
+    label: string;
+    enabled: boolean;
+}
+
+/** Group（功能分组）：全局使用环境，持有当前逻辑模型和 Vendor + Key 条目。 */
+export interface Group {
+    id: string;
+    name: string;
+    enabled: boolean;
+    currentLogicalModelId: string;
+    entries: GroupEntry[];
+}
+
+export interface VendorMigrationResult {
+    vendors: Vendor[];
+    logicalModels: LogicalModel[];
+    groups: Group[];
+}
+
 export interface QuickerApiSettings {
     schemaVersion: number;
     profiles: Profile[];
     providers: Provider[];
+    vendors: Vendor[];
+    logicalModels: LogicalModel[];
+    groups: Group[];
     routing: RoutingSettings;
     selectedProfileId: string | null;
     activeProfileId: string | null;
+    activeGroupId: string | null;
     emptySecretIds: Record<string, string>;
     presetBindings: Record<string, string>;
     migratedFromCustomOpenAIProfiles: boolean;

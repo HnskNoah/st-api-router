@@ -9,6 +9,13 @@ import {
 import { normalizeProfile } from '../domain/profile.js';
 import { normalizeQuickAction } from '../domain/quick-action.js';
 import { normalizeProviders, providerFromProfile, resetRoutingRuntimeState } from '../domain/provider.js';
+import {
+    migrateProvidersToVendorModel,
+    normalizeGroups,
+    normalizeLogicalModels,
+    normalizeVendors,
+    resetVendorRuntimeState,
+} from '../domain/vendor.js';
 import { normalizeRoutingSettings } from '../domain/routing.js';
 import { sanitizeName } from '../utils/text.js';
 
@@ -52,6 +59,39 @@ export function initializeSettings(): boolean {
         value.providers = value.profiles.map(profile => providerFromProfile(profile));
         changed = true;
     }
+
+    // ── Vendor / LogicalModel / Group（v12）──
+    value.vendors = normalizeVendors(value.vendors);
+    value.logicalModels = normalizeLogicalModels(value.logicalModels);
+    value.groups = normalizeGroups(value.groups);
+    resetVendorRuntimeState(value.vendors);
+    if (storedVersion < 12 && value.vendors.length === 0 && value.providers.length > 0) {
+        const migrated = migrateProvidersToVendorModel(value.providers);
+        value.vendors = migrated.vendors;
+        value.logicalModels = migrated.logicalModels;
+        value.groups = migrated.groups;
+        changed = true;
+    }
+    if (value.vendors.length > 0) {
+        const known = new Set(value.logicalModels.map(model => model.id));
+        let added = false;
+        for (const vendor of value.vendors) {
+            for (const mapping of vendor.mappings) {
+                if (!known.has(mapping.logicalModelId)) {
+                    value.logicalModels.push({ id: mapping.logicalModelId, name: mapping.logicalModelId });
+                    known.add(mapping.logicalModelId);
+                    added = true;
+                }
+            }
+        }
+        if (added) changed = true;
+    }
+    const normalizedActiveGroupId = value.groups.some(group => group.id === value.activeGroupId)
+        ? value.activeGroupId
+        : (value.groups[0]?.id || null);
+    if (value.activeGroupId !== normalizedActiveGroupId) changed = true;
+    value.activeGroupId = normalizedActiveGroupId;
+
     value.routing = normalizeRoutingSettings(value.routing);
     value.emptySecretIds = value.emptySecretIds && typeof value.emptySecretIds === 'object' ? value.emptySecretIds : {};
     value.presetBindings = value.presetBindings && typeof value.presetBindings === 'object' ? value.presetBindings : {};
