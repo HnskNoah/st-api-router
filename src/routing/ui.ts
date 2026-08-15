@@ -14,6 +14,7 @@ import {
     buildModelListText,
     findUnmappedModels,
     isSpecialVariant,
+    mappedRealModels,
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
@@ -130,24 +131,35 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             .st-router-model-edit:hover { color: #5b9bd5; background: rgba(91, 155, 213, 0.15); }
 
-            /* ── 未归类模型 ── */
-            .st-router-unmapped {
-                margin-top: 12px; border-top: 1px dashed rgba(128, 128, 128, 0.3);
-                padding-top: 8px; display: flex; flex-direction: column; gap: 4px;
+            /* ── 真实模型折叠区（已归类 / 未归类，胶囊行）── */
+            .st-router-real-fold {
+                border: 1px solid rgba(128, 128, 128, 0.22);
+                border-radius: 8px; background: rgba(0, 0, 0, 0.10);
+                overflow: hidden; margin-top: 10px;
             }
-            .st-router-unmapped-head {
+            .st-router-real-head {
                 display: flex; align-items: center; gap: 8px; cursor: pointer;
-                user-select: none; font-size: 13px; color: #ccc; padding: 3px 2px;
+                user-select: none; font-size: 13px; color: #ccc;
+                padding: 8px 12px; transition: background 0.15s;
             }
-            .st-router-unmapped-head:hover { color: #fff; }
-            .st-router-unmapped-arrow { color: #5b9bd5; flex: none; font-size: 11px; transition: transform 0.15s; }
-            .st-router-unmapped-arrow--open { transform: rotate(90deg); }
-            .st-router-unmapped-count { font-size: 11px; color: #999; }
-            .st-router-unmapped-rows { display: flex; flex-direction: column; gap: 4px; }
-            .st-router-unmapped-title { font-size: 12px; color: #999; margin-bottom: 4px; }
-            .st-router-unmapped-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
-            .st-router-unmapped-name { flex: 1 1 160px; min-width: 120px; font-family: monospace; word-break: break-all; }
-            .st-router-unmapped-row > select.text_pole { width: auto; flex: 1 1 150px; min-width: 110px; margin: 0; }
+            .st-router-real-head:hover { background: rgba(255, 255, 255, 0.04); color: #fff; }
+            .st-router-real-arrow { color: #5b9bd5; flex: none; font-size: 11px; transition: transform 0.15s; }
+            .st-router-real-arrow--open { transform: rotate(90deg); }
+            .st-router-real-count {
+                margin-left: auto; font-size: 11px; color: #999;
+                background: rgba(255, 255, 255, 0.07); border-radius: 10px; padding: 1px 8px;
+            }
+            .st-router-real-rows { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 12px 12px; }
+            .st-router-real-chip {
+                display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+                border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 16px;
+                padding: 3px 6px 3px 10px; background: rgba(255, 255, 255, 0.04);
+                transition: border-color 0.15s, background 0.15s;
+            }
+            .st-router-real-chip:hover { border-color: #5b9bd5; }
+            .st-router-real-chip-name { font-family: monospace; font-size: 12px; word-break: break-all; min-width: 0; }
+            .st-router-real-chip > select.text_pole { width: auto; max-width: 160px; margin: 0; flex: none; font-size: 12px; }
+            .st-router-real-chip > .menu_button { flex: none; padding: 1px 6px; }
 
             /* ── 空状态 ── */
             .st-router-empty { font-size: 12px; color: #999; padding: 8px 2px; line-height: 1.6; }
@@ -224,13 +236,15 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     </div>
                 </div>
                 <div id="st_router_model_list" class="st-router-model-list"></div>
-                <div id="st_router_unmapped" class="st-router-unmapped"></div>
+                <div id="st_router_mapped" class="st-router-real-fold"></div>
+                <div id="st_router_unmapped" class="st-router-real-fold"></div>
             </div>
         </section>
     `);
 
     const providerList = panel.find('#st_router_provider_list');
     const modelList = panel.find('#st_router_model_list');
+    const mappedList = panel.find('#st_router_mapped');
     const unmappedList = panel.find('#st_router_unmapped');
     const groupSummary = panel.find('#st_router_group_summary');
 
@@ -396,55 +410,81 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 modelList.append(chip);
             }
         }
+        renderMapped();
         renderUnmapped();
     }
 
+    let mappedExpanded = false;
     let unmappedExpanded = false;
+
+    function renderMapped(): void {
+        const mapped = mappedRealModels(deps.getVendors());
+        mappedList.empty();
+        if (mapped.length === 0) return;
+        const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
+        const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
+        if (mappedExpanded) arrow.addClass('st-router-real-arrow--open');
+        head.append(arrow);
+        head.append($('<span>').text('已归类真实模型'));
+        head.append($('<span class="st-router-real-count"></span>').text(`${mapped.length} 个`));
+        head.on('click', () => {
+            mappedExpanded = !mappedExpanded;
+            renderMapped();
+        });
+        mappedList.append(head);
+        if (!mappedExpanded) return;
+        const rows = $('<div class="st-router-real-rows"></div>');
+        for (const item of mapped) rows.append(buildRealChip(item.realModel, item.logicalModelId));
+        mappedList.append(rows);
+    }
 
     function renderUnmapped(): void {
         const unmapped = findUnmappedModels(deps.getVendors());
         unmappedList.empty();
         if (unmapped.length === 0) return;
-        const head = $('<div class="st-router-unmapped-head" role="button" tabindex="0"></div>');
-        const arrow = $('<i class="fa-solid fa-chevron-right st-router-unmapped-arrow"></i>');
-        if (unmappedExpanded) arrow.addClass('st-router-unmapped-arrow--open');
+        const head = $('<div class="st-router-real-head" role="button" tabindex="0"></div>');
+        const arrow = $('<i class="fa-solid fa-chevron-right st-router-real-arrow"></i>');
+        if (unmappedExpanded) arrow.addClass('st-router-real-arrow--open');
         head.append(arrow);
-        head.append($('<span>').text('未归类模型'));
-        head.append($('<span class="st-router-unmapped-count"></span>').text(`${unmapped.length} 个`));
+        head.append($('<span>').text('未归类真实模型'));
+        head.append($('<span class="st-router-real-count"></span>').text(`${unmapped.length} 个`));
         head.on('click', () => {
             unmappedExpanded = !unmappedExpanded;
             renderUnmapped();
         });
         unmappedList.append(head);
         if (!unmappedExpanded) return;
-        const rows = $('<div class="st-router-unmapped-rows"></div>');
+        const rows = $('<div class="st-router-real-rows"></div>');
+        for (const realModel of unmapped) rows.append(buildRealChip(realModel, ''));
+        unmappedList.append(rows);
+    }
+
+    function buildRealChip(realModel: string, currentLogicalId: string): JQuery<HTMLElement> {
+        const chip = $('<div class="st-router-real-chip"></div>');
+        chip.append($('<span class="st-router-real-chip-name">').text(realModel));
         const logicalOptions = () => {
             const options = deps.getLogicalModels().map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
             return `<option value="">— 选择逻辑模型 —</option>${options}`;
         };
-        for (const realModel of unmapped) {
-            const row = $('<div class="st-router-unmapped-row"></div>');
-            row.append($('<span class="st-router-unmapped-name">').text(realModel));
-            const select = $('<select class="text_pole"></select>').html(logicalOptions());
-            const applyBtn = $('<button class="menu_button" type="button" title="建立映射到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
-                .on('click', () => {
-                    const logicalId = String(select.val() || '');
-                    if (!logicalId) {
-                        toastr.warning('请先为模型选择逻辑模型。');
-                        return;
-                    }
-                    const touched = assignModelToLogical(deps.getVendors(), realModel, logicalId);
-                    if (touched > 0) {
-                        deps.save();
-                        renderModelList();
-                        renderGroupSummary();
-                        toastr.success(`已为「${realModel}」映射逻辑模型（影响 ${touched} 个 Vendor）。`);
-                    }
-                });
-            row.append(select, applyBtn);
-            rows.append(row);
-        }
-        unmappedList.append(rows);
+        const select = $('<select class="text_pole"></select>').html(logicalOptions());
+        if (currentLogicalId) select.val(currentLogicalId);
+        const applyBtn = $('<button class="menu_button" type="button" title="建立/改归属到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
+            .on('click', () => {
+                const logicalId = String(select.val() || '');
+                if (!logicalId) {
+                    toastr.warning('请先为模型选择逻辑模型。');
+                    return;
+                }
+                const touched = assignModelToLogical(deps.getVendors(), realModel, logicalId);
+                if (touched > 0) {
+                    deps.save();
+                    renderModelList();
+                    renderGroupSummary();
+                    toastr.success(`已为「${realModel}」更新归属（影响 ${touched} 个 Vendor）。`);
+                }
+            });
+        chip.append(select, applyBtn);
+        return chip;
     }
 
     function vendorStatus(vendor: Vendor, now = Date.now()): string | null {

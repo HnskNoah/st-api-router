@@ -143,6 +143,21 @@ export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], vendors:
     return removed;
 }
 
+/** 已归类真实模型：所有 Vendor 已有映射的真实模型（跨 Vendor 去重，按名称排序，带归属逻辑模型 id）。 */
+export function mappedRealModels(vendors: Vendor[]): { realModel: string; logicalModelId: string }[] {
+    const byName = new Map<string, string>();
+    for (const vendor of vendors) {
+        for (const mapping of vendor.mappings) {
+            if (byName.has(mapping.realModel)) continue;
+            if (!mapping.logicalModelId) continue;
+            byName.set(mapping.realModel, mapping.logicalModelId);
+        }
+    }
+    return [...byName.entries()]
+        .map(([realModel, logicalModelId]) => ({ realModel, logicalModelId }))
+        .sort((a, b) => a.realModel < b.realModel ? -1 : a.realModel > b.realModel ? 1 : 0);
+}
+
 /** 未归类模型：所有 Vendor 已拉取但无任何映射的真实模型（跨 Vendor 去重，排除特殊变体）。 */
 export function findUnmappedModels(vendors: Vendor[]): string[] {
     const mapped = new Set<string>();
