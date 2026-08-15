@@ -63,7 +63,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             <div class="quicker-api__field">
                 <div class="st-router-controls">
                     <label class="checkbox_label" for="st_router_enable"><input id="st_router_enable" type="checkbox" /> 启用路由</label>
-                    <label for="st_router_sticky_seconds" class="st-router-strategy-label" title="选中的 Vendor 在 N 秒内保持复用；0 = 每次生成都重新随机">路由保持时长（秒，0 = 每次随机）</label>
+                    <label for="st_router_sticky_seconds" class="st-router-strategy-label" title="选中的 Vendor 在 N 秒内保持复用；0 = 每次生成都重新随机">保持同一 Vendor 的时长（秒，0 = 每次都重新随机）</label>
                     <input id="st_router_sticky_seconds" class="text_pole st-router-strategy" type="number" min="0" step="1" />
                 </div>
                 <div class="quicker-api__status">启用后，每次生成前插件会按当前分组的逻辑模型，从可用 Vendor 中随机选一个改写 SillyTavern 连接（不发请求，只改连接字段）。</div>
