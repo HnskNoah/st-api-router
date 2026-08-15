@@ -77,7 +77,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             .st-router-provider:last-child { border-bottom: none; }
             .st-router-provider-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
             .st-router-provider-name { flex: none; font-weight: 600; white-space: nowrap; }
-            .st-router-provider-endpoint { flex: 0 1 180px; min-width: 120px; max-width: 55%; }
+            .st-router-provider-endpoint {
+                width: 180px; max-width: 55%; flex: none;
+                margin: 0; height: auto; box-sizing: border-box;
+            }
             .st-router-provider-meta { flex-basis: 100%; font-size: 12px; color: #999; opacity: 0.9; }
             .st-router-provider-actions { flex: none; display: flex; gap: 4px; }
 
@@ -93,9 +96,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             /* ── Key 条目表 ── */
             .st-router-key-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; flex-wrap: wrap; }
             .st-router-key-row--header { font-size: 12px; color: #999; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
-            .st-router-key-row > select.text_pole { flex: 1 1 130px; min-width: 100px; }
-            .st-router-key-row > input[type="password"] { flex: 2 1 180px; min-width: 140px; }
-            .st-router-key-row > input[type="text"] { flex: 1 1 90px; min-width: 70px; }
+            .st-router-key-row > select.text_pole { width: auto; flex: 1 1 130px; min-width: 100px; margin: 0; }
+            .st-router-key-row > input[type="password"] { width: auto; flex: 2 1 180px; min-width: 140px; margin: 0; }
+            .st-router-key-row > input[type="text"] { width: auto; flex: 1 1 90px; min-width: 70px; margin: 0; }
             .st-router-key-row > input[type="checkbox"] { flex: none; }
             .st-router-key-row > .menu_button { flex: none; }
             .st-router-key-col { flex: 1 1 0; min-width: 0; font-size: 12px; color: #999; }
