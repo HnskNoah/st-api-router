@@ -150,6 +150,45 @@ export function buildModelListText(vendors: Vendor[]): string {
     return [...names].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).join('\n');
 }
 
+const SPECIAL_VARIANT_RE = /(?:search|thinking|image)/i;
+
+/** 提取核心模型名：剥离渠道/变体前缀（[xx]、gcli-、假流式-、xxx/），同一核心模型的不同变体归并。 */
+export function canonicalModelName(raw: string): string {
+    let name = String(raw || '').trim();
+    name = name.replace(/^\[[^\]]*\]/, '');
+    const slashIndex = name.lastIndexOf('/');
+    if (slashIndex >= 0) name = name.slice(slashIndex + 1);
+    name = name.replace(/^gcli-/, '').replace(/^假流式-/, '');
+    return name;
+}
+
+/** 从已拉取模型批量创建逻辑模型：每个核心模型独立创建一个（渠道/假流式变体合并），跳过 search/thinking/image 变体。 */
+export function buildLogicalModelsFromFetched(
+    models: string[],
+    logicalModels: LogicalModel[],
+): { created: LogicalModel[]; skipped: string[] } {
+    const existingNames = new Set(logicalModels.map(model => model.name));
+    const seen = new Set<string>();
+    const created: LogicalModel[] = [];
+    const skipped: string[] = [];
+    for (const raw of models) {
+        const name = String(raw || '').trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        if (SPECIAL_VARIANT_RE.test(name)) {
+            skipped.push(name);
+            continue;
+        }
+        const canonical = canonicalModelName(name);
+        if (existingNames.has(canonical)) continue;
+        const model = normalizeLogicalModel({ name: canonical });
+        logicalModels.push(model);
+        existingNames.add(canonical);
+        created.push(model);
+    }
+    return { created, skipped };
+}
+
 export function normalizeLogicalModels(raw: unknown): LogicalModel[] {
     if (!Array.isArray(raw)) return [];
     const seen = new Set<string>();
