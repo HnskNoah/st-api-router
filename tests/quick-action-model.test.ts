@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeQuickAction, resolveLogicalModelForAction } from '../src/domain/quick-action.js';
+import { normalizeQuickAction, normalizeQuickActionsForPersist, resolveLogicalModelForAction } from '../src/domain/quick-action.js';
 import { normalizeLogicalModels } from '../src/domain/vendor.js';
 
 function sampleLogicalModels() {
@@ -37,6 +37,26 @@ describe('quick-action normalizeQuickAction', () => {
         expect(action.model).toBe('');
         expect(action.sequence).toBe(3);
         expect('profileId' in action).toBe(false);
+    });
+});
+
+describe('quick-action normalizeQuickActionsForPersist 自动保存规范化', () => {
+    it('空名自动命名为 方案N，sequence 按顺序重排', () => {
+        const input = [
+            normalizeQuickAction({ id: 'a', name: '', preset: 'P' }, 0),
+            normalizeQuickAction({ id: 'b', name: '日常', model: 'grok' }, 1),
+            normalizeQuickAction({ id: 'c', name: '', model: 'deepseek' }, 2),
+        ];
+        const result = normalizeQuickActionsForPersist(input);
+        expect(result.map(action => action.name)).toEqual(['方案1', '日常', '方案3']);
+        expect(result.map(action => action.sequence)).toEqual([0, 1, 2]);
+        expect(result).not.toBe(input);
+    });
+
+    it('保留非空名称，不改 id/preset/model', () => {
+        const input = [normalizeQuickAction({ id: 'a', name: 'A', preset: 'P1', model: 'm' }, 0)];
+        const result = normalizeQuickActionsForPersist(input);
+        expect(result[0]).toEqual({ id: 'a', name: 'A', preset: 'P1', model: 'm', sequence: 0 });
     });
 });
 

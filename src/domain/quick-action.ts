@@ -23,6 +23,15 @@ export function quickActionDisplayName(action: Pick<QuickAction, 'name'>, index 
     return sanitizeName(action.name) || `方案${index + 1}`;
 }
 
+/** 自动保存前规范化方案列表：空名自动命名为 方案N，sequence 按数组顺序重排。返回新数组，不修改入参。 */
+export function normalizeQuickActionsForPersist(actions: QuickAction[]): QuickAction[] {
+    return (actions || []).map((action, index) => normalizeQuickAction({
+        ...action,
+        name: sanitizeName(action?.name) || `方案${index + 1}`,
+        sequence: index,
+    }, index));
+}
+
 /** 把快捷方案里的模型字段解析为逻辑模型：优先按 id 匹配，其次按 name。 */
 export function resolveLogicalModelForAction(model: string, logicalModels: LogicalModel[]): LogicalModel | null {
     const value = normalizeText(model);

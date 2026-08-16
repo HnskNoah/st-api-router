@@ -4,7 +4,7 @@ import { saveSettingsDebounced } from '@sillytavern/script';
 import { Popup, POPUP_TYPE } from '@sillytavern/scripts/popup';
 import { runtimeState, ownedPopups } from '../state.js';
 import { settings, providers, logicalModels } from '../settings/access.js';
-import { normalizeQuickAction, normalizeQuickActionPlacement, quickActionDisplayName } from '../domain/quick-action.js';
+import { normalizeQuickAction, normalizeQuickActionPlacement, normalizeQuickActionsForPersist, quickActionDisplayName } from '../domain/quick-action.js';
 import { aggregateModels } from '../domain/model-catalog.js';
 import { normalizeText, sanitizeName } from '../utils/text.js';
 import { normalizeModelList } from '../utils/model-list.js';
@@ -19,12 +19,12 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__quick-manager {
             --qa-border: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.28));
             --qa-border-strong: rgba(128, 128, 128, 0.5);
-            --qa-bg: var(--black30a, rgba(0, 0, 0, 0.18));
-            --qa-bg-hover: rgba(255, 255, 255, 0.07);
+            --qa-bg: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
+            --qa-bg-hover: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
             --qa-accent: #5b9bd5;
             --qa-danger: #d9534f;
             --qa-text: var(--SmartThemeBodyColor, #e8e8e8);
-            --qa-text-dim: var(--SmartThemeEmojiColor, #a0a0a0);
+            --qa-text-dim: color-mix(in srgb, var(--SmartThemeBodyColor) 70%, transparent);
             display: flex; flex-direction: column; gap: 10px;
             width: 100%; min-width: 0; max-height: 78vh;
             box-sizing: border-box;
@@ -82,7 +82,6 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__quick-field > span { font-size: 12px; color: var(--qa-text-dim); }
         .quicker-api__quick-model-control { display: flex; flex-direction: column; gap: 6px; }
         .quicker-api__quick-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
-        .quicker-api__quick-editor.has-unsaved-detail { border-color: var(--qa-accent); }
         .quicker-api__empty-state {
             font-size: 12px; color: var(--qa-text-dim); line-height: 1.7;
             border: 1px dashed var(--qa-border-strong); border-radius: 6px; padding: 14px;
@@ -152,34 +151,37 @@ export async function chooseQuickActionPlacement(current: QuickActionPlacement, 
 
 function createQuickManagerDraft() {
     const globalDraft = settings().quickActions.map(action => normalizeQuickAction(structuredClone(action)));
-    return {
-        globalDraft,
-        initialGlobalSnapshot: JSON.stringify(globalDraft),
-    };
+    return { globalDraft };
 }
 
 export async function manageQuickActions(): Promise<void> {
     if (runtimeState.extensionDisabled || runtimeState.teardownPending) return;
     ensureQuickManagerStyles();
-    const { globalDraft, initialGlobalSnapshot } = createQuickManagerDraft();
+    const { globalDraft } = createQuickManagerDraft();
     let draftPlacement = normalizeQuickActionPlacement(settings().quickActionPlacement);
     let selectedId = globalDraft[0]?.id || '';
-    let detailDraft = selectedId ? structuredClone(globalDraft[0]) : null;
-    let detailBaseline = detailDraft ? JSON.stringify(detailDraft) : '';
+    let detailDraft: QuickAction | null = globalDraft[0] || null;
 
     const content = $('<div class="quicker-api__quick-manager">');
     const header = $('<header class="quicker-api__quick-header">');
     const title = $('<div class="quicker-api__quick-title"><i class="fa-solid fa-bolt"></i><span>便捷按钮管理</span></div>');
     const placementButton = $('<button type="button" class="menu_button" title="入口位置" aria-label="设置便捷入口位置"><i class="fa-solid fa-gear"></i><span>位置设置</span></button>');
-    const saveAll = $('<button type="button" class="menu_button quicker-api__save-button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    // DISPLAY 弹窗右上角自带 x 关闭，这里不再重复放 x
-    header.append(title.append(placementButton), $('<div class="quicker-api__quick-header-actions">').append(saveAll));
+    const close = $('<button type="button" class="menu_button" title="离开" aria-label="离开便捷按钮管理"><i class="fa-solid fa-xmark"></i></button>');
+    header.append(title.append(placementButton), $('<div class="quicker-api__quick-header-actions">').append(close));
     const add = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增方案</span></button>');
     const list = $('<div class="quicker-api__quick-list">');
     const listItems = $('<div class="quicker-api__quick-list-items" role="listbox" aria-label="便捷方案">');
     list.append($('<div class="quicker-api__quick-list-toolbar">').append(add), listItems);
     const editor = $('<div class="quicker-api__quick-editor">');
     content.append(header, $('<div class="quicker-api__quick-columns">').append(list, editor));
+
+    const persistQuickActions = () => {
+        const normalized = normalizeQuickActionsForPersist(globalDraft);
+        globalDraft.forEach((action, index) => Object.assign(action, normalized[index]));
+        settings().quickActions = globalDraft;
+        saveSettingsDebounced();
+        ensureQuickActionEntries();
+    };
 
     // 使用 ST 标准 dialog 背景/边框/居中；wider 让弹窗按内容自然居中，不用 wide 的 sheldWidth
     const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', wider: true });
@@ -188,15 +190,12 @@ export async function manageQuickActions(): Promise<void> {
     const selectAction = (id: string, force = false) => {
         if (!force && id === selectedId) return;
         selectedId = id;
-        const action = globalDraft.find(item => item.id === selectedId) || null;
-        detailDraft = action ? structuredClone(action) : null;
-        detailBaseline = detailDraft ? JSON.stringify(detailDraft) : '';
+        detailDraft = globalDraft.find(item => item.id === selectedId) || null;
         render();
     };
     const field = (label: string, control: JQuery<HTMLElement>) => $('<label class="quicker-api__quick-field">').append($('<span>').text(label), control);
-    const updateDetailSaveState = () => editor.toggleClass('has-unsaved-detail', Boolean(detailDraft) && JSON.stringify(detailDraft) !== detailBaseline);
     const renderEditor = () => {
-        editor.empty().removeClass('has-unsaved-detail');
+        editor.empty();
         if (!detailDraft) {
             editor.append($('<div class="quicker-api__empty-state">').text('从左侧选择一个方案进行编辑，或点击"新增方案"创建。方案可以切换 preset、逻辑模型或真实模型；留空字段表示不执行对应动作。'));
             return;
@@ -204,9 +203,9 @@ export async function manageQuickActions(): Promise<void> {
         const draft = detailDraft;
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
         const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
-        const modelSelect = $('<select class="text_pole"></select>');
+        const modelSelect = $('<select class="text_pole quicker-api__quick-model-select"></select>');
         const refreshModels = () => {
-            // 聚合模型（供应商路由）与逻辑模型合并候选，和预设下拉一样用原生 text_pole
+            // 聚合模型（供应商路由）与逻辑模型合并候选；select2 提供 ST 原生搜索下拉
             const logicalNames = logicalModels().map(model => model.name);
             const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -217,32 +216,24 @@ export async function manageQuickActions(): Promise<void> {
         refreshModels();
         modelSelect.on('change', () => {
             draft.model = normalizeText(modelSelect.val()).slice(0, 500);
-            updateDetailSaveState();
+            persistQuickActions();
         });
         const modelControl = $('<div class="quicker-api__quick-model-control"></div>').append(modelSelect);
-        name.on('input', () => { draft.name = sanitizeName(name.val()); updateDetailSaveState(); });
-        preset.on('change', () => { draft.preset = normalizeText(preset.val()); updateDetailSaveState(); });
-        const saveScheme = $('<button type="button" class="menu_button quicker-api__save-button"><i class="fa-solid fa-floppy-disk"></i><span>保存方案</span></button>');
-        saveScheme.on('click', () => {
-            if (!draft.preset && !draft.model) return toastr.warning('方案至少需要 preset 或 model 中的一项。');
-            const index = globalDraft.findIndex(item => item.id === selectedId);
-            if (index < 0) return;
-            globalDraft[index] = normalizeQuickAction(structuredClone(draft), index);
-            detailDraft = structuredClone(globalDraft[index]);
-            detailBaseline = JSON.stringify(detailDraft);
-            render();
-            toastr.success('方案修改已保存；点击顶部"保存"后写入设置。');
+        name.on('input', () => {
+            draft.name = sanitizeName(name.val());
+            persistQuickActions();
+        });
+        preset.on('change', () => {
+            draft.preset = normalizeText(preset.val());
+            persistQuickActions();
         });
         editor.append(
             $('<h4 class="quicker-api__quick-editor-title">').text('方案详情'),
             $('<div class="quicker-api__quick-editor-fields">').append(
                 field('名称', name), field('预设', preset), field('模型', modelControl),
             ),
-            $('<div class="quicker-api__quick-editor-actions">').append(saveScheme),
         );
-        updateDetailSaveState();
     };
-    const updateSaveState = () => saveAll.toggleClass('is-dirty', JSON.stringify(globalDraft) !== initialGlobalSnapshot);
     const render = () => {
         listItems.empty();
         globalDraft.forEach((action, index) => {
@@ -260,17 +251,17 @@ export async function manageQuickActions(): Promise<void> {
                 .toggleClass('quicker-api__delete-button', danger).attr({ title: label, 'aria-label': label }).prop('disabled', disabled)
                 .append($(`<i class="fa-solid ${icon}"></i>`)).on('click', event => { event.stopPropagation(); handler(); });
             const up = makeRowButton('上移', 'fa-arrow-up', index === 0, () => {
-                [globalDraft[index - 1], globalDraft[index]] = [globalDraft[index], globalDraft[index - 1]]; render();
+                [globalDraft[index - 1], globalDraft[index]] = [globalDraft[index], globalDraft[index - 1]]; persistQuickActions(); render();
             });
             const down = makeRowButton('下移', 'fa-arrow-down', index === globalDraft.length - 1, () => {
-                [globalDraft[index + 1], globalDraft[index]] = [globalDraft[index], globalDraft[index + 1]]; render();
+                [globalDraft[index + 1], globalDraft[index]] = [globalDraft[index], globalDraft[index + 1]]; persistQuickActions(); render();
             });
             const copy = makeRowButton('复制', 'fa-clone', false, () => {
                 const clone = normalizeQuickAction({ ...structuredClone(action), id: makeId('quick-action'), name: `${quickActionDisplayName(action, index)} 副本` }, index + 1);
-                globalDraft.splice(index + 1, 0, clone); selectAction(clone.id);
+                globalDraft.splice(index + 1, 0, clone); persistQuickActions(); selectAction(clone.id);
             });
             const remove = makeRowButton('删除', 'fa-trash', false, () => {
-                globalDraft.splice(index, 1);
+                globalDraft.splice(index, 1); persistQuickActions();
                 selectAction(globalDraft[Math.min(index, globalDraft.length - 1)]?.id || '');
             }, true);
             actions.append(up, down, copy, remove);
@@ -280,11 +271,26 @@ export async function manageQuickActions(): Promise<void> {
             listItems.append(row);
         });
         renderEditor();
-        updateSaveState();
+        const modelSelectEl = editor.find('.quicker-api__quick-model-select');
+        if (modelSelectEl.length) {
+            modelSelectEl.select2({
+                placeholder: '选择或搜索模型…',
+                searchInputPlaceholder: '搜索模型…',
+                searchInputCssClass: 'text_pole',
+                width: '100%',
+                matcher: function (params: any, data: any) {
+                    if (!params.term || params.term.trim() === '') return data;
+                    const term = String(params.term).toLowerCase();
+                    const text = String(data.text || '').toLowerCase();
+                    return text.includes(term) ? data : null;
+                },
+            });
+        }
     };
     add.on('click', () => {
         const action = normalizeQuickAction({ id: makeId('quick-action'), sequence: globalDraft.length });
         globalDraft.push(action);
+        persistQuickActions();
         selectAction(action.id);
     });
     placementButton.on('click', () => void chooseQuickActionPlacement(draftPlacement, value => {
@@ -294,28 +300,13 @@ export async function manageQuickActions(): Promise<void> {
         ensureQuickActionEntries();
         toastr.success('便捷入口位置已应用。');
     }));
-    saveAll.on('click', () => {
-        const invalid = globalDraft.find(action => !action.preset && !action.model);
-        if (invalid) return toastr.warning('请先在右侧保存每个方案；每项至少需要 preset 或 model。');
-        const validPresetNames = new Set($('#settings_preset_openai option').map((_, option) => normalizeText(option.textContent)).get());
-        if (globalDraft.some(action => action.preset && !validPresetNames.has(action.preset))) return toastr.warning('方案引用了已不存在的 preset，请重新选择并保存方案。');
-        globalDraft.forEach((action, index) => {
-            action.name = sanitizeName(action.name) || `方案${index + 1}`;
-            action.sequence = index;
-        });
-        void popup.completeAffirmative();
-    });
+    close.on('click', () => void popup.completeCancelled());
     render();
-    let result: string | null = null;
     try {
-        result = await popup.show();
+        await popup.show();
     } finally {
         managerOpen = false;
         ownedPopups.delete(popup);
     }
-    if (!result || runtimeState.extensionDisabled || runtimeState.teardownPending) return;
-    settings().quickActions = globalDraft;
-    settings().quickActionPlacement = draftPlacement;
-    saveSettingsDebounced();
-    ensureQuickActionEntries();
+    // 自动保存：所有改动在编辑时已通过 persistQuickActions 写入，关闭无需再写
 }
