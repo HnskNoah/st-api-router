@@ -39,11 +39,18 @@ describe('domain/vendor > findUnmappedModels 未归类模型', () => {
         expect(findUnmappedModels(groups)).toEqual(['gpt-4o-mini']);
     });
 
-    it('排除特殊变体（search/thinking/image/cache）', () => {
+    it('特殊变体（search/thinking/image/cache）也进入未归类', () => {
         const groups = [
             makeGroup({ entries: [makeEntry('e1', 'v1', ['gemini-2.5-pro', 'gemini-2.5-pro-cache', 'gpt-image-2'])] }),
         ];
-        expect(findUnmappedModels(groups)).toEqual(['gemini-2.5-pro']);
+        expect(findUnmappedModels(groups).sort()).toEqual(['gemini-2.5-pro', 'gemini-2.5-pro-cache', 'gpt-image-2']);
+    });
+
+    it('embedding 与 reranker 也进入未归类', () => {
+        const groups = [
+            makeGroup({ entries: [makeEntry('e1', 'v1', ['text-embedding-3-large', 'bge-reranker-v2-m3'])] }),
+        ];
+        expect(findUnmappedModels(groups).sort()).toEqual(['bge-reranker-v2-m3', 'text-embedding-3-large']);
     });
 
     it('空 groups 或全部已映射时返回空数组', () => {

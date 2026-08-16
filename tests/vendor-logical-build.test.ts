@@ -40,6 +40,13 @@ describe('domain/vendor > isSpecialVariant 特殊变体判断', () => {
         expect(isSpecialVariant('')).toBe(false);
         expect(isSpecialVariant('grok-4.5')).toBe(false);
     });
+
+    it('embedding 与 reranker 视为特殊变体', () => {
+        expect(isSpecialVariant('text-embedding-3-large')).toBe(true);
+        expect(isSpecialVariant('[1]bge-reranker-v2-m3')).toBe(true);
+        expect(isSpecialVariant('gcli-embedding-ada-002')).toBe(true);
+        expect(isSpecialVariant('reranker-multilingual-v3')).toBe(true);
+    });
 });
 
 describe('domain/vendor > canonicalModelName 核心模型名提取', () => {

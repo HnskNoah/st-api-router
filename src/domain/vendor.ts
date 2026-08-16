@@ -258,7 +258,7 @@ export function mappedRealModels(groups: Group[]): { realModel: string; logicalM
         .sort((a, b) => a.realModel < b.realModel ? -1 : a.realModel > b.realModel ? 1 : 0);
 }
 
-/** 未归类模型：所有 Key 已拉取但无任何映射的真实模型（跨 Key 去重，排除特殊变体）。 */
+/** 未归类模型：所有 Key 已拉取但无任何映射的真实模型（跨 Key 去重；含特殊变体/embedding/reranker，供用户查看或手动归类）。 */
 export function findUnmappedModels(groups: Group[]): string[] {
     const mapped = new Set<string>();
     for (const entry of allGroupEntries(groups)) {
@@ -268,7 +268,7 @@ export function findUnmappedModels(groups: Group[]): string[] {
     for (const entry of allGroupEntries(groups)) {
         for (const raw of entry.fetchedModels) {
             const name = String(raw || '').trim();
-            if (!name || mapped.has(name) || isSpecialVariant(name)) continue;
+            if (!name || mapped.has(name)) continue;
             result.add(name);
         }
     }
@@ -401,9 +401,9 @@ export function computeVendorTokenClamps(
     return result;
 }
 
-const SPECIAL_VARIANT_RE = /(?:search|thinking|image|cache)/i;
+const SPECIAL_VARIANT_RE = /(?:search|thinking|image|cache|embedding|reranker)/i;
 
-/** 特殊变体判断：模型名含 search/thinking/image/cache（大小写不敏感）视为非对话用途，跳过。 */
+/** 特殊变体判断：模型名含 search/thinking/image/cache/embedding/reranker（大小写不敏感）视为非对话用途，跳过建逻辑模型。 */
 export function isSpecialVariant(name: string): boolean {
     return SPECIAL_VARIANT_RE.test(String(name || '').trim());
 }

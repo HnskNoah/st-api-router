@@ -124,16 +124,17 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 16px;
                 padding: 4px 12px; cursor: pointer; background: rgba(255, 255, 255, 0.04);
                 color: inherit; font-size: 13px; transition: border-color 0.15s, background 0.15s;
+                flex-wrap: nowrap; max-width: 100%;
             }
             .st-router-model-chip:hover { border-color: #5b9bd5; }
             .st-router-model-chip.is-selected {
                 border-color: #5b9bd5; background: rgba(91, 155, 213, 0.18);
             }
-            .st-router-model-name { font-weight: 600; }
+            .st-router-model-name { font-weight: 600; min-width: 0; }
             .st-router-model-providers { font-size: 11px; color: #999; }
             .st-router-model-edit {
                 font-size: 11px; color: #999; cursor: pointer; padding: 0 2px;
-                border-radius: 4px; display: inline-flex; align-items: center;
+                border-radius: 4px; display: inline-flex; align-items: center; flex: none; white-space: nowrap;
             }
             .st-router-model-edit:hover { color: #5b9bd5; background: rgba(91, 155, 213, 0.15); }
 
@@ -1397,6 +1398,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     renderProviderList();
     renderGroupEntries();
     renderModelList();
+
+    // 打开面板/刷新后：若上次已选择逻辑模型，恢复 ST 已启用状态
+    const initialGroup = activeGroup();
+    if (initialGroup?.currentLogicalModelId && deps.getLogicalModels().some(model => model.id === initialGroup.currentLogicalModelId)) {
+        setOnlineStatus('已启用');
+    }
 
     // 便捷方案切换逻辑模型后刷新模型列表高亮
     const onLogicalModelChanged = () => renderModelList();
