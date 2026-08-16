@@ -2,12 +2,13 @@
 // 生成数据就绪后直接改 generateData（拦截模式，不碰 ST 原生 DOM/连接字段）；
 // 结束后按失败观察结果记录 Vendor 成功/失败，连续失败自动禁用整个 Vendor。
 
-import { saveSettingsDebounced } from '@sillytavern/script';
+import { saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { Popup } from '@sillytavern/scripts/popup';
 import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js';
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
+import { patchGenerateData } from './patch-generate-data.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
 import type { Group, RoutingSettings, Vendor } from '../types.js';
@@ -29,25 +30,6 @@ export interface RoutingHooks {
     onGenerationStopped(): void;
     onGenerationEnded(): void;
     getActiveUnit(): GroupRouteUnit | null;
-}
-
-/** 在 ST 已组装好的请求数据上直接改连接字段，不碰 DOM，不触发 reconnect/status 检查。 */
-function patchGenerateData(generateData: Record<string, any>, unit: GroupRouteUnit): void {
-    const vendor = unit.vendor;
-    const format = String(vendor.format || 'custom');
-    const endpoint = String(vendor.endpoint || '').trim();
-    const apiKey = String(unit.entry.apiKey || '');
-    const model = unit.realModel;
-
-    if (format === 'deepseek') {
-        generateData.chat_completion_source = 'deepseek';
-    } else {
-        // custom / OpenAI 兼容 → 走 openai reverse_proxy 模式，密钥直接传 proxy_password
-        generateData.chat_completion_source = 'openai';
-    }
-    generateData.reverse_proxy = endpoint;
-    generateData.proxy_password = apiKey;
-    generateData.model = model;
 }
 
 export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
@@ -142,6 +124,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         // 存储选中的 unit，等 CHAT_COMPLETION_SETTINGS_READY 时直接改 generateData
         state.active = { unit, logicalModelId };
         deps.beginGeneration?.();
+        setOnlineStatus('Valid');
         toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
         debugLog('onGenerationStarted done');
     }
