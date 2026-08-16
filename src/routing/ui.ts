@@ -29,6 +29,7 @@ import {
     unmapRealModel,
 } from '../domain/vendor.js';
 import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
+import { exportDebugLog, isDebugLogEnabled } from '../debug.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
 export interface RoutingUIDeps {
@@ -195,6 +196,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             <div class="quicker-api__title">
                 <span><i class="fa-solid fa-route"></i> ST Api Router</span>
                 <span class="st-router-title-actions">
+                    <button id="st_router_export_log" class="menu_button" type="button" title="导出调试日志（.log）"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>
                     <button id="st_router_toggle_legacy" class="menu_button" type="button" title="旧版 API Profile 设置（过渡兼容）"><i class="fa-solid fa-clock-rotate-left"></i><span>旧版设置</span></button>
                 </span>
             </div>
@@ -1397,6 +1399,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     panel.insertBefore('#quicker_api');
     let legacyVisible = false;
     $('#quicker_api').hide();
+    panel.find('#st_router_export_log').on('click', () => {
+        if (!isDebugLogEnabled()) {
+            toastr.warning('调试日志未开启：先在控制台执行 localStorage.setItem(\'quickerApi.debugLog\', \'1\') 并刷新页面。');
+            return;
+        }
+        exportDebugLog();
+    });
     panel.find('#st_router_toggle_legacy').on('click', function () {
         legacyVisible = !legacyVisible;
         $('#quicker_api').toggle(legacyVisible);
