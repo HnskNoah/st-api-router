@@ -100,8 +100,6 @@ export async function teardownQuickerApi(): Promise<boolean> {
     for (const controller of [...activeFetchControllers]) controller.abort();
     runtimeState.quickActionTransaction++;
     runtimeState.profileSelectionGeneration++;
-    clearTimeout(runtimeState.presetChangeTimer ?? undefined);
-    runtimeState.presetChangeTimer = null;
 
     await runtimeState.quickActionQueue.catch(() => undefined);
     let stableQueue: Promise<unknown> | null = null;

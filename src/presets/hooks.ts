@@ -29,7 +29,6 @@ export function handleNativePresetChangeBefore({ presetName }: { presetName?: st
     const name = normalizeText(presetName || currentPresetName());
     if (shouldSkipDuplicatePresetEvent(name)) return undefined;
     const generation = ++runtimeState.profileSelectionGeneration;
-    clearTimeout(runtimeState.presetChangeTimer ?? undefined);
     beginPresetTransition();
     const profile = profiles().find(item => item.id === settings().presetBindings[name]);
     if (profile) {
@@ -51,7 +50,6 @@ export async function handleNativePresetChange(): Promise<boolean | undefined> {
     beginPresetTransition();
     const generation = ++runtimeState.profileSelectionGeneration;
     const quickActionOwnsBlock = Boolean(runtimeState.quickActionBlockingToken);
-    clearTimeout(runtimeState.presetChangeTimer ?? undefined);
     const presetName = currentPresetName();
     const profileId = settings().presetBindings[presetName];
     const profile = profiles().find(item => item.id === profileId);

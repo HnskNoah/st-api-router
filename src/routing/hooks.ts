@@ -55,6 +55,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         if (runtimeState.generationRoutingInFlight) {
             debugLog('onGenerationStarted skip: another routing in flight');
+            toastr.info('Quicker Api：上一轮路由尚未完成，本次生成已跳过。', '', { timeOut: 3000 });
             return;
         }
         runtimeState.generationRoutingInFlight = true;

@@ -32,6 +32,7 @@ export function snapshotConnection(): Record<string, string> {
         reverse_proxy: String(oai_settings.reverse_proxy || ''),
         deepseek_model: String(oai_settings.deepseek_model || ''),
         max_context: String(oai_settings.openai_max_context || ''),
+        max_tokens: String(oai_settings.openai_max_tokens || ''),
         apiKeyCustom: String(secret_state?.[SECRET_KEYS.CUSTOM] ?? ''),
         apiKeyDeepseek: String(secret_state?.[SECRET_KEYS.DEEPSEEK] ?? ''),
     };
@@ -48,6 +49,10 @@ export function restoreConnection(snapshot: Record<string, string>): void {
         oai_settings.openai_max_context = Number(snapshot.max_context) || 0;
         syncInput('#openai_max_context', oai_settings.openai_max_context);
         syncInput('#openai_max_context_counter', oai_settings.openai_max_context);
+    }
+    if (snapshot.max_tokens) {
+        oai_settings.openai_max_tokens = Number(snapshot.max_tokens) || 0;
+        syncInput('#openai_max_tokens', oai_settings.openai_max_tokens);
     }
     if (secret_state) {
         secret_state[SECRET_KEYS.CUSTOM] = snapshot.apiKeyCustom;
@@ -66,17 +71,19 @@ export function restoreConnection(snapshot: Record<string, string>): void {
 
 function applyConnectionFields(format: string, endpoint: string, apiKey: string, model: string): void {
     if (format === 'deepseek') {
+        const wasDeepseek = String(oai_settings.chat_completion_source) === chat_completion_sources.DEEPSEEK;
         oai_settings.chat_completion_source = chat_completion_sources.DEEPSEEK;
         oai_settings.reverse_proxy = endpoint;
         oai_settings.deepseek_model = model;
         if (apiKey && secret_state) secret_state[SECRET_KEYS.DEEPSEEK] = apiKey;
-        syncInput('#chat_completion_source', chat_completion_sources.DEEPSEEK, 'change');
+        if (!wasDeepseek) syncInput('#chat_completion_source', chat_completion_sources.DEEPSEEK, 'change');
         syncInput('#openai_reverse_proxy', endpoint);
         syncInput('#model_deepseek_select', model, 'change');
         if (apiKey) syncInput('#api_key_deepseek', apiKey);
         return;
     }
 
+    const wasCustom = String(oai_settings.chat_completion_source) === chat_completion_sources.CUSTOM;
     oai_settings.chat_completion_source = chat_completion_sources.CUSTOM;
     oai_settings.custom_url = endpoint;
     oai_settings.custom_model = model;
@@ -86,7 +93,7 @@ function applyConnectionFields(format: string, endpoint: string, apiKey: string,
     syncInput('#custom_api_url_text', endpoint);
     syncInput('#custom_model_id', model);
     if (apiKey) syncInput('#api_key_custom', apiKey);
-    if (String(oai_settings.chat_completion_source) !== chat_completion_sources.CUSTOM) {
+    if (!wasCustom) {
         syncInput('#chat_completion_source', chat_completion_sources.CUSTOM, 'change');
     }
 }

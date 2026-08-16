@@ -7,7 +7,6 @@ export const runtimeState = {
     profileSelectionGeneration: 0,
     extensionDisabled: false,
     teardownPending: false,
-    presetChangeTimer: null as ReturnType<typeof setTimeout> | null,
     presetEventDedupe: null as { name: string; at: number } | null,
     presetTransitionBlocked: false,
     presetConnectWasDisabled: false,
@@ -37,7 +36,6 @@ export function resetRuntimeState() {
     runtimeState.profileSelectionGeneration = 0;
     runtimeState.extensionDisabled = false;
     runtimeState.teardownPending = false;
-    runtimeState.presetChangeTimer = null;
     runtimeState.presetEventDedupe = null;
     runtimeState.presetTransitionBlocked = false;
     runtimeState.presetConnectWasDisabled = false;
