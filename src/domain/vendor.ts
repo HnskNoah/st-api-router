@@ -371,7 +371,8 @@ export function buildModelListText(groups: Group[]): string {
 }
 
 /** Vendor token 限制换算（ST 语义：总上下文预算 = 输入预算 + 输出上限）。
- *  Vendor 三个上限都可选（0 = 不限制）。返回需要钳制的目标值；无限制时对应字段为 undefined。 */
+ *  Vendor 三个上限都可选（0 = 不限制）。只有当前设置超过 Vendor 上限时才返回钳制目标；
+ *  当前已低于/等于上限时不返回（不把用户的设置调高）。 */
 export function computeVendorTokenClamps(
     vendor: Pick<Vendor, 'maxContext' | 'maxInputTokens' | 'maxOutputTokens'>,
     current: { maxContext: number; maxOutputTokens: number },
@@ -384,18 +385,18 @@ export function computeVendorTokenClamps(
 
     const result: { maxContext?: number; maxOutputTokens?: number } = {};
 
-    // 输出上限：直接钳制 ST openai_max_tokens
-    if (maxOutputTokens > 0 && maxOutputTokens !== currentOutput) {
+    // 输出上限：仅当前设置超过上限时钳制
+    if (maxOutputTokens > 0 && currentOutput > maxOutputTokens) {
         result.maxOutputTokens = maxOutputTokens;
     }
 
     // 总上下文：优先显式 maxContext；否则若设置了输入上限，按 输入 + 输出预算 推导
     if (maxContext > 0) {
-        if (maxContext !== currentContext) result.maxContext = maxContext;
+        if (currentContext > maxContext) result.maxContext = maxContext;
     } else if (maxInputTokens > 0) {
         const outputBudget = maxOutputTokens > 0 ? maxOutputTokens : currentOutput;
         const derived = maxInputTokens + outputBudget;
-        if (derived !== currentContext) result.maxContext = derived;
+        if (currentContext > derived) result.maxContext = derived;
     }
 
     return result;
