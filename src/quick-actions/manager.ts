@@ -26,7 +26,8 @@ function ensureQuickManagerStyles(): void {
             --qa-text: #ddd;
             --qa-text-dim: #999;
             display: flex; flex-direction: column; gap: 10px;
-            width: min(900px, 92vw); min-height: 520px; max-height: 78vh;
+            width: min(900px, 92vw); max-height: 78vh;
+            margin: -10px -8px; /* 抵消 .popup-content 的 margin/padding，避免周围露出 dialog 底色 */
             color: var(--qa-text); font-size: 13px;
         }
         .quicker-api__quick-header {
@@ -181,7 +182,8 @@ export async function manageQuickActions(): Promise<void> {
     const editor = $('<div class="quicker-api__quick-editor">');
     content.append(header, $('<div class="quicker-api__quick-columns">').append(list, editor));
 
-    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none' });
+    // transparent：去掉 ST dialog 默认大黑底，只保留我们自己的卡片背景
+    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', transparent: true, wide: true });
     let managerOpen = true;
     ownedPopups.add(popup);
     const selectAction = (id: string, force = false) => {
