@@ -111,7 +111,8 @@ export async function manageQuickActions(): Promise<void> {
         const refreshModels = () => {
             // 聚合模型（供应商路由）优先入候选：快捷方案选模型即参与路由；逻辑模型名同样入候选
             const logicalNames = logicalModels().map(model => model.name);
-            const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model]);
+            const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
             modelSelect.empty().append($('<option value="">— 从模型列表选择 —</option>'));
             models.forEach(model => modelSelect.append($('<option>').val(model).text(model)));
             modelSelect.val(models.includes(draft.model) ? draft.model : '');
