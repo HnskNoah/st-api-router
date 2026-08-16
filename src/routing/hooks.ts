@@ -7,6 +7,8 @@ import { Popup } from '@sillytavern/scripts/popup';
 import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js';
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorConnection, applyVendorTokenClamps, snapshotConnection, restoreConnection } from './apply-provider.js';
+import { runtimeState } from '../state.js';
+import { enqueueConnectionMutation } from '../operation-queue.js';
 import { debugLog } from '../debug.js';
 import type { Group, RoutingSettings, Vendor } from '../types.js';
 
@@ -43,6 +45,19 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             activeGroupId: deps.getActiveGroupId(),
             groupCount: deps.getGroups().length,
         });
+        if (runtimeState.generationRoutingInFlight) {
+            debugLog('onGenerationStarted skip: another routing in flight');
+            return;
+        }
+        runtimeState.generationRoutingInFlight = true;
+        try {
+            await runGenerationRouting();
+        } finally {
+            runtimeState.generationRoutingInFlight = false;
+        }
+    }
+
+    async function runGenerationRouting(): Promise<void> {
         const routing = deps.getRouting();
         if (!routing.enabled) {
             debugLog('onGenerationStarted skip: routing disabled');
@@ -66,46 +81,50 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             debugLog('onGenerationStarted skip: no route unit', { logicalModelId, reasons: result.reasons });
             return;
         }
+        const unit = result.unit;
         debugLog('onGenerationStarted routed', {
-            vendorId: result.unit.vendor.id,
-            vendorName: result.unit.vendor.name,
-            entryId: result.unit.entry.id,
-            entryLabel: result.unit.entry.label,
-            realModel: result.unit.realModel,
-            rpmWindowCount: result.unit.vendor.window?.length ?? 0,
+            vendorId: unit.vendor.id,
+            vendorName: unit.vendor.name,
+            entryId: unit.entry.id,
+            entryLabel: unit.entry.label,
+            realModel: unit.realModel,
+            rpmWindowCount: unit.vendor.window?.length ?? 0,
         });
-        const snapshot = snapshotConnection();
-        try {
-            // 路由前确认 token 限制：Vendor 设置了上下文/输入/输出上限且需要调整时，弹窗确认后再钳制
-            const clamps = computeVendorTokenClamps(result.unit.vendor, {
-                maxContext: Number(oai_settings.openai_max_context) || 0,
-                maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
-            });
-            const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
-            debugLog('onGenerationStarted token clamps', { needsApply, clamps });
-            if (needsApply) {
-                const details: string[] = [];
-                if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
-                if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
-                debugLog('onGenerationStarted showing token confirm');
-                const confirmed = await Popup.show.confirm(
-                    '调整 token 限制',
-                    `路由到 Vendor「${result.unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
-                );
-                debugLog('onGenerationStarted token confirm result', { confirmed });
-                if (confirmed) applyVendorTokenClamps(result.unit.vendor);
+        // 连接写入放入互斥队列：避免和 preset 联动/Profile 应用并发改写 ST 连接字段
+        await enqueueConnectionMutation(async () => {
+            const snapshot = snapshotConnection();
+            try {
+                // 路由前确认 token 限制：Vendor 设置了上下文/输入/输出上限且需要调整时，弹窗确认后再钳制
+                const clamps = computeVendorTokenClamps(unit.vendor, {
+                    maxContext: Number(oai_settings.openai_max_context) || 0,
+                    maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
+                });
+                const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
+                debugLog('onGenerationStarted token clamps', { needsApply, clamps });
+                if (needsApply) {
+                    const details: string[] = [];
+                    if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
+                    if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
+                    debugLog('onGenerationStarted showing token confirm');
+                    const confirmed = await Popup.show.confirm(
+                        '调整 token 限制',
+                        `路由到 Vendor「${unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
+                    );
+                    debugLog('onGenerationStarted token confirm result', { confirmed });
+                    if (confirmed) applyVendorTokenClamps(unit.vendor);
+                }
+                applyVendorConnection(unit.vendor, unit.entry.apiKey, unit.realModel);
+            } catch (error) {
+                console.error('[QuickerApi] Vendor connection apply failed:', error);
+                debugLog('onGenerationStarted connection apply failed', error);
+                restoreConnection(snapshot);
+                toastr.error('Quicker Api：Vendor 连接应用失败，已恢复原连接。');
+                return;
             }
-            applyVendorConnection(result.unit.vendor, result.unit.entry.apiKey, result.unit.realModel);
-        } catch (error) {
-            console.error('[QuickerApi] Vendor connection apply failed:', error);
-            debugLog('onGenerationStarted connection apply failed', error);
-            restoreConnection(snapshot);
-            toastr.error('Quicker Api：Vendor 连接应用失败，已恢复原连接。');
-            return;
-        }
-        state.active = { unit: result.unit, logicalModelId };
-        deps.beginGeneration?.();
-        debugLog('onGenerationStarted done');
+            state.active = { unit, logicalModelId };
+            deps.beginGeneration?.();
+            debugLog('onGenerationStarted done');
+        });
     }
 
     function onGenerationStopped(): void {

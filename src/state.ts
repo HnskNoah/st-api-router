@@ -3,6 +3,7 @@
 
 export const runtimeState = {
     operationQueue: Promise.resolve() as Promise<unknown>,
+    connectionMutationQueue: Promise.resolve() as Promise<unknown>,
     profileSelectionGeneration: 0,
     extensionDisabled: false,
     teardownPending: false,
@@ -23,6 +24,7 @@ export const runtimeState = {
     quickActionPlacementPopup: null as { completeCancelled: () => Promise<void> } | null,
     quickActionObserver: null as MutationObserver | null,
     quickActionRenderPending: false,
+    generationRoutingInFlight: false,
 };
 
 export const nativePresetCaptureHandlers: Record<string, (() => void) | undefined> = {};
@@ -31,6 +33,7 @@ export const activeFetchControllers = new Set<AbortController>();
 
 export function resetRuntimeState() {
     runtimeState.operationQueue = Promise.resolve();
+    runtimeState.connectionMutationQueue = Promise.resolve();
     runtimeState.profileSelectionGeneration = 0;
     runtimeState.extensionDisabled = false;
     runtimeState.teardownPending = false;
@@ -46,11 +49,12 @@ export function resetRuntimeState() {
     runtimeState.quickActionTransaction = 0;
     runtimeState.quickActionBlockingToken = 0;
     runtimeState.quickPresetWaitCancel = null;
-    runtimeState.    quickActionMenu = null;
+    runtimeState.quickActionMenu = null;
     runtimeState.quickActionPopper = null;
     runtimeState.quickActionPlacementPopup = null;
     runtimeState.quickActionObserver = null;
     runtimeState.quickActionRenderPending = false;
+    runtimeState.generationRoutingInFlight = false;
     for (const key of Object.keys(nativePresetCaptureHandlers)) delete nativePresetCaptureHandlers[key];
     ownedPopups.clear();
     activeFetchControllers.clear();

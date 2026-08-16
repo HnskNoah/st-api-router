@@ -16,6 +16,7 @@ import { getBoundProxyPreset } from '../native/proxy.js';
 import { clearCredentialSafetyBlock, rollbackOrFailClosed, rollbackStaleCredential } from './fail-closed.js';
 import { renderModelControl, renderProfiles } from '../ui/render.js';
 import { endPresetTransition } from '../presets/transition.js';
+import { enqueueConnectionMutation } from '../operation-queue.js';
 import { debugLog } from '../debug.js';
 import type { FormatConfig, NativeSnapshot, Profile } from '../types.js';
 
@@ -38,10 +39,12 @@ async function applyProxyProfile(
         return false;
     }
     try {
-        applyNativeFields(profile, String(proxyPreset.password || ''), applyModel);
-        if ($('#openai_proxy_preset option').filter((_, option) => (option as HTMLOptionElement).value === proxyPreset.name).length) {
-            $('#openai_proxy_preset').val(proxyPreset.name).trigger('change');
-        }
+        await enqueueConnectionMutation(async () => {
+            applyNativeFields(profile, String(proxyPreset.password || ''), applyModel);
+            if ($('#openai_proxy_preset option').filter((_, option) => (option as HTMLOptionElement).value === proxyPreset.name).length) {
+                $('#openai_proxy_preset').val(proxyPreset.name).trigger('change');
+            }
+        });
         if (runtimeState.extensionDisabled) throw new Error('Extension disabled while applying proxy profile');
         settings().activeProfileId = profile.id;
         if (!keepPresetTransition) endPresetTransition();
@@ -111,18 +114,20 @@ async function finalizeAppliedProfile(
     nativeSnapshot: NativeSnapshot, keepPresetTransition: boolean, applyModel: boolean,
 ): Promise<boolean> {
     try {
-        applyNativeFields(profile, '', applyModel);
-        // Custom 源的原生 status 检查依赖 #api_key_custom 输入框（连接按钮会把它写进 secret 再发请求）。
-        // 激活密钥只在服务端/secret_state 里，若不回填输入框，切到 custom 后 status 会因缺 key 报 Unauthorized。
-        if (config.secretKey === 'custom') {
-            const active = getActiveSecret(config.secretKey);
-            if (active) {
-                const value = await findSecretBounded(config.secretKey, active.id);
-                if (value !== null) {
-                    $('#api_key_custom').val(value).trigger('input');
+        await enqueueConnectionMutation(async () => {
+            applyNativeFields(profile, '', applyModel);
+            // Custom 源的原生 status 检查依赖 #api_key_custom 输入框（连接按钮会把它写进 secret 再发请求）。
+            // 激活密钥只在服务端/secret_state 里，若不回填输入框，切到 custom 后 status 会因缺 key 报 Unauthorized。
+            if (config.secretKey === 'custom') {
+                const active = getActiveSecret(config.secretKey);
+                if (active) {
+                    const value = await findSecretBounded(config.secretKey, active.id);
+                    if (value !== null) {
+                        $('#api_key_custom').val(value).trigger('input');
+                    }
                 }
             }
-        }
+        });
         if (runtimeState.extensionDisabled) throw new Error('Extension disabled while applying profile');
         clearCredentialSafetyBlock(config.secretKey);
         settings().activeProfileId = profile.id;

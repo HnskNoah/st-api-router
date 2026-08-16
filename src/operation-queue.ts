@@ -35,6 +35,22 @@ export function enqueueOperation<T>(operation: () => Promise<T> | T): Promise<T 
     return runtimeState.operationQueue as Promise<T | undefined>;
 }
 
+/** 串行化所有直接改写 ST 连接字段的操作（路由写入、Profile 应用、便捷方案切换）。 */
+export function enqueueConnectionMutation<T>(operation: () => Promise<T> | T): Promise<T | undefined> {
+    const run = async () => {
+        if (runtimeState.extensionDisabled || runtimeState.teardownPending) return undefined;
+        try {
+            return await operation();
+        } catch (error) {
+            console.error('[QuickerApi] Connection mutation failed:', error);
+            debugLog('connection mutation failed', error);
+            return undefined;
+        }
+    };
+    runtimeState.connectionMutationQueue = runtimeState.connectionMutationQueue.then(run, run);
+    return runtimeState.connectionMutationQueue as Promise<T | undefined>;
+}
+
 export async function waitForStableOperationQueue(timeout = 30000): Promise<boolean> {
     const deadline = Date.now() + timeout;
     while (!runtimeState.extensionDisabled && !runtimeState.teardownPending) {
