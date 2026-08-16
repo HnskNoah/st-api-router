@@ -1,4 +1,5 @@
-// Vendor/Group 路由钩子：生成前按当前 Group 的逻辑模型选路并写回 ST；
+// Vendor/Group 路由钩子：生成前按当前 Group 的逻辑模型选路；
+// 生成数据就绪后直接改 generateData（拦截模式，不碰 ST 原生 DOM/连接字段）；
 // 结束后按失败观察结果记录 Vendor 成功/失败，连续失败自动禁用整个 Vendor。
 
 import { saveSettingsDebounced } from '@sillytavern/script';
@@ -6,9 +7,8 @@ import { oai_settings } from '@sillytavern/scripts/openai';
 import { Popup } from '@sillytavern/scripts/popup';
 import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js';
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
-import { applyVendorConnection, applyVendorTokenClamps, snapshotConnection, restoreConnection } from './apply-provider.js';
+import { applyVendorTokenClamps } from './apply-provider.js';
 import { runtimeState } from '../state.js';
-import { enqueueConnectionMutation } from '../operation-queue.js';
 import { debugLog } from '../debug.js';
 import type { Group, RoutingSettings, Vendor } from '../types.js';
 
@@ -25,9 +25,29 @@ export interface RoutingHooksDeps {
 
 export interface RoutingHooks {
     onGenerationStarted(type?: string, automaticTrigger?: unknown): void;
+    onChatCompletionSettingsReady(generateData: Record<string, any>): void;
     onGenerationStopped(): void;
     onGenerationEnded(): void;
     getActiveUnit(): GroupRouteUnit | null;
+}
+
+/** 在 ST 已组装好的请求数据上直接改连接字段，不碰 DOM，不触发 reconnect/status 检查。 */
+function patchGenerateData(generateData: Record<string, any>, unit: GroupRouteUnit): void {
+    const vendor = unit.vendor;
+    const format = String(vendor.format || 'custom');
+    const endpoint = String(vendor.endpoint || '').trim();
+    const apiKey = String(unit.entry.apiKey || '');
+    const model = unit.realModel;
+
+    if (format === 'deepseek') {
+        generateData.chat_completion_source = 'deepseek';
+    } else {
+        // custom / OpenAI 兼容 → 走 openai reverse_proxy 模式，密钥直接传 proxy_password
+        generateData.chat_completion_source = 'openai';
+    }
+    generateData.reverse_proxy = endpoint;
+    generateData.proxy_password = apiKey;
+    generateData.model = model;
 }
 
 export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
@@ -48,7 +68,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             groupCount: deps.getGroups().length,
         });
         // 跳过非用户主动触发的生成：quiet/continue/impersonate
-        // 注意：不按 automaticTrigger 过滤——JS-Slash-Runner 等插件的正常发送也可能被标为 true
         if (type === 'quiet' || type === 'continue' || type === 'impersonate') {
             debugLog('onGenerationStarted skip: non-user trigger', { type });
             return;
@@ -99,49 +118,50 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             realModel: unit.realModel,
             rpmWindowCount: unit.vendor.window?.length ?? 0,
         });
-        // 连接写入放入互斥队列：避免和 preset 联动/Profile 应用并发改写 ST 连接字段
-        await enqueueConnectionMutation(async () => {
-            const snapshot = snapshotConnection();
-            try {
-                // 路由前确认 token 限制：Vendor 设置了上下文/输入/输出上限且需要调整时，弹窗确认后再钳制
-                const clamps = computeVendorTokenClamps(unit.vendor, {
-                    maxContext: Number(oai_settings.openai_max_context) || 0,
-                    maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
-                });
-                const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
-                debugLog('onGenerationStarted token clamps', { needsApply, clamps });
-                if (needsApply) {
-                    const details: string[] = [];
-                    if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
-                    if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
-                    debugLog('onGenerationStarted showing token confirm');
-                    const confirmed = await Popup.show.confirm(
-                        '调整 token 限制',
-                        `路由到 Vendor「${unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
-                    );
-                    debugLog('onGenerationStarted token confirm result', { confirmed });
-                    if (confirmed) applyVendorTokenClamps(unit.vendor);
-                }
-                applyVendorConnection(unit.vendor, unit.entry.apiKey, unit.realModel);
-            } catch (error) {
-                console.error('[QuickerApi] Vendor connection apply failed:', error);
-                debugLog('onGenerationStarted connection apply failed', error);
-                restoreConnection(snapshot);
-                toastr.error('Quicker Api：Vendor 连接应用失败，已恢复原连接。');
-                return;
-            }
-            state.active = { unit, logicalModelId };
-            deps.beginGeneration?.();
-            toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
-            debugLog('onGenerationStarted done');
+
+        // token 限制确认并钳制（只改 oai_settings，不触发 reconnect）
+        const clamps = computeVendorTokenClamps(unit.vendor, {
+            maxContext: Number(oai_settings.openai_max_context) || 0,
+            maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
         });
+        const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
+        debugLog('onGenerationStarted token clamps', { needsApply, clamps });
+        if (needsApply) {
+            const details: string[] = [];
+            if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
+            if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
+            debugLog('onGenerationStarted showing token confirm');
+            const confirmed = await Popup.show.confirm(
+                '调整 token 限制',
+                `路由到 Vendor「${unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
+            );
+            debugLog('onGenerationStarted token confirm result', { confirmed });
+            if (confirmed) applyVendorTokenClamps(unit.vendor);
+        }
+
+        // 存储选中的 unit，等 CHAT_COMPLETION_SETTINGS_READY 时直接改 generateData
+        state.active = { unit, logicalModelId };
+        deps.beginGeneration?.();
+        toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
+        debugLog('onGenerationStarted done');
+    }
+
+    function onChatCompletionSettingsReady(generateData: Record<string, any>): void {
+        const active = state.active;
+        if (!active) return;
+        debugLog('onChatCompletionSettingsReady patch', {
+            vendorName: active.unit.vendor.name,
+            entryLabel: active.unit.entry.label,
+            realModel: active.unit.realModel,
+        });
+        patchGenerateData(generateData, active.unit);
     }
 
     function onGenerationStopped(): void {
         debugLog('onGenerationStopped', { hadActive: Boolean(state.active) });
         state.userStopPending = true;
         state.active = null;
-        deps.endGeneration?.(); // 关闭失败观察窗口（丢弃结果）
+        deps.endGeneration?.();
     }
 
     function onGenerationEnded(): void {
@@ -156,7 +176,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         const { vendor, entry, realModel } = active.unit;
         const displayName = `${vendor.name} / ${entry.label} / ${realModel}`;
         debugLog('onGenerationEnded active route', { displayName, failed });
-        // 用户停止：ENDED 先于 STOPPED 触发，稍等再判定
         setTimeout(() => {
             if (state.userStopPending) {
                 state.userStopPending = false;
@@ -183,6 +202,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
 
     return {
         onGenerationStarted,
+        onChatCompletionSettingsReady,
         onGenerationStopped,
         onGenerationEnded,
         getActiveUnit: () => state.active?.unit ?? null,

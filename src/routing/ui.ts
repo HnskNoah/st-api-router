@@ -246,14 +246,19 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 <div class="st-router-section-head">
                     <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
-                        <button id="st_router_reset_models" class="menu_button" type="button" title="删除全部逻辑模型与映射并重新拉取（破坏性操作，需确认）"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>
                         <button id="st_router_refresh_models" class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表（无 Key 的 Vendor 跳过）"><i class="fa-solid fa-arrows-rotate"></i><span>刷新模型</span></button>
-                        <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
-                        <button id="st_router_export_data" class="menu_button" type="button" title="导出完整路由配置 JSON（含各 Key 的 API Key，注意保管）"><i class="fa-solid fa-file-export"></i><span>导出数据</span></button>
-                        <button id="st_router_import_data" class="menu_button" type="button" title="从 JSON 导入路由配置（按 id 合并，含 Key）"><i class="fa-solid fa-file-import"></i><span>导入数据</span></button>
-                        <button id="st_router_export_log" class="menu_button" type="button" title="导出调试日志（.log）"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>
                         <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
+                        <div style="position:relative;display:inline-block">
+                            <button id="st_router_more" class="menu_button" type="button" title="更多操作"><i class="fa-solid fa-ellipsis"></i></button>
+                            <div id="st_router_more_menu" class="quicker-api__dropdown-menu" style="display:none;position:absolute;right:0;top:100%;z-index:100;background:var(--SmartThemeBlurTintColor);border:1px solid var(--SmartThemeBorderColor);border-radius:6px;padding:4px 0;min-width:170px;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+                                <button id="st_router_export_data" class="quicker-api__menu-item" type="button"><i class="fa-solid fa-file-export"></i> 导出数据</button>
+                                <button id="st_router_import_data" class="quicker-api__menu-item" type="button"><i class="fa-solid fa-file-import"></i> 导入数据</button>
+                                <button id="st_router_export_models" class="quicker-api__menu-item" type="button"><i class="fa-solid fa-download"></i> 导出模型列表</button>
+                                <button id="st_router_export_log" class="quicker-api__menu-item" type="button"><i class="fa-solid fa-file-lines"></i> 导出日志</button>
+                                <button id="st_router_reset_models" class="quicker-api__menu-item" type="button" style="color:var(--quicker-api-danger)"><i class="fa-solid fa-broom"></i> 重置模型数据</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="st-router-model-search">
@@ -1423,6 +1428,17 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     const onLogicalModelChanged = () => renderModelList();
     $(document).on('quickerApi:logical-model-changed', onLogicalModelChanged);
     panel.on('remove', () => $(document).off('quickerApi:logical-model-changed', onLogicalModelChanged));
+
+    // 更多菜单下拉
+    panel.find('#st_router_more').on('click', (e) => {
+        e.stopPropagation();
+        panel.find('#st_router_more_menu').toggle();
+    });
+    $(document).on('click', (e) => {
+        if (!$(e.target).closest('#st_router_more, #st_router_more_menu').length) {
+            panel.find('#st_router_more_menu').hide();
+        }
+    });
 
     return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderGroupEntries(); renderModelList(); } };
 }

@@ -35,6 +35,7 @@ export function handleNativePresetChangeBefore({ presetName }: { presetName?: st
         settings().selectedProfileId = profile.id;
         saveSettingsDebounced();
         renderProfiles(profile.id);
+        toastr.info(`预设「${name}」→ Profile「${profile.name}」`, '', { timeOut: 3000 });
     }
     debugLog('handleNativePresetChangeBefore resolved', { name, profileId: profile?.id ?? null });
     return enqueueOperation(async () => {

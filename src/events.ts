@@ -34,6 +34,7 @@ function bindProfileSelect(): void {
         if (!profile) return renderStatus();
         $('#quicker_api_format').val(profile.format);
         void applyProfileById(profile.id, runtimeState.quickActionTransaction, { applyModel: true, manageTransition: true });
+        toastr.info(`Profile「${profile.name}」已应用。`, '', { timeOut: 3000 });
     });
 }
 
@@ -53,7 +54,11 @@ function bindFormatSelect(): void {
 
 function bindToolbarButtons(): void {
     $('#quicker_api_new').on('click', createProfile);
-    $('#quicker_api_save').on('click', () => void enqueueOperation(saveSelectedProfile));
+    $('#quicker_api_save').on('click', () => void enqueueOperation(async () => {
+        const name = selectedProfile()?.name || '未命名';
+        await saveSelectedProfile();
+        toastr.success(`Profile「${name}」已保存。`);
+    }));
     $('#quicker_api_rename').on('click', renameSelectedProfile);
     $('#quicker_api_copy').on('click', copySelectedProfile);
     $('#quicker_api_import_native').on('click', () => void enqueueOperation(importNativeProfile));
@@ -72,6 +77,16 @@ function bindToolbarButtons(): void {
             toastr.success(`已清理 ${issues.length} 个问题 Profile。`);
         }
     }));
+    // 更多菜单下拉
+    $('#quicker_api_more').on('click', (e) => {
+        e.stopPropagation();
+        $('#quicker_api_more_menu').toggle();
+    });
+    $(document).on('click', (e) => {
+        if (!$(e.target).closest('#quicker_api_more, #quicker_api_more_menu').length) {
+            $('#quicker_api_more_menu').hide();
+        }
+    });
     $('#quicker_api_reveal_key').on('click', () => void enqueueOperation(revealBoundSecret));
     $('#quicker_api_copy_key').on('click', () => void enqueueOperation(copyBoundSecret));
 }

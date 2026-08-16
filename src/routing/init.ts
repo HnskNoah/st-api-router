@@ -30,6 +30,10 @@ export function initRouting(): void {
     eventSource.on(event_types.GENERATION_STARTED, hooks.onGenerationStarted);
     eventSource.on(event_types.GENERATION_ENDED, hooks.onGenerationEnded);
     eventSource.on(event_types.GENERATION_STOPPED, hooks.onGenerationStopped);
+    // 拦截模式：在 ST 组装好请求数据后、发出前，直接改 generateData
+    if (event_types.CHAT_COMPLETION_SETTINGS_READY) {
+        eventSource.makeLast(event_types.CHAT_COMPLETION_SETTINGS_READY, hooks.onChatCompletionSettingsReady);
+    }
     initRoutingUI({
         getVendors: vendors,
         getGroups: groups,
@@ -48,6 +52,9 @@ export function initRouting(): void {
             eventSource.removeListener(event_types.GENERATION_STARTED, hooks.onGenerationStarted);
             eventSource.removeListener(event_types.GENERATION_ENDED, hooks.onGenerationEnded);
             eventSource.removeListener(event_types.GENERATION_STOPPED, hooks.onGenerationStopped);
+            if (event_types.CHAT_COMPLETION_SETTINGS_READY) {
+                eventSource.removeListener(event_types.CHAT_COMPLETION_SETTINGS_READY, hooks.onChatCompletionSettingsReady);
+            }
             failureObserver.uninstall();
             $('#st_router_panel').remove();
         },
