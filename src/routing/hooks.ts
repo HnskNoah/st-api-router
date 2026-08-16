@@ -24,7 +24,7 @@ export interface RoutingHooksDeps {
 }
 
 export interface RoutingHooks {
-    onGenerationStarted(): void;
+    onGenerationStarted(type?: string, automaticTrigger?: unknown): void;
     onGenerationStopped(): void;
     onGenerationEnded(): void;
     getActiveUnit(): GroupRouteUnit | null;
@@ -39,12 +39,19 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         userStopPending: false,
     };
 
-    async function onGenerationStarted(): Promise<void> {
+    async function onGenerationStarted(type?: string, automaticTrigger?: unknown): Promise<void> {
         debugLog('onGenerationStarted enter', {
+            type,
+            automaticTrigger: Boolean(automaticTrigger),
             routingEnabled: deps.getRouting().enabled,
             activeGroupId: deps.getActiveGroupId(),
             groupCount: deps.getGroups().length,
         });
+        // 跳过非用户主动触发的生成：quiet/continue/impersonate 或 automatic_trigger 标记
+        if (type === 'quiet' || type === 'continue' || type === 'impersonate' || automaticTrigger) {
+            debugLog('onGenerationStarted skip: non-user trigger', { type, automaticTrigger: Boolean(automaticTrigger) });
+            return;
+        }
         if (runtimeState.generationRoutingInFlight) {
             debugLog('onGenerationStarted skip: another routing in flight');
             return;
