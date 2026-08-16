@@ -14,6 +14,7 @@ import { beginPresetTransition, endPresetTransition } from '../presets/transitio
 import { renderModelControl, renderProfiles } from '../ui/render.js';
 import { closeQuickActionMenu } from './menu-core.js';
 import { quickActionDisplayName } from '../domain/quick-action.js';
+import { debugLog } from '../debug.js';
 import type { LogicalModel, Profile, QuickAction } from '../types.js';
 
 export function findFormatForCurrentSource(): string {
@@ -107,16 +108,24 @@ export async function applyProfileById(profileId: string, token: number = runtim
 }
 
 export async function runQuickAction(action: QuickAction, token: number): Promise<void> {
-    if (runtimeState.extensionDisabled || runtimeState.teardownPending || token !== runtimeState.quickActionTransaction) return;
+    debugLog('runQuickAction', { actionId: action.id, actionName: action.name, preset: action.preset, model: action.model, token });
+    if (runtimeState.extensionDisabled || runtimeState.teardownPending || token !== runtimeState.quickActionTransaction) {
+        debugLog('runQuickAction skip', { extensionDisabled: runtimeState.extensionDisabled, teardownPending: runtimeState.teardownPending, tokenMatch: token === runtimeState.quickActionTransaction });
+        return;
+    }
     closeQuickActionMenu();
     beginPresetTransition();
     runtimeState.quickActionBlockingToken = token;
     try {
         if (action.preset && !await selectPresetForQuickAction(action.preset, token)) {
             if (token === runtimeState.quickActionTransaction) toastr.error('便捷方案的 preset 不存在或切换未完成。');
+            debugLog('runQuickAction failed: preset switch', { preset: action.preset });
             return;
         }
-        if (token !== runtimeState.quickActionTransaction) return;
+        if (token !== runtimeState.quickActionTransaction) {
+            debugLog('runQuickAction abort: stale token after preset', { token });
+            return;
+        }
         let switchedLogicalModel: LogicalModel | null = null;
         if (action.model) {
             // 逻辑模型：只切换当前 Group 的逻辑模型（保存，不立即写 ST 连接，下次生成由路由钩子选 Vendor/Key）
@@ -125,10 +134,12 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
                 const activeGroup = groups().find(group => group.id === settings().activeGroupId) || groups()[0] || null;
                 if (!activeGroup) {
                     toastr.warning('Quicker Api：还没有 Group，无法切换逻辑模型。');
+                    debugLog('runQuickAction failed: no group for logical model', { logicalModel: action.model });
                     return;
                 }
                 activeGroup.currentLogicalModelId = logical.id;
                 switchedLogicalModel = logical;
+                debugLog('runQuickAction switched logical model', { logicalModelId: logical.id, logicalModelName: logical.name });
             } else {
                 // 路由命中的真实模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
                 const routedModel = routingSettings().enabled && isRoutedModel(providers(), groups(), logicalModels(), action.model);
@@ -137,11 +148,16 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
                     : applyExplicitModel(action.model);
                 if (!applied) {
                     toastr.error('便捷方案模型写入验证失败。');
+                    debugLog('runQuickAction failed: model write', { model: action.model, routedModel });
                     return;
                 }
+                debugLog('runQuickAction applied explicit model', { model: action.model, routedModel });
             }
         }
-        if (token !== runtimeState.quickActionTransaction) return;
+        if (token !== runtimeState.quickActionTransaction) {
+            debugLog('runQuickAction abort: stale token after model', { token });
+            return;
+        }
         renderProfiles(settings().selectedProfileId);
         if (action.model) renderModelControl(selectedProfile(), action.model);
         if (switchedLogicalModel) {
@@ -151,11 +167,13 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
         } else {
             toastr.success(`已应用${quickActionDisplayName(action)}。`);
         }
+        debugLog('runQuickAction done', { actionId: action.id });
     } finally {
         if (runtimeState.quickActionBlockingToken === token) {
             runtimeState.quickActionBlockingToken = 0;
             endPresetTransition();
         }
+        debugLog('runQuickAction finally', { token });
     }
 }
 

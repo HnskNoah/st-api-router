@@ -8,8 +8,10 @@ import { enqueueOperation } from '../operation-queue.js';
 import { applyProfile } from '../apply/profile.js';
 import { beginPresetTransition, endPresetTransition } from './transition.js';
 import { renderProfiles, setStatus } from '../ui/render.js';
+import { debugLog } from '../debug.js';
 
 export function handleNativePresetChangeBefore({ presetName }: { presetName?: string } = {}): Promise<unknown> | undefined {
+    debugLog('handleNativePresetChangeBefore', { presetName, extensionDisabled: runtimeState.extensionDisabled });
     if (runtimeState.extensionDisabled) return undefined;
     const generation = ++runtimeState.profileSelectionGeneration;
     clearTimeout(runtimeState.presetChangeTimer ?? undefined);
@@ -21,6 +23,7 @@ export function handleNativePresetChangeBefore({ presetName }: { presetName?: st
         saveSettingsDebounced();
         renderProfiles(profile.id);
     }
+    debugLog('handleNativePresetChangeBefore resolved', { name, profileId: profile?.id ?? null });
     return enqueueOperation(async () => {
         if (profile && generation === runtimeState.profileSelectionGeneration) {
             await applyProfile(profile, generation, true, false);
@@ -29,6 +32,7 @@ export function handleNativePresetChangeBefore({ presetName }: { presetName?: st
 }
 
 export async function handleNativePresetChange(): Promise<boolean | undefined> {
+    debugLog('handleNativePresetChange', { extensionDisabled: runtimeState.extensionDisabled });
     if (runtimeState.extensionDisabled) return false;
     beginPresetTransition();
     const generation = ++runtimeState.profileSelectionGeneration;
@@ -43,16 +47,20 @@ export async function handleNativePresetChange(): Promise<boolean | undefined> {
             saveSettingsDebounced();
             renderProfiles(settings().selectedProfileId);
             setStatus('当前 preset 未绑定。', 'warning');
+            debugLog('handleNativePresetChange no bound profile', { presetName });
             return false;
         }
+        debugLog('handleNativePresetChange applying bound profile', { presetName, profileId });
         return await enqueueOperation(async () => {
             if (generation !== runtimeState.profileSelectionGeneration) return false;
             const applied = await applyProfile(profile, generation, true, false);
             if (!applied) setStatus('所选 Profile 未应用。', 'warning');
+            debugLog('handleNativePresetChange applied', { profileId, applied });
             return applied;
         });
     } finally {
         if (!quickActionOwnsBlock) endPresetTransition();
+        debugLog('handleNativePresetChange finally', { quickActionOwnsBlock });
     }
 }
 

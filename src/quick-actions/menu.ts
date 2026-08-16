@@ -6,6 +6,7 @@ import { normalizeQuickActionPlacement, quickActionDisplayName } from '../domain
 import { queueQuickAction } from './runner.js';
 import { closeQuickActionMenu } from './menu-core.js';
 import { manageQuickActions } from './manager.js';
+import { debugLog } from '../debug.js';
 
 export function openQuickActionMenu(anchor: HTMLElement, placement: string): void {
     if (runtimeState.quickActionMenu?.data('anchor') === anchor) return closeQuickActionMenu();
@@ -78,9 +79,9 @@ export function makeQuickActionEntry(id: string, placement: string): JQuery<HTML
         ? $('<div class="quicker-api__quick-entry fa-solid fa-bolt interactable" role="button" tabindex="0" aria-label="ST Api Router 便捷方案" title="ST Api Router 便捷方案"></div>')
         : $('<button type="button" class="qr--button quicker-api__quick-entry" aria-label="ST Api Router 便捷方案" title="ST Api Router 便捷方案"><i class="fa-solid fa-bolt"></i><span>ST Api Router</span></button>');
     return entry.attr('id', id)
-        .on('click.quickerApi', event => { event.stopPropagation(); openQuickActionMenu(event.currentTarget as HTMLElement, placement); })
+        .on('click.quickerApi', event => { event.stopPropagation(); debugLog('quick action entry clicked', { id, placement }); openQuickActionMenu(event.currentTarget as HTMLElement, placement); })
         .on('keydown.quickerApi', event => {
-            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openQuickActionMenu(event.currentTarget as HTMLElement, placement); }
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); debugLog('quick action entry keydown', { id, placement }); openQuickActionMenu(event.currentTarget as HTMLElement, placement); }
         });
 }
 
@@ -91,6 +92,7 @@ export function activeQuickReplyButtonContainer(): JQuery<HTMLElement> {
 }
 
 export function ensureQuickActionEntries(): void {
+    debugLog('ensureQuickActionEntries', { placement: normalizeQuickActionPlacement(settings().quickActionPlacement), extensionDisabled: runtimeState.extensionDisabled, teardownPending: runtimeState.teardownPending });
     if (runtimeState.extensionDisabled || runtimeState.teardownPending) return;
     const placement = normalizeQuickActionPlacement(settings().quickActionPlacement);
     if (placement === 'disabled') {

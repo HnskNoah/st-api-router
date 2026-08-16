@@ -6,6 +6,7 @@ import { activeGroup, groups, logicalModels, routingSettings, settings, vendors 
 import { createFailureObserver } from './failure-observer.js';
 import { createRoutingHooks } from './hooks.js';
 import { initRoutingUI } from './ui.js';
+import { debugLog } from '../debug.js';
 
 interface RoutingRegistration {
     teardown(): void;
@@ -14,6 +15,7 @@ interface RoutingRegistration {
 let registration: RoutingRegistration | null = null;
 
 export function initRouting(): void {
+    debugLog('initRouting', { hasRegistration: Boolean(registration), panelPresent: Boolean(document.getElementById('st_router_panel')) });
     if (registration || document.getElementById('st_router_panel')) return;
     const failureObserver = createFailureObserver();
     failureObserver.install();
@@ -42,6 +44,7 @@ export function initRouting(): void {
     });
     registration = {
         teardown() {
+            debugLog('routing teardown');
             eventSource.removeListener(event_types.GENERATION_STARTED, hooks.onGenerationStarted);
             eventSource.removeListener(event_types.GENERATION_ENDED, hooks.onGenerationEnded);
             eventSource.removeListener(event_types.GENERATION_STOPPED, hooks.onGenerationStopped);
@@ -49,6 +52,7 @@ export function initRouting(): void {
             $('#st_router_panel').remove();
         },
     };
+    debugLog('initRouting done');
 }
 
 export function teardownRouting(): void {

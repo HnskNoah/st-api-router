@@ -20,6 +20,7 @@ import { bindEvents } from './events.js';
 import { toolbarHtml } from './ui/toolbar.js';
 import { updatePanelVisibility } from './ui/render.js';
 import { initRouting, teardownRouting } from './routing/init.js';
+import { initDebugLog, debugLog } from './debug.js';
 
 function findInitialProfile() {
     const currentPreset = currentPresetName();
@@ -83,6 +84,7 @@ export function watchForDomChanges(): void {
 }
 
 export async function teardownQuickerApi(): Promise<boolean> {
+    debugLog('teardownQuickerApi start', { extensionDisabled: runtimeState.extensionDisabled, teardownPending: runtimeState.teardownPending });
     if (runtimeState.teardownPending || runtimeState.extensionDisabled) return false;
     runtimeState.teardownPending = true;
     beginPresetTransition();
@@ -137,17 +139,27 @@ export async function teardownQuickerApi(): Promise<boolean> {
     if (runtimeState.presetObservedFetch && globalThis.fetch === runtimeState.presetObservedFetch) globalThis.fetch = runtimeState.originalFetch as typeof fetch;
     runtimeState.originalFetch = null;
     runtimeState.presetObservedFetch = null;
+    debugLog('teardownQuickerApi done');
     return true;
 }
 
 export function initQuickerApi(): void {
-    if (!initializeSettings() || detectConflict()) return;
+    initDebugLog();
+    debugLog('initQuickerApi start');
+    if (!initializeSettings() || detectConflict()) {
+        debugLog('initQuickerApi aborted: settings/conflict');
+        return;
+    }
     const apiPanel = document.getElementById('openai_api');
     if (!apiPanel) {
         console.warn('[QuickerApi] #openai_api not found; extension was not initialized.');
+        debugLog('initQuickerApi aborted: #openai_api missing');
         return;
     }
-    if (document.getElementById('quicker_api')) return;
+    if (document.getElementById('quicker_api')) {
+        debugLog('initQuickerApi skipped: panel already present');
+        return;
+    }
     $('#chat_completion_source').after(toolbarHtml());
     updatePanelVisibility();
     bindEvents();
@@ -158,5 +170,6 @@ export function initQuickerApi(): void {
         if (!await readAuthoritativeSecretState()) toastr.warning('Quicker Api 暂时无法读取权威密钥状态；切换将保持阻断。');
         await restoreInitialProfileSelection();
     });
+    debugLog('initQuickerApi done');
     console.log('[QuickerApi] Extension loaded');
 }

@@ -16,6 +16,7 @@ import { getBoundProxyPreset } from '../native/proxy.js';
 import { clearCredentialSafetyBlock, rollbackOrFailClosed, rollbackStaleCredential } from './fail-closed.js';
 import { renderModelControl, renderProfiles } from '../ui/render.js';
 import { endPresetTransition } from '../presets/transition.js';
+import { debugLog } from '../debug.js';
 import type { FormatConfig, NativeSnapshot, Profile } from '../types.js';
 
 function refreshModelControlAfterApply(profile: Profile, config: FormatConfig, applyModel: boolean): void {
@@ -133,22 +134,49 @@ export async function applyProfile(
     keepPresetTransition = false,
     applyModel = true,
 ): Promise<boolean> {
-    if (!profile || runtimeState.extensionDisabled || expectedGeneration !== runtimeState.profileSelectionGeneration) return false;
+    debugLog('applyProfile enter', {
+        profileId: profile?.id,
+        profileName: profile?.name,
+        format: profile?.format,
+        expectedGeneration,
+        currentGeneration: runtimeState.profileSelectionGeneration,
+        keepPresetTransition,
+        applyModel,
+    });
+    if (!profile || runtimeState.extensionDisabled || expectedGeneration !== runtimeState.profileSelectionGeneration) {
+        debugLog('applyProfile skip: stale/disabled', {
+            hasProfile: Boolean(profile),
+            extensionDisabled: runtimeState.extensionDisabled,
+            generationMatch: expectedGeneration === runtimeState.profileSelectionGeneration,
+        });
+        return false;
+    }
     const config = FORMATS[profile.format];
     const nativeSnapshot = snapshotNative();
     const proxyMode = profile.format !== 'openai' && Boolean(profile.endpoint);
     if (proxyMode) {
+        debugLog('applyProfile proxy path', { proxyPreset: profile.proxyPreset, endpoint: profile.endpoint });
         return await applyProxyProfile(profile, config, nativeSnapshot, expectedGeneration, keepPresetTransition, applyModel);
     }
 
+    debugLog('applyProfile reading authoritative secrets');
     const authoritative = await readAuthoritativeSecretState();
-    if (expectedGeneration !== runtimeState.profileSelectionGeneration || runtimeState.extensionDisabled) return false;
+    if (expectedGeneration !== runtimeState.profileSelectionGeneration || runtimeState.extensionDisabled) {
+        debugLog('applyProfile stale after secret read', { expectedGeneration, currentGeneration: runtimeState.profileSelectionGeneration });
+        return false;
+    }
     if (!authoritative) {
         toastr.error('无法通过 /api/secrets/read 验证密钥状态，已取消切换。');
+        debugLog('applyProfile failed: authoritative secret read returned null');
         renderProfiles(settings().selectedProfileId);
         return false;
     }
     const preparation = await prepareAndActivateSecret(profile, config, authoritative, nativeSnapshot, expectedGeneration);
-    if (!preparation.ok) return false;
-    return await finalizeAppliedProfile(profile, config, preparation.previousSecretId, nativeSnapshot, keepPresetTransition, applyModel);
+    if (!preparation.ok) {
+        debugLog('applyProfile failed: secret preparation', { previousSecretId: preparation.previousSecretId });
+        return false;
+    }
+    const applied = await finalizeAppliedProfile(profile, config, preparation.previousSecretId, nativeSnapshot, keepPresetTransition, applyModel);
+    debugLog('applyProfile done', { applied });
+    return applied;
 }
