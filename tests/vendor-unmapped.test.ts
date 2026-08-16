@@ -2,7 +2,7 @@
 // 手动补选：给真实模型指定逻辑模型，对所有包含该模型的 Key 生效。
 
 import { describe, expect, it } from 'vitest';
-import { assignModelToLogical, findUnmappedModels } from '../src/domain/vendor.js';
+import { assignModelToLogical, findUnmappedModels, unmapRealModel } from '../src/domain/vendor.js';
 import type { Group } from '../src/types.js';
 
 function makeGroup(overrides: Partial<Group> = {}): Group {
@@ -90,6 +90,32 @@ describe('domain/vendor > assignModelToLogical 手动补选', () => {
     it('没有任何 Key 包含该模型时返回 0', () => {
         const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', ['claude-opus-4-8'])] })];
         expect(assignModelToLogical(groups, 'gpt-4o', 'l1')).toBe(0);
+        expect(groups[0].entries[0].mappings).toEqual([]);
+    });
+});
+
+describe('domain/vendor > unmapRealModel 删除真实模型映射', () => {
+    it('删除所有 Key 中该真实模型的映射，进入未归类', () => {
+        const groups = [
+            makeGroup({
+                entries: [
+                    makeEntry('e1', 'v1', ['gpt-4o', 'claude-opus-4-8'], [
+                        { id: 'm1', realModel: 'gpt-4o', logicalModelId: 'l1' },
+                        { id: 'm2', realModel: 'claude-opus-4-8', logicalModelId: 'l2' },
+                    ]),
+                    makeEntry('e2', 'v2', ['gpt-4o'], [{ id: 'm3', realModel: 'gpt-4o', logicalModelId: 'l1' }]),
+                ],
+            }),
+        ];
+        const removed = unmapRealModel(groups, 'gpt-4o');
+        expect(removed).toBe(2);
+        expect(groups[0].entries[0].mappings.map(mapping => mapping.realModel)).toEqual(['claude-opus-4-8']);
+        expect(groups[0].entries[1].mappings).toEqual([]);
+    });
+
+    it('没有该模型映射时返回 0', () => {
+        const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', ['gpt-4o'])] })];
+        expect(unmapRealModel(groups, 'gpt-4o')).toBe(0);
         expect(groups[0].entries[0].mappings).toEqual([]);
     });
 });

@@ -12,6 +12,7 @@ import {
     assignRealModel,
     buildLogicalModelsFromFetched,
     buildModelListText,
+    deleteLogicalModel,
     findUnmappedModels,
     isSpecialVariant,
     mappedRealModels,
@@ -24,6 +25,7 @@ import {
     reconcileEntryMappings,
     resetModelData,
     sortedLogicalModels,
+    unmapRealModel,
 } from '../domain/vendor.js';
 import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
@@ -455,7 +457,18 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         event.stopPropagation();
                         void openLogicalModelEditor(model);
                     });
-                chip.append(editBtn);
+                const deleteBtn = $('<span class="st-router-model-edit quicker-api__delete-button" role="button" tabindex="0" title="删除该逻辑模型及名下映射"><i class="fa-solid fa-trash"></i></span>')
+                    .on('click', async event => {
+                        event.stopPropagation();
+                        const confirm = await Popup.show.confirm('删除逻辑模型', `确定删除逻辑模型「${escapeHtml(model.name)}」及其名下全部映射？`);
+                        if (!confirm) return;
+                        const result = deleteLogicalModel(deps.getLogicalModels(), deps.getGroups(), model.id);
+                        deps.save();
+                        renderModelList();
+                        renderGroupSummary();
+                        toastr.success(`已删除逻辑模型「${model.name}」，移除 ${result.removedMappings} 条映射。`);
+                    });
+                chip.append(editBtn, deleteBtn);
                 rows.append(chip);
             }
         };
@@ -521,7 +534,17 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         toastr.success(`已为「${realModel}」更新归属（影响 ${touched} 个 Key）。`);
                     }
                 });
-            ops.append(select, applyBtn);
+            const unmapBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除该真实模型的映射（移入未归类）"><i class="fa-solid fa-unlink"></i></button>')
+                .on('click', () => {
+                    const removed = unmapRealModel(deps.getGroups(), realModel);
+                    if (removed > 0) {
+                        deps.save();
+                        renderModelList();
+                        renderGroupSummary();
+                        toastr.success(`已删除「${realModel}」的 ${removed} 条映射，模型已移入未归类。`);
+                    }
+                });
+            ops.append(select, applyBtn, unmapBtn);
         };
         pill.on('click', () => {
             const rows = wrap.parent();

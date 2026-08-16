@@ -291,6 +291,17 @@ export function assignModelToLogical(groups: Group[], realModel: string, logical
     return touched;
 }
 
+/** 删除真实模型的全部映射（进入未归类）。返回移除的映射条数。 */
+export function unmapRealModel(groups: Group[], realModel: string): number {
+    let removed = 0;
+    for (const entry of allGroupEntries(groups)) {
+        const before = entry.mappings.length;
+        entry.mappings = entry.mappings.filter(mapping => mapping.realModel !== realModel);
+        removed += before - entry.mappings.length;
+    }
+    return removed;
+}
+
 /** 合并逻辑模型：把源逻辑模型名下的全部真实模型映射到目标逻辑模型，删除源逻辑模型，并修正分组当前模型指针。
  *  返回移动的映射数与删除的源逻辑模型 id。 */
 export function mergeLogicalModels(
@@ -325,6 +336,26 @@ export function mergeLogicalModels(
     if (index >= 0) logicalModels.splice(index, 1);
 
     return { movedMappings, removedLogicalModelId };
+}
+
+/** 删除逻辑模型：移除名下全部映射、删除逻辑模型、清空分组当前模型指针。返回删除的映射条数。 */
+export function deleteLogicalModel(
+    logicalModels: LogicalModel[],
+    groups: Group[],
+    logicalModelId: string,
+): { removedMappings: number } {
+    let removedMappings = 0;
+    for (const entry of allGroupEntries(groups)) {
+        const before = entry.mappings.length;
+        entry.mappings = entry.mappings.filter(mapping => mapping.logicalModelId !== logicalModelId);
+        removedMappings += before - entry.mappings.length;
+    }
+    for (const group of groups) {
+        if (group.currentLogicalModelId === logicalModelId) group.currentLogicalModelId = '';
+    }
+    const index = logicalModels.findIndex(model => model.id === logicalModelId);
+    if (index >= 0) logicalModels.splice(index, 1);
+    return { removedMappings };
 }
 
 /** 模型列表导出（txt）：所有 Key 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
