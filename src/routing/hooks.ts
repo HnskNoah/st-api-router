@@ -9,6 +9,7 @@ import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js'
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
+import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
 import type { Group, RoutingSettings, Vendor } from '../types.js';
@@ -42,6 +43,9 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     };
 
     async function onGenerationStarted(type?: string, automaticTrigger?: unknown): Promise<void> {
+        // 新一轮生成开始：清掉上一轮 STOPPED 留下的 pending 标记
+        // （否则一次用户停止会让后续所有生成的成败都跳过记录）
+        state.userStopPending = false;
         debugLog('onGenerationStarted enter', {
             type,
             automaticTrigger: Boolean(automaticTrigger),
@@ -132,6 +136,13 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     function onChatCompletionSettingsReady(generateData: Record<string, any>): void {
         const active = state.active;
         if (!active) return;
+        // guard 已阻断本次生成（预设切换中 / 密钥安全阻断）时不覆盖，避免拦截模式绕过安全阻断
+        if (isGenerationBlockedByGuard(generateData?.chat_completion_source)) {
+            debugLog('onChatCompletionSettingsReady skip: generation blocked by guard', {
+                source: generateData?.chat_completion_source,
+            });
+            return;
+        }
         debugLog('onChatCompletionSettingsReady patch', {
             vendorName: active.unit.vendor.name,
             entryLabel: active.unit.entry.label,

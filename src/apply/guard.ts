@@ -5,11 +5,14 @@ import { FORMATS } from '../constants.js';
 import { settings } from '../settings/access.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
+import { BLOCKED_SOURCE_PRESET_TRANSITION, BLOCKED_SOURCE_SAFETY } from '../domain/generation-guard.js';
+
+export { BLOCKED_SOURCE_PRESET_TRANSITION, BLOCKED_SOURCE_SAFETY, isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 
 export function guardGenerationWhenBlocked(generateData: Record<string, any>): void {
     if (runtimeState.extensionDisabled || !generateData || typeof generateData !== 'object') return;
     if (runtimeState.presetTransitionBlocked) {
-        generateData.chat_completion_source = 'quicker_api_preset_transition';
+        generateData.chat_completion_source = BLOCKED_SOURCE_PRESET_TRANSITION;
         generateData.custom_url = '';
         generateData.reverse_proxy = '';
         debugLog('guardGenerationWhenBlocked blocked by preset transition', {
@@ -33,7 +36,7 @@ export function guardGenerationWhenBlocked(generateData: Record<string, any>): v
         });
         return;
     }
-    generateData.chat_completion_source = 'quicker_api_safety_blocked';
+    generateData.chat_completion_source = BLOCKED_SOURCE_SAFETY;
     generateData.custom_url = '';
     generateData.reverse_proxy = '';
     debugLog('guardGenerationWhenBlocked blocked by secret', {
