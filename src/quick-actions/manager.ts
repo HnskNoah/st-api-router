@@ -111,13 +111,12 @@ function ensureQuickManagerStyles(): void {
         @media (max-width: 720px) {
             .quicker-api__quick-columns { grid-template-columns: 1fr; }
             .quicker-api__quick-manager { max-height: 85vh; }
-            .quicker-api__quick-list { max-height: 180px; overflow: hidden; }
+            .quicker-api__quick-list { max-height: 260px; overflow: hidden; }
             .quicker-api__quick-list-items {
-                flex-direction: row; overflow-x: auto; overflow-y: hidden;
+                flex-direction: column; overflow-y: auto; overflow-x: hidden;
                 padding-bottom: 4px;
             }
-            .quicker-api__quick-item { min-width: min(78vw, 320px); }
-            .quicker-api__quick-summary { display: none; }
+            .quicker-api__quick-item { width: 100%; min-width: 0; }
             .quicker-api__quick-item-actions .menu_button { padding: 2px 5px; }
         }
     `).appendTo(document.head);
