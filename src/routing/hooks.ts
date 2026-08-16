@@ -130,6 +130,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             }
             state.active = { unit, logicalModelId };
             deps.beginGeneration?.();
+            toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由');
             debugLog('onGenerationStarted done');
         });
     }
@@ -171,9 +172,9 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             saveSettingsDebounced();
             debugLog('onGenerationEnded recorded failure', { vendorName: vendor.name, disabled });
             if (disabled) {
-                toastr.error(`Quicker Api：Vendor「${vendor.name}」连续失败已自动禁用，请手动重新启用。`);
+                toastr.error(`Quicker Api：${displayName} 连续失败已自动禁用，请手动重新启用。`);
             } else {
-                toastr.warning(`Quicker Api：Vendor「${vendor.name}」本次生成失败已记录；连续失败将自动禁用。`);
+                toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录；连续失败将自动禁用。`);
             }
         }, USER_STOP_GRACE_MS);
     }
