@@ -17,17 +17,19 @@ function ensureQuickManagerStyles(): void {
     if (document.getElementById('quicker-api-quick-manager-styles')) return;
     $('<style id="quicker-api-quick-manager-styles"></style>').text(`
         .quicker-api__quick-manager {
-            --qa-border: rgba(128, 128, 128, 0.25);
-            --qa-border-strong: rgba(128, 128, 128, 0.45);
-            --qa-bg: rgba(0, 0, 0, 0.16);
-            --qa-bg-hover: rgba(255, 255, 255, 0.05);
+            --qa-border: rgba(128, 128, 128, 0.28);
+            --qa-border-strong: rgba(128, 128, 128, 0.5);
+            --qa-bg: rgba(0, 0, 0, 0.28);
+            --qa-bg-hover: rgba(255, 255, 255, 0.07);
             --qa-accent: #5b9bd5;
             --qa-danger: #d9534f;
-            --qa-text: #ddd;
-            --qa-text-dim: #999;
+            --qa-text: #e8e8e8;
+            --qa-text-dim: #a0a0a0;
             display: flex; flex-direction: column; gap: 10px;
             width: min(900px, 92vw); max-height: 78vh;
-            margin: -10px -8px; /* 抵消 .popup-content 的 margin/padding，避免周围露出 dialog 底色 */
+            margin: -10px -8px; padding: 10px 8px;
+            background: #1d2228;
+            border-radius: 8px;
             color: var(--qa-text); font-size: 13px;
         }
         .quicker-api__quick-header {
@@ -205,36 +207,27 @@ export async function manageQuickActions(): Promise<void> {
         const draft = detailDraft;
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
         const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
-        const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="模型名：逻辑模型（点击只切换分组模型）或真实模型名">').val(draft.model);
-        const modelSelect = $('<select class="text_pole" aria-label="从配置模型列表选择"></select>');
+        const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="模型名：逻辑模型或真实模型（输入可搜索）">').val(draft.model);
+        const modelDatalist = $('<datalist></datalist>');
         const refreshModels = () => {
-            // 聚合模型（供应商路由）优先入候选：快捷方案选模型即参与路由；逻辑模型名同样入候选
+            // 聚合模型（供应商路由）与逻辑模型合并候选，datalist 会随输入过滤
             const logicalNames = logicalModels().map(model => model.name);
             const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-            modelSelect.empty().append($('<option value="">— 从模型列表选择 —</option>'));
-            models.forEach(model => modelSelect.append($('<option>').val(model).text(model)));
-            modelSelect.val(models.includes(draft.model) ? draft.model : '');
+            const listId = `qa-model-list-${selectedId}`;
+            modelDatalist.attr('id', listId).empty();
+            models.forEach(model => modelDatalist.append($('<option>').val(model)));
+            modelInput.attr('list', listId);
         };
         refreshModels();
-        const modelControl = $('<div class="quicker-api__quick-model-control">').append(modelInput, modelSelect);
+        const modelControl = $('<div class="quicker-api__quick-model-control"></div>').append(modelInput, modelDatalist);
         name.on('input', () => { draft.name = sanitizeName(name.val()); updateDetailSaveState(); });
         preset.on('change', () => { draft.preset = normalizeText(preset.val()); updateDetailSaveState(); });
-        modelSelect.on('change', () => {
-            const selectedModel = normalizeText(modelSelect.val()).slice(0, 500);
-            if (!selectedModel) return;
-            draft.model = selectedModel;
-            modelInput.val(selectedModel);
-            updateDetailSaveState();
-        });
         modelInput.on('input', () => {
             draft.model = normalizeText(modelInput.val()).slice(0, 500);
-            const exists = modelSelect.find('option').filter((_, option) => (option as HTMLOptionElement).value === draft.model).length;
-            modelSelect.val(exists ? draft.model : '');
             updateDetailSaveState();
         });
         const saveScheme = $('<button type="button" class="menu_button quicker-api__save-button"><i class="fa-solid fa-floppy-disk"></i><span>保存方案</span></button>');
-        const cancelScheme = $('<button type="button" class="menu_button"><span>取消</span></button>');
         saveScheme.on('click', () => {
             if (!draft.preset && !draft.model) return toastr.warning('方案至少需要 preset 或 model 中的一项。');
             const index = globalDraft.findIndex(item => item.id === selectedId);
@@ -245,13 +238,12 @@ export async function manageQuickActions(): Promise<void> {
             render();
             toastr.success('方案修改已保存；点击顶部"保存"后写入设置。');
         });
-        cancelScheme.on('click', () => selectAction(selectedId, true));
         editor.append(
             $('<h4 class="quicker-api__quick-editor-title">').text('方案详情'),
             $('<div class="quicker-api__quick-editor-fields">').append(
                 field('名称', name), field('预设', preset), field('模型', modelControl),
             ),
-            $('<div class="quicker-api__quick-editor-actions">').append(saveScheme, cancelScheme),
+            $('<div class="quicker-api__quick-editor-actions">').append(saveScheme),
         );
         updateDetailSaveState();
     };
