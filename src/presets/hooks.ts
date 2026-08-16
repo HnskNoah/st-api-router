@@ -10,13 +10,27 @@ import { beginPresetTransition, endPresetTransition } from './transition.js';
 import { renderProfiles, setStatus } from '../ui/render.js';
 import { debugLog } from '../debug.js';
 
+const PRESET_EVENT_DEDUPE_MS = 60;
+
+function shouldSkipDuplicatePresetEvent(presetName: string): boolean {
+    const now = Date.now();
+    const last = runtimeState.presetEventDedupe;
+    if (last && last.name === presetName && now - last.at < PRESET_EVENT_DEDUPE_MS) {
+        debugLog('preset event deduped', { presetName });
+        return true;
+    }
+    runtimeState.presetEventDedupe = { name: presetName, at: now };
+    return false;
+}
+
 export function handleNativePresetChangeBefore({ presetName }: { presetName?: string } = {}): Promise<unknown> | undefined {
     debugLog('handleNativePresetChangeBefore', { presetName, extensionDisabled: runtimeState.extensionDisabled });
     if (runtimeState.extensionDisabled) return undefined;
+    const name = normalizeText(presetName || currentPresetName());
+    if (shouldSkipDuplicatePresetEvent(name)) return undefined;
     const generation = ++runtimeState.profileSelectionGeneration;
     clearTimeout(runtimeState.presetChangeTimer ?? undefined);
     beginPresetTransition();
-    const name = normalizeText(presetName || currentPresetName());
     const profile = profiles().find(item => item.id === settings().presetBindings[name]);
     if (profile) {
         settings().selectedProfileId = profile.id;

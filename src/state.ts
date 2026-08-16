@@ -7,6 +7,7 @@ export const runtimeState = {
     extensionDisabled: false,
     teardownPending: false,
     presetChangeTimer: null as ReturnType<typeof setTimeout> | null,
+    presetEventDedupe: null as { name: string; at: number } | null,
     presetTransitionBlocked: false,
     presetConnectWasDisabled: false,
     nativePresetSaveIntent: null as Record<string, any> | null,
@@ -34,6 +35,7 @@ export function resetRuntimeState() {
     runtimeState.extensionDisabled = false;
     runtimeState.teardownPending = false;
     runtimeState.presetChangeTimer = null;
+    runtimeState.presetEventDedupe = null;
     runtimeState.presetTransitionBlocked = false;
     runtimeState.presetConnectWasDisabled = false;
     runtimeState.nativePresetSaveIntent = null;

@@ -7,7 +7,7 @@ import { runtimeState } from '../state.js';
 import { settings } from '../settings/access.js';
 import { normalizeText } from '../utils/text.js';
 import {
-    readAuthoritativeSecretState, ensureEmptySecret, rotateSecretVerified,
+    readAuthoritativeSecretState, ensureEmptySecret, rotateSecretVerified, findSecretBounded,
 } from '../secrets/api.js';
 import { getActiveSecret } from '../secrets/access.js';
 import { snapshotNative, restoreNative } from '../native/snapshot.js';
@@ -112,6 +112,17 @@ async function finalizeAppliedProfile(
 ): Promise<boolean> {
     try {
         applyNativeFields(profile, '', applyModel);
+        // Custom 源的原生 status 检查依赖 #api_key_custom 输入框（连接按钮会把它写进 secret 再发请求）。
+        // 激活密钥只在服务端/secret_state 里，若不回填输入框，切到 custom 后 status 会因缺 key 报 Unauthorized。
+        if (config.secretKey === 'custom') {
+            const active = getActiveSecret(config.secretKey);
+            if (active) {
+                const value = await findSecretBounded(config.secretKey, active.id);
+                if (value !== null) {
+                    $('#api_key_custom').val(value).trigger('input');
+                }
+            }
+        }
         if (runtimeState.extensionDisabled) throw new Error('Extension disabled while applying profile');
         clearCredentialSafetyBlock(config.secretKey);
         settings().activeProfileId = profile.id;
