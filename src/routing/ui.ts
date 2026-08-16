@@ -16,6 +16,7 @@ import {
     isSpecialVariant,
     mappedRealModels,
     mergeImportedRoutingConfig,
+    mergeLogicalModels,
     normalizeGroup,
     normalizeLogicalModel,
     normalizeVendor,
@@ -987,11 +988,48 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         };
         renderMappedModels();
 
+        const mergeRow = $('<div class="st-router-key-row"></div>');
+        const mergeSearch = $('<input class="text_pole" type="text" maxlength="200" placeholder="搜索目标逻辑模型…">');
+        const mergeSelect = $('<select class="text_pole"></select>');
+        const mergeBtn = $('<button class="menu_button quicker-api__save-button" type="button" title="把本逻辑模型名下全部真实模型合并到所选逻辑模型，并删除本逻辑模型"><i class="fa-solid fa-merge"></i><span>全部合并到…</span></button>');
+        const renderMergeOptions = () => {
+            const query = String(mergeSearch.val() || '').trim().toLowerCase();
+            mergeSelect.empty().append($('<option value="">— 选择目标逻辑模型 —</option>'));
+            for (const candidate of sortedLogicalModels(deps.getLogicalModels())) {
+                if (candidate.id === draft.id) continue;
+                if (query && !String(candidate.name).toLowerCase().includes(query)) continue;
+                mergeSelect.append($('<option>').val(candidate.id).text(candidate.name));
+            }
+        };
+        mergeSearch.on('input', renderMergeOptions);
+        renderMergeOptions();
+        mergeBtn.on('click', () => {
+            const targetId = String(mergeSelect.val() || '');
+            if (!targetId) {
+                toastr.warning('请先选择目标逻辑模型。');
+                return;
+            }
+            const result = mergeLogicalModels(deps.getLogicalModels(), deps.getGroups(), draft.id, targetId);
+            if (result.movedMappings > 0 || result.removedLogicalModelId) {
+                deps.save();
+                renderModelList();
+                renderGroupSummary();
+                toastr.success(`已将 ${result.movedMappings} 条映射合并到目标逻辑模型，并删除源逻辑模型。`);
+                void popup.completeCancelled();
+            }
+        });
+        mergeRow.append(mergeSearch, mergeSelect, mergeBtn);
+
         content.append(
             field('名称', nameInput, '逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型'),
             field('自动归类正则', patternInput, '拉取模型时，真实模型名命中该正则会自动归入此逻辑模型（如 deepseek 会把 deepseek-chat/deepseek-reasoner 归进来）。留空则不参与自动归类'),
             $('<div class="quicker-api__field"></div>').append($('<label><span>测试正则</span></label>'), testRow),
             ...(isNew ? [] : [
+                $('<div class="quicker-api__field"></div>').append(
+                    $('<label><span>修改映射</span></label>'),
+                    $('<div class="st-router-empty">').text('把本逻辑模型名下全部真实模型合并到另一个逻辑模型，合并后本逻辑模型会被删除。'),
+                    mergeRow,
+                ),
                 $('<div class="quicker-api__field"></div>').append(
                     $('<label><span>名下真实模型</span></label>'),
                     mappedModelList,

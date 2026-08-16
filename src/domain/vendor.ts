@@ -291,6 +291,42 @@ export function assignModelToLogical(groups: Group[], realModel: string, logical
     return touched;
 }
 
+/** 合并逻辑模型：把源逻辑模型名下的全部真实模型映射到目标逻辑模型，删除源逻辑模型，并修正分组当前模型指针。
+ *  返回移动的映射数与删除的源逻辑模型 id。 */
+export function mergeLogicalModels(
+    logicalModels: LogicalModel[],
+    groups: Group[],
+    sourceId: string,
+    targetId: string,
+): { movedMappings: number; removedLogicalModelId: string | null } {
+    if (!sourceId || !targetId || sourceId === targetId) {
+        return { movedMappings: 0, removedLogicalModelId: null };
+    }
+    if (!logicalModels.some(model => model.id === sourceId) || !logicalModels.some(model => model.id === targetId)) {
+        return { movedMappings: 0, removedLogicalModelId: null };
+    }
+
+    let movedMappings = 0;
+    for (const entry of allGroupEntries(groups)) {
+        for (const mapping of entry.mappings) {
+            if (mapping.logicalModelId === sourceId) {
+                mapping.logicalModelId = targetId;
+                movedMappings++;
+            }
+        }
+    }
+
+    for (const group of groups) {
+        if (group.currentLogicalModelId === sourceId) group.currentLogicalModelId = targetId;
+    }
+
+    const removedLogicalModelId = sourceId;
+    const index = logicalModels.findIndex(model => model.id === sourceId);
+    if (index >= 0) logicalModels.splice(index, 1);
+
+    return { movedMappings, removedLogicalModelId };
+}
+
 /** 模型列表导出（txt）：所有 Key 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
 export function buildModelListText(groups: Group[]): string {
     const names = new Set<string>();
