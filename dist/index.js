@@ -100,9 +100,9 @@ import{saveSettingsDebounced as C,getRequestHeaders as je,eventSource as W,event
             .quicker-api__placement-choices { grid-template-columns: 1fr; }
         }
         @media (max-width: 720px) {
-            .quicker-api__quick-overlay { inset: 3vh 6px; }
+            .quicker-api__quick-overlay { inset: 3vh 6px; overflow-y: auto; }
             .quicker-api__quick-manager { padding: 12px; border-radius: 10px; }
-            .quicker-api__quick-columns { grid-template-columns: 1fr; }
+            .quicker-api__quick-columns { grid-template-columns: 1fr; flex: none; }
             .quicker-api__quick-list { max-height: 260px; overflow: hidden; }
             .quicker-api__quick-list-items {
                 flex-direction: column; overflow-y: auto; overflow-x: hidden;
