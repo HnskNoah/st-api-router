@@ -143,12 +143,16 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             });
             return;
         }
+        patchGenerateData(generateData, active.unit);
         debugLog('onChatCompletionSettingsReady patch', {
             vendorName: active.unit.vendor.name,
             entryLabel: active.unit.entry.label,
             realModel: active.unit.realModel,
+            source: generateData.chat_completion_source,
+            endpoint: generateData.reverse_proxy,
+            model: generateData.model,
+            hasKey: Boolean(generateData.proxy_password),
         });
-        patchGenerateData(generateData, active.unit);
     }
 
     function onGenerationStopped(): void {
