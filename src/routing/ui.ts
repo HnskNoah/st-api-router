@@ -196,7 +196,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             <div class="quicker-api__title">
                 <span><i class="fa-solid fa-route"></i> ST Api Router</span>
                 <span class="st-router-title-actions">
-                    <button id="st_router_export_log" class="menu_button" type="button" title="导出调试日志（.log）"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>
                     <button id="st_router_toggle_legacy" class="menu_button" type="button" title="旧版 API Profile 设置（过渡兼容）"><i class="fa-solid fa-clock-rotate-left"></i><span>旧版设置</span></button>
                 </span>
             </div>
@@ -252,6 +251,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                         <button id="st_router_export_models" class="menu_button" type="button" title="导出本地已拉取模型列表（纯文本，不含密钥）"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>
                         <button id="st_router_export_data" class="menu_button" type="button" title="导出完整路由配置 JSON（含各 Key 的 API Key，注意保管）"><i class="fa-solid fa-file-export"></i><span>导出数据</span></button>
                         <button id="st_router_import_data" class="menu_button" type="button" title="从 JSON 导入路由配置（按 id 合并，含 Key）"><i class="fa-solid fa-file-import"></i><span>导入数据</span></button>
+                        <button id="st_router_export_log" class="menu_button" type="button" title="导出调试日志（.log）"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>
                         <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
                         <button id="st_router_add_logical" class="menu_button" type="button" title="手动添加逻辑模型（可填自动归类正则）"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>
                     </div>
