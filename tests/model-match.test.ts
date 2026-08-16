@@ -85,6 +85,15 @@ describe('domain/vendor > 逻辑模型正则归类', () => {
         expect(models).toHaveLength(1);
     });
 
+    it('assignRealModel 核心名匹配不区分大小写（deepseek 与 DeepSeek 归并）', () => {
+        const models: LogicalModel[] = [
+            { id: 'lm-1', name: 'deepseek-v4-flash', ...base },
+        ];
+        const result = assignRealModel(models, 'DeepSeek-v4-flash');
+        expect(result.id).toBe('lm-1');
+        expect(models).toHaveLength(1);
+    });
+
     it('assignRealModel 合并假流式/gcli 前缀变体到已有核心模型', () => {
         const models: LogicalModel[] = [
             { id: 'lm-1', name: 'gemini-2.5-pro', ...base },

@@ -105,15 +105,22 @@ export function findLogicalModelByPattern(logicalModels: LogicalModel[], realMod
     return null;
 }
 
-/** 拉取模型后的归类：正则命中 → 名称精确匹配 → 核心模型名合并（剥渠道/变体前缀）→ 新建（用核心名）。返回归属的逻辑模型。 */
+/** 按名称大小写不敏感查找逻辑模型（deepseek 与 DeepSeek 视为同名）。 */
+function findLogicalByNameCI(logicalModels: LogicalModel[], name: string): LogicalModel | null {
+    const value = String(name || '').trim().toLowerCase();
+    if (!value) return null;
+    return logicalModels.find(model => String(model?.name || '').trim().toLowerCase() === value) || null;
+}
+
+/** 拉取模型后的归类：正则命中 → 名称精确匹配（大小写不敏感）→ 核心模型名合并（剥渠道/变体前缀，大小写不敏感）→ 新建（用核心名）。返回归属的逻辑模型。 */
 export function assignRealModel(logicalModels: LogicalModel[], realModel: string): LogicalModel {
     const byPattern = findLogicalModelByPattern(logicalModels, realModel);
     if (byPattern) return byPattern;
-    const byName = logicalModels.find(model => model.name === realModel);
+    const byName = findLogicalByNameCI(logicalModels, realModel);
     if (byName) return byName;
     const canonical = canonicalModelName(realModel);
     if (canonical && canonical !== realModel) {
-        const byCanonical = logicalModels.find(model => model.name === canonical);
+        const byCanonical = findLogicalByNameCI(logicalModels, canonical);
         if (byCanonical) return byCanonical;
     }
     const model = normalizeLogicalModel({ name: canonical || realModel });
@@ -354,7 +361,7 @@ export function buildLogicalModelsFromFetched(
     logicalModels: LogicalModel[],
     groups: Group[] = [],
 ): { created: LogicalModel[]; skipped: string[]; mapped: number; rebuilt: number } {
-    const existingNames = new Set(logicalModels.map(model => model.name));
+    const existingNames = new Set(logicalModels.map(model => String(model.name || '').trim().toLowerCase()));
     const seen = new Set<string>();
     const created: LogicalModel[] = [];
     const skipped: string[] = [];
@@ -369,13 +376,13 @@ export function buildLogicalModelsFromFetched(
             continue;
         }
         const canonical = canonicalModelName(name);
-        if (!existingNames.has(canonical)) {
+        if (!existingNames.has(canonical.toLowerCase())) {
             const model = normalizeLogicalModel({ name: canonical });
             logicalModels.push(model);
-            existingNames.add(canonical);
+            existingNames.add(canonical.toLowerCase());
             created.push(model);
         }
-        const target = logicalModels.find(model => model.name === canonical);
+        const target = findLogicalByNameCI(logicalModels, canonical);
         if (!target) continue;
         for (const entry of allGroupEntries(groups)) {
             if (!entry.fetchedModels.includes(name)) continue;
@@ -387,8 +394,8 @@ export function buildLogicalModelsFromFetched(
             }
             const mappedModel = logicalModels.find(model => model.id === existing.logicalModelId);
             if (!mappedModel || mappedModel.id === target.id) continue;
-            // 仅修正 canonical 错配：旧逻辑模型名去前缀后与核心名一致（如 xxx-假流式 → xxx）
-            if (canonicalModelName(mappedModel.name) === canonical) {
+            // 仅修正 canonical 错配：旧逻辑模型名去前缀后与核心名一致（如 xxx-假流式 → xxx，大小写不敏感）
+            if (canonicalModelName(mappedModel.name).toLowerCase() === canonical.toLowerCase()) {
                 existing.logicalModelId = target.id;
                 rebuilt++;
             }

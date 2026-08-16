@@ -2,7 +2,7 @@
 // deps 由 lifecycle 注入，避免循环 import。
 // 模型获取复用宿主后端通道（/api/backends/chat-completions/status），并把结果落到 entry.fetchedModels。
 
-import { getRequestHeaders } from '@sillytavern/script';
+import { getRequestHeaders, setOnlineStatus } from '@sillytavern/script';
 import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
@@ -431,8 +431,13 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     .append($('<span class="st-router-model-name">').text(model.name));
                 const mappedEntries = entries.filter(entry => entry.mappings.some(mapping => mapping.logicalModelId === model.id));
                 const mappedCount = mappedEntries.reduce((sum, entry) => sum + entry.mappings.filter(mapping => mapping.logicalModelId === model.id).length, 0);
+                const vendorNames = [...new Set(mappedEntries.map(entry => {
+                    const vendor = deps.getVendors().find(item => item.id === entry.vendorId);
+                    return vendor?.name || entry.vendorId;
+                }))];
+                const vendorText = vendorNames.length > 0 ? ` · ${vendorNames.join('、')}` : '';
                 chip.append($('<span class="st-router-model-providers">').text(
-                    model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedEntries.length} 个 Key` : `${mappedCount} 个模型 · ${mappedEntries.length} 个 Key`,
+                    model.matchPattern ? `正则匹配 ${mappedCount} 个模型 · ${mappedEntries.length} 个 Key${vendorText}` : `${mappedCount} 个模型 · ${mappedEntries.length} 个 Key${vendorText}`,
                 ));
                 if (group?.currentLogicalModelId === model.id) chip.addClass('is-selected');
                 chip.attr('title', group ? '点击设为当前分组的逻辑模型' : '');
@@ -442,6 +447,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     deps.save();
                     renderModelList();
                     renderGroupSummary();
+                    setOnlineStatus('已启用');
                 });
                 const editBtn = $('<span class="st-router-model-edit" role="button" tabindex="0" title="编辑正则与名称"><i class="fa-solid fa-sliders"></i></span>')
                     .on('click', event => {
@@ -473,6 +479,19 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         renderMapped();
         renderUnmapped();
         applyModelSearch();
+    }
+
+    function vendorNamesForRealModel(realModel: string): string {
+        const names = new Set<string>();
+        for (const group of deps.getGroups()) {
+            for (const entry of group.entries) {
+                const hasModel = entry.fetchedModels.includes(realModel) || entry.mappings.some(mapping => mapping.realModel === realModel);
+                if (!hasModel) continue;
+                const vendor = deps.getVendors().find(item => item.id === entry.vendorId);
+                if (vendor?.name) names.add(vendor.name);
+            }
+        }
+        return names.size > 0 ? [...names].join('、') : '';
     }
 
     function buildRealPill(realModel: string, currentLogicalId: string, subtitle: string): JQuery<HTMLElement> {
@@ -535,7 +554,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             for (const item of mapped) {
                 const logical = deps.getLogicalModels().find(model => model.id === item.logicalModelId);
-                rows.append(buildRealPill(item.realModel, item.logicalModelId, logical ? `归属：${logical.name}` : '归属：未知'));
+                const vendorText = vendorNamesForRealModel(item.realModel);
+                rows.append(buildRealPill(
+                    item.realModel,
+                    item.logicalModelId,
+                    `${logical ? `归属：${logical.name}` : '归属：未知'}${vendorText ? ` · Vendor：${vendorText}` : ''}`,
+                ));
             }
         };
         head.on('click', () => {
@@ -574,7 +598,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 rows.append($('<div class="st-router-empty">').text('没有未归类的真实模型。所有已拉取的模型都已归类。'));
                 return;
             }
-            for (const realModel of unmapped) rows.append(buildRealPill(realModel, '', '未归类'));
+            for (const realModel of unmapped) {
+                const vendorText = vendorNamesForRealModel(realModel);
+                rows.append(buildRealPill(realModel, '', `未归类${vendorText ? ` · Vendor：${vendorText}` : ''}`));
+            }
         };
         head.on('click', () => {
             unmappedExpanded = !unmappedExpanded;
@@ -920,10 +947,45 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         testInput.on('keydown', event => { if (event.key === 'Enter') runTest(); });
         testRow.append(testInput, testBtn, testResult);
 
-        const mappingCount = isNew ? null : deps.getGroups().reduce((sum, group) => sum + group.entries.reduce((entrySum, entry) => entrySum + entry.mappings.filter(mapping => mapping.logicalModelId === draft.id).length, 0), 0);
-        const mappedRealModelNames = isNew
-            ? []
-            : [...new Set(deps.getGroups().flatMap(group => group.entries.flatMap(entry => entry.mappings.filter(mapping => mapping.logicalModelId === draft.id).map(mapping => mapping.realModel))))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        const mappedModelList = $('<div class="st-router-list"></div>');
+        const renderMappedModels = () => {
+            mappedModelList.empty();
+            const names = isNew
+                ? []
+                : [...new Set(deps.getGroups().flatMap(group => group.entries.flatMap(entry => entry.mappings.filter(mapping => mapping.logicalModelId === draft.id).map(mapping => mapping.realModel))))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            if (names.length === 0) {
+                mappedModelList.append($('<div class="st-router-empty">').text('该逻辑模型名下还没有真实模型。'));
+                return;
+            }
+            const logicalOptionsForMove = () => {
+                const options = sortedLogicalModels(deps.getLogicalModels()).filter(model => model.id !== draft.id).map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join('');
+                return `<option value="">— 移到… —</option>${options}`;
+            };
+            for (const realModel of names) {
+                const row = $('<div class="st-router-key-row"></div>');
+                const name = $('<span class="st-router-key-col">').text(realModel).attr('title', realModel);
+                const select = $('<select class="text_pole"></select>').html(logicalOptionsForMove());
+                const apply = $('<button class="menu_button" type="button" title="把该真实模型移到所选逻辑模型"><i class="fa-solid fa-arrow-right"></i></button>')
+                    .on('click', () => {
+                        const targetId = String(select.val() || '');
+                        if (!targetId) {
+                            toastr.warning('请先选择要移到的逻辑模型。');
+                            return;
+                        }
+                        const touched = assignModelToLogical(deps.getGroups(), realModel, targetId);
+                        if (touched > 0) {
+                            deps.save();
+                            renderModelList();
+                            renderGroupSummary();
+                            toastr.success(`已将「${realModel}」移到目标逻辑模型（影响 ${touched} 个 Key）。`);
+                            renderMappedModels();
+                        }
+                    });
+                row.append(name, select, apply);
+                mappedModelList.append(row);
+            }
+        };
+        renderMappedModels();
 
         content.append(
             field('名称', nameInput, '逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型'),
@@ -932,11 +994,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             ...(isNew ? [] : [
                 $('<div class="quicker-api__field"></div>').append(
                     $('<label><span>名下真实模型</span></label>'),
-                    mappingCount === 0
-                        ? $('<div class="st-router-empty">').text('该逻辑模型名下还没有真实模型。')
-                        : $('<div class="st-router-model-list"></div>').append(
-                            mappedRealModelNames.map(name => $('<span class="st-router-model-chip st-router-real-pill" style="cursor:default"></span>').append($('<span class="st-router-model-name">').text(name))),
-                        ),
+                    mappedModelList,
                 ),
             ]),
         );
