@@ -87,7 +87,7 @@ function ensureQuickManagerStyles(): void {
             border: 1px dashed var(--qa-border-strong); border-radius: 6px; padding: 14px;
         }
         .quicker-api__placement-popup {
-            display: flex; flex-direction: column; gap: 10px; width: min(420px, 90vw);
+            display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0;
             color: var(--qa-text); font-size: 13px;
         }
         .quicker-api__placement-header {
@@ -100,6 +100,9 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__placement-choices .menu_button { justify-content: flex-start; gap: 8px; }
         .quicker-api__placement-choices .menu_button.is-selected {
             border-color: var(--qa-accent); background: rgba(91, 155, 213, 0.16);
+        }
+        @media (max-width: 720px) {
+            .quicker-api__placement-choices { grid-template-columns: 1fr; }
         }
         @media (max-width: 720px) {
             .quicker-api__quick-columns { grid-template-columns: 1fr; }
@@ -129,7 +132,7 @@ export async function chooseQuickActionPlacement(current: QuickActionPlacement, 
     });
     content.append(header, choices);
     renderSelection();
-    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none' });
+    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', wider: true, leftAlign: true });
     runtimeState.quickActionPlacementPopup = popup;
     ownedPopups.add(popup);
     choices.on('click', '[data-placement]', function () {
