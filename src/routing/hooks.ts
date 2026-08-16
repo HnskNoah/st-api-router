@@ -134,8 +134,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     }
 
     function onChatCompletionSettingsReady(generateData: Record<string, any>): void {
-        const active = state.active;
-        if (!active) return;
         // guard 已阻断本次生成（预设切换中 / 密钥安全阻断）时不覆盖，避免拦截模式绕过安全阻断
         if (isGenerationBlockedByGuard(generateData?.chat_completion_source)) {
             debugLog('onChatCompletionSettingsReady skip: generation blocked by guard', {
@@ -143,15 +141,80 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             });
             return;
         }
-        patchGenerateData(generateData, active.unit);
-        debugLog('onChatCompletionSettingsReady patch', {
-            vendorName: active.unit.vendor.name,
-            entryLabel: active.unit.entry.label,
-            realModel: active.unit.realModel,
+        const active = state.active;
+        if (active) {
+            patchGenerateData(generateData, active.unit);
+            debugLog('onChatCompletionSettingsReady patch', {
+                vendorName: active.unit.vendor.name,
+                entryLabel: active.unit.entry.label,
+                realModel: active.unit.realModel,
+                source: generateData.chat_completion_source,
+                endpoint: generateData.reverse_proxy,
+                model: generateData.model,
+                hasKey: Boolean(generateData.proxy_password),
+            });
+            return;
+        }
+        routeFallbackIfNeeded(generateData);
+    }
+
+    /**
+     * 兜底路由：JS-Slash-Runner 等插件走独立请求流，只发 CHAT_COMPLETION_SETTINGS_READY、
+     * 不发 GENERATION_STARTED，state.active 为空。此时按当前 Group 逻辑模型接管连接字段，
+     * 避免独立流用原生（可能过期）key 直接打出去。
+     * 约束：不弹 token 钳制确认窗——emit 是 await 的，弹窗会卡死独立流请求。
+     */
+    function routeFallbackIfNeeded(generateData: Record<string, any>): void {
+        const type = String(generateData?.type || 'normal');
+        if (type === 'quiet' || type === 'continue' || type === 'impersonate') {
+            debugLog('onChatCompletionSettingsReady fallback skip: non-user type', { type });
+            return;
+        }
+        const routing = deps.getRouting();
+        if (!routing.enabled) {
+            debugLog('onChatCompletionSettingsReady fallback skip: routing disabled');
+            return;
+        }
+        const groups = deps.getGroups();
+        const activeGroup = groups.find(group => group.id === deps.getActiveGroupId()) || groups[0] || null;
+        if (!activeGroup || !activeGroup.enabled) {
+            debugLog('onChatCompletionSettingsReady fallback skip: no active/enabled group', activeGroup?.id ?? null);
+            return;
+        }
+        const logicalModelId = activeGroup.currentLogicalModelId;
+        if (!logicalModelId) {
+            debugLog('onChatCompletionSettingsReady fallback skip: no logical model');
+            return;
+        }
+        const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId);
+        if (!result.unit) {
+            debugLog('onChatCompletionSettingsReady fallback skip: no route unit', {
+                logicalModelId,
+                reasons: result.reasons,
+            });
+            return;
+        }
+        const unit = result.unit;
+        const clamps = computeVendorTokenClamps(unit.vendor, {
+            maxContext: Number(oai_settings.openai_max_context) || 0,
+            maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
+        });
+        const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
+        if (needsApply) {
+            // 独立流无弹窗阶段：跳过钳制，避免卡死请求；正常流（GENERATION_STARTED 路径）仍会弹窗确认
+            debugLog('onChatCompletionSettingsReady fallback: token clamps skipped (no popup in fallback)', { clamps });
+        }
+        patchGenerateData(generateData, unit);
+        setOnlineStatus('Valid');
+        debugLog('onChatCompletionSettingsReady fallback routed', {
+            vendorName: unit.vendor.name,
+            entryLabel: unit.entry.label,
+            realModel: unit.realModel,
             source: generateData.chat_completion_source,
             endpoint: generateData.reverse_proxy,
             model: generateData.model,
             hasKey: Boolean(generateData.proxy_password),
+            tokenClampsSkipped: needsApply,
         });
     }
 
