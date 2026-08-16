@@ -61,6 +61,7 @@ function ensureQuickManagerStyles(): void {
             display: flex; align-items: center; gap: 6px;
             border: 1px solid transparent; border-radius: 6px; padding: 6px 8px;
             cursor: pointer; transition: background 0.12s, border-color 0.12s;
+            flex: none; min-width: 0;
         }
         .quicker-api__quick-item:hover { background: var(--qa-bg-hover); }
         .quicker-api__quick-item.is-selected {
@@ -107,6 +108,14 @@ function ensureQuickManagerStyles(): void {
         @media (max-width: 720px) {
             .quicker-api__quick-columns { grid-template-columns: 1fr; }
             .quicker-api__quick-manager { max-height: none; }
+            .quicker-api__quick-list { max-height: 220px; overflow: hidden; }
+            .quicker-api__quick-list-items {
+                flex-direction: row; overflow-x: auto; overflow-y: hidden;
+                padding-bottom: 4px;
+            }
+            .quicker-api__quick-item { min-width: min(78vw, 320px); }
+            .quicker-api__quick-summary { display: none; }
+            .quicker-api__quick-item-actions .menu_button { padding: 2px 5px; }
         }
     `).appendTo(document.head);
 }
