@@ -17,19 +17,17 @@ function ensureQuickManagerStyles(): void {
     if (document.getElementById('quicker-api-quick-manager-styles')) return;
     $('<style id="quicker-api-quick-manager-styles"></style>').text(`
         .quicker-api__quick-manager {
-            --qa-border: rgba(128, 128, 128, 0.28);
+            --qa-border: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.28));
             --qa-border-strong: rgba(128, 128, 128, 0.5);
-            --qa-bg: rgba(0, 0, 0, 0.28);
+            --qa-bg: var(--black30a, rgba(0, 0, 0, 0.28));
             --qa-bg-hover: rgba(255, 255, 255, 0.07);
             --qa-accent: #5b9bd5;
             --qa-danger: #d9534f;
-            --qa-text: #e8e8e8;
-            --qa-text-dim: #a0a0a0;
+            --qa-text: var(--SmartThemeBodyColor, #e8e8e8);
+            --qa-text-dim: var(--SmartThemeEmojiColor, #a0a0a0);
             display: flex; flex-direction: column; gap: 10px;
             width: min(900px, 92vw); max-height: 78vh;
-            margin: -10px -8px; padding: 10px 8px;
-            background: #1d2228;
-            border-radius: 8px;
+            text-align: start;
             color: var(--qa-text); font-size: 13px;
         }
         .quicker-api__quick-header {
@@ -81,9 +79,18 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__quick-editor-fields { display: flex; flex-direction: column; gap: 10px; }
         .quicker-api__quick-field { display: flex; flex-direction: column; gap: 4px; }
         .quicker-api__quick-field > span { font-size: 12px; color: var(--qa-text-dim); }
-        .quicker-api__quick-model-control { display: flex; gap: 6px; flex-wrap: wrap; }
-        .quicker-api__quick-model-control .text_pole { flex: 1 1 180px; }
-        .quicker-api__quick-model-control .menu_button { flex: none; }
+        .quicker-api__quick-model-control { display: flex; flex-direction: column; gap: 6px; }
+        .quicker-api__quick-model-candidates {
+            display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto;
+            border: 1px solid var(--qa-border); border-radius: 6px; background: var(--qa-bg);
+            padding: 4px;
+        }
+        .quicker-api__quick-model-candidate {
+            text-align: start; padding: 5px 8px; border-radius: 4px; cursor: pointer;
+            color: var(--qa-text); background: transparent; border: none; font-size: 12px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .quicker-api__quick-model-candidate:hover { background: var(--qa-bg-hover); color: var(--qa-accent); }
         .quicker-api__quick-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
         .quicker-api__quick-editor.has-unsaved-detail { border-color: var(--qa-accent); }
         .quicker-api__empty-state {
@@ -175,8 +182,8 @@ export async function manageQuickActions(): Promise<void> {
     const title = $('<div class="quicker-api__quick-title"><i class="fa-solid fa-bolt"></i><span>便捷按钮管理</span></div>');
     const placementButton = $('<button type="button" class="menu_button" title="入口位置" aria-label="设置便捷入口位置"><i class="fa-solid fa-gear"></i><span>位置设置</span></button>');
     const saveAll = $('<button type="button" class="menu_button quicker-api__save-button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    const close = $('<button type="button" class="menu_button" title="关闭并丢弃更改" aria-label="关闭并丢弃更改"><i class="fa-solid fa-xmark"></i></button>');
-    header.append(title.append(placementButton), $('<div class="quicker-api__quick-header-actions">').append(saveAll, close));
+    // DISPLAY 弹窗右上角自带 x 关闭，这里不再重复放 x
+    header.append(title.append(placementButton), $('<div class="quicker-api__quick-header-actions">').append(saveAll));
     const add = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增方案</span></button>');
     const list = $('<div class="quicker-api__quick-list">');
     const listItems = $('<div class="quicker-api__quick-list-items" role="listbox" aria-label="便捷方案">');
@@ -184,8 +191,8 @@ export async function manageQuickActions(): Promise<void> {
     const editor = $('<div class="quicker-api__quick-editor">');
     content.append(header, $('<div class="quicker-api__quick-columns">').append(list, editor));
 
-    // transparent：去掉 ST dialog 默认大黑底，只保留我们自己的卡片背景
-    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', transparent: true, wide: true });
+    // 使用 ST 标准 dialog 背景/边框/居中；仅 DISPLAY 类型去掉自带按钮区
+    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', wide: true });
     let managerOpen = true;
     ownedPopups.add(popup);
     const selectAction = (id: string, force = false) => {
@@ -208,25 +215,42 @@ export async function manageQuickActions(): Promise<void> {
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
         const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
         const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="模型名：逻辑模型或真实模型（输入可搜索）">').val(draft.model);
-        const modelDatalist = $('<datalist></datalist>');
+        const modelCandidates = $('<div class="quicker-api__quick-model-candidates" hidden></div>');
+        let modelOptions: string[] = [];
         const refreshModels = () => {
-            // 聚合模型（供应商路由）与逻辑模型合并候选，datalist 会随输入过滤
+            // 聚合模型（供应商路由）与逻辑模型合并候选，随输入过滤
             const logicalNames = logicalModels().map(model => model.name);
-            const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
+            modelOptions = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-            const listId = `qa-model-list-${selectedId}`;
-            modelDatalist.attr('id', listId).empty();
-            models.forEach(model => modelDatalist.append($('<option>').val(model)));
-            modelInput.attr('list', listId);
+        };
+        const renderCandidates = () => {
+            const query = String(modelInput.val() || '').trim().toLowerCase();
+            modelCandidates.empty();
+            const matches = query
+                ? modelOptions.filter(model => model.toLowerCase().includes(query))
+                : modelOptions;
+            matches.slice(0, 50).forEach(model => {
+                const item = $('<button type="button" class="quicker-api__quick-model-candidate"></button>').text(model).attr('title', model);
+                item.on('click', () => {
+                    draft.model = model;
+                    modelInput.val(model);
+                    updateDetailSaveState();
+                    modelCandidates.hide();
+                });
+                modelCandidates.append(item);
+            });
+            modelCandidates.toggle(matches.length > 0);
         };
         refreshModels();
-        const modelControl = $('<div class="quicker-api__quick-model-control"></div>').append(modelInput, modelDatalist);
-        name.on('input', () => { draft.name = sanitizeName(name.val()); updateDetailSaveState(); });
-        preset.on('change', () => { draft.preset = normalizeText(preset.val()); updateDetailSaveState(); });
+        modelInput.on('focus', renderCandidates);
         modelInput.on('input', () => {
             draft.model = normalizeText(modelInput.val()).slice(0, 500);
+            renderCandidates();
             updateDetailSaveState();
         });
+        const modelControl = $('<div class="quicker-api__quick-model-control"></div>').append(modelInput, modelCandidates);
+        name.on('input', () => { draft.name = sanitizeName(name.val()); updateDetailSaveState(); });
+        preset.on('change', () => { draft.preset = normalizeText(preset.val()); updateDetailSaveState(); });
         const saveScheme = $('<button type="button" class="menu_button quicker-api__save-button"><i class="fa-solid fa-floppy-disk"></i><span>保存方案</span></button>');
         saveScheme.on('click', () => {
             if (!draft.preset && !draft.model) return toastr.warning('方案至少需要 preset 或 model 中的一项。');
@@ -299,7 +323,6 @@ export async function manageQuickActions(): Promise<void> {
         ensureQuickActionEntries();
         toastr.success('便捷入口位置已应用。');
     }));
-    close.on('click', () => void popup.completeCancelled());
     saveAll.on('click', () => {
         const invalid = globalDraft.find(action => !action.preset && !action.model);
         if (invalid) return toastr.warning('请先在右侧保存每个方案；每项至少需要 preset 或 model。');
