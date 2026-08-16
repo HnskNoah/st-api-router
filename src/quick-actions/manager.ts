@@ -202,7 +202,7 @@ export async function manageQuickActions(): Promise<void> {
         }
         const draft = detailDraft;
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
-        const preset = $('<select class="text_pole quicker-api__quick-preset"></select>').html(presetOptionsHtml(draft.preset));
+        const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
         const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="模型名：逻辑模型（点击只切换分组模型）或真实模型名">').val(draft.model);
         const modelSelect = $('<select class="text_pole" aria-label="从配置模型列表选择"></select>');
         const refreshModels = () => {
@@ -318,25 +318,10 @@ export async function manageQuickActions(): Promise<void> {
         void popup.completeAffirmative();
     });
     render();
-    // 监听 ST 预设下拉 DOM 变化（新增/删除/改名/切换），实时刷新当前编辑器里的预设选项
-    const presetSelect = document.getElementById('settings_preset_openai');
-    const presetObserver = presetSelect
-        ? new MutationObserver(() => {
-            if (!detailDraft || !managerOpen) return;
-            editor.find('.quicker-api__quick-preset').each(function () {
-                const el = $(this);
-                const current = String(el.val() || '');
-                el.html(presetOptionsHtml(current));
-                el.val(current);
-            });
-        })
-        : null;
-    presetObserver?.observe(presetSelect as Element, { childList: true, subtree: true, attributes: true, attributeFilter: ['value'] });
     let result: string | null = null;
     try {
         result = await popup.show();
     } finally {
-        presetObserver?.disconnect();
         managerOpen = false;
         ownedPopups.delete(popup);
     }
