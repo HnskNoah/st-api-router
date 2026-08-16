@@ -7,6 +7,7 @@ import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
+import { normalizeRoutingSettings } from '../domain/routing.js';
 import {
     assignModelToLogical,
     assignRealModel,
@@ -1326,11 +1327,19 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 vendors.splice(0, vendors.length, ...merged.vendors);
                 logicalModels.splice(0, logicalModels.length, ...merged.logicalModels);
                 groups.splice(0, groups.length, ...merged.groups);
+                // 导入文件里的路由设置与当前活动分组一并应用（保留导入快照语义）
+                if (parsed?.routing && typeof parsed.routing === 'object') {
+                    Object.assign(deps.getRouting(), normalizeRoutingSettings(parsed.routing));
+                }
+                if (typeof parsed?.activeGroupId === 'string' && groups.some(group => group.id === parsed.activeGroupId)) {
+                    deps.setActiveGroupId(parsed.activeGroupId);
+                }
                 deps.save();
                 renderProviderList();
                 renderGroupEntries();
                 renderModelList();
                 renderGroupSummary();
+                renderGroupSelect();
                 toastr.success(`已导入配置：Vendor ${merged.vendors.length} 个、逻辑模型 ${merged.logicalModels.length} 个、分组 ${merged.groups.length} 个（按 id 合并）。`);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
