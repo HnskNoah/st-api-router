@@ -19,14 +19,15 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__quick-manager {
             --qa-border: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.28));
             --qa-border-strong: rgba(128, 128, 128, 0.5);
-            --qa-bg: var(--black30a, rgba(0, 0, 0, 0.28));
+            --qa-bg: var(--black30a, rgba(0, 0, 0, 0.18));
             --qa-bg-hover: rgba(255, 255, 255, 0.07);
             --qa-accent: #5b9bd5;
             --qa-danger: #d9534f;
             --qa-text: var(--SmartThemeBodyColor, #e8e8e8);
             --qa-text-dim: var(--SmartThemeEmojiColor, #a0a0a0);
             display: flex; flex-direction: column; gap: 10px;
-            width: min(900px, 92vw); max-height: 78vh;
+            width: 100%; min-width: 0; max-height: 78vh;
+            box-sizing: border-box;
             text-align: start;
             color: var(--qa-text); font-size: 13px;
         }
@@ -180,8 +181,8 @@ export async function manageQuickActions(): Promise<void> {
     const editor = $('<div class="quicker-api__quick-editor">');
     content.append(header, $('<div class="quicker-api__quick-columns">').append(list, editor));
 
-    // 使用 ST 标准 dialog 背景/边框/居中；仅 DISPLAY 类型去掉自带按钮区
-    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', wide: true });
+    // 使用 ST 标准 dialog 背景/边框/居中；wider 让弹窗按内容自然居中，不用 wide 的 sheldWidth
+    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', wider: true });
     let managerOpen = true;
     ownedPopups.add(popup);
     const selectAction = (id: string, force = false) => {
@@ -203,9 +204,9 @@ export async function manageQuickActions(): Promise<void> {
         const draft = detailDraft;
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
         const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
-        const modelSelect = $('<select class="text_pole quicker-api__quick-model-select"></select>');
+        const modelSelect = $('<select class="text_pole"></select>');
         const refreshModels = () => {
-            // 聚合模型（供应商路由）与逻辑模型合并候选，select2 提供搜索过滤
+            // 聚合模型（供应商路由）与逻辑模型合并候选，和预设下拉一样用原生 text_pole
             const logicalNames = logicalModels().map(model => model.name);
             const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -279,19 +280,6 @@ export async function manageQuickActions(): Promise<void> {
             listItems.append(row);
         });
         renderEditor();
-        const modelSelectEl = editor.find('.quicker-api__quick-model-select');
-        if (modelSelectEl.length) {
-            modelSelectEl.each(function () {
-                const el = $(this);
-                if (el.data('select2')) el.select2('destroy');
-            });
-            modelSelectEl.select2({
-                placeholder: '选择或搜索模型…',
-                searchInputPlaceholder: '搜索模型…',
-                searchInputCssClass: 'text_pole',
-                width: '100%',
-            });
-        }
         updateSaveState();
     };
     add.on('click', () => {
