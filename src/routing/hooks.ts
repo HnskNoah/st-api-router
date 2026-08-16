@@ -47,9 +47,10 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             activeGroupId: deps.getActiveGroupId(),
             groupCount: deps.getGroups().length,
         });
-        // 跳过非用户主动触发的生成：quiet/continue/impersonate 或 automatic_trigger 标记
-        if (type === 'quiet' || type === 'continue' || type === 'impersonate' || automaticTrigger) {
-            debugLog('onGenerationStarted skip: non-user trigger', { type, automaticTrigger: Boolean(automaticTrigger) });
+        // 跳过非用户主动触发的生成：quiet/continue/impersonate
+        // 注意：不按 automaticTrigger 过滤——JS-Slash-Runner 等插件的正常发送也可能被标为 true
+        if (type === 'quiet' || type === 'continue' || type === 'impersonate') {
+            debugLog('onGenerationStarted skip: non-user trigger', { type });
             return;
         }
         if (runtimeState.generationRoutingInFlight) {
@@ -130,7 +131,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             }
             state.active = { unit, logicalModelId };
             deps.beginGeneration?.();
-            toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由');
+            toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
             debugLog('onGenerationStarted done');
         });
     }
