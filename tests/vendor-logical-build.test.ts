@@ -47,7 +47,7 @@ describe('domain/vendor > canonicalModelName 核心模型名提取', () => {
         expect(canonicalModelName('[1]claude-opus-4-8')).toBe('claude-opus-4-8');
         expect(canonicalModelName('[南涧]deepseek-v4-flash')).toBe('deepseek-v4-flash');
         expect(canonicalModelName('[v2]gemini-2.5-pro')).toBe('gemini-2.5-pro');
-        expect(canonicalModelName('[NVIDIA]DeepSeek-V4-Pro')).toBe('DeepSeek-V4-Pro');
+        expect(canonicalModelName('[NVIDIA]DeepSeek-V4-Pro')).toBe('deepseek-v4-pro');
     });
 
     it('剥离 gcli- 与假流式- 前缀', () => {
@@ -66,6 +66,12 @@ describe('domain/vendor > canonicalModelName 核心模型名提取', () => {
     it('无前缀的模型名原样返回', () => {
         expect(canonicalModelName('deepseek-v4-flash')).toBe('deepseek-v4-flash');
         expect(canonicalModelName('claude-opus-5')).toBe('claude-opus-5');
+    });
+
+    it('统一小写：deepseek-pro 与 deepseek-Pro 归并', () => {
+        expect(canonicalModelName('deepseek-pro')).toBe('deepseek-pro');
+        expect(canonicalModelName('deepseek-Pro')).toBe('deepseek-pro');
+        expect(canonicalModelName('[1]DeepSeek-Pro')).toBe('deepseek-pro');
     });
 
     it('剥离末尾的 -假流式 后缀，匹配无后缀核心名', () => {
@@ -172,7 +178,7 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
         expect(result.mapped).toBe(1);
     });
 
-    it('已有映射的真实模型不动（不覆盖不重复）', () => {
+    it('已有映射也全部重置到核心逻辑模型（不保护旧映射）', () => {
         const groups = [
             makeGroup({
                 entries: [makeEntry('e1', 'v1', ['[1]claude-opus-4-8'], [{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'keep' }])],
@@ -200,7 +206,7 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
         expect(result.rebuilt).toBe(1);
     });
 
-    it('手动映射到非核心逻辑模型不被重建覆盖', () => {
+    it('手动映射到非核心逻辑模型也会重置到核心逻辑模型', () => {
         const existing: LogicalModel[] = [
             { id: 'clean', name: 'gemini-3.1-pro-preview', matchPattern: '' },
             { id: 'manual', name: 'Gemini 系', matchPattern: '' },
@@ -211,8 +217,8 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
             }),
         ];
         const result = buildLogicalModelsFromFetched(['gemini-3.1-pro-preview-假流式'], existing, groups);
-        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('manual');
-        expect(result.rebuilt).toBe(0);
+        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('clean');
+        expect(result.rebuilt).toBe(1);
     });
 
     it('特殊变体不建映射', () => {

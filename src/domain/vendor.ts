@@ -377,7 +377,7 @@ export function isSpecialVariant(name: string): boolean {
     return SPECIAL_VARIANT_RE.test(String(name || '').trim());
 }
 
-/** 提取核心模型名：剥离渠道/变体前缀（[xx]、gcli-、假流式-、xxx/）与末尾的 -假流式，同一核心模型的不同变体归并。 */
+/** 提取核心模型名：剥离渠道/变体前缀（[xx]、gcli-、假流式-、xxx/）与末尾的 -假流式，统一小写；同一核心模型的不同变体归并。 */
 export function canonicalModelName(raw: string): string {
     let name = String(raw || '').trim();
     name = name.replace(/^\[[^\]]*\]/, '');
@@ -385,13 +385,13 @@ export function canonicalModelName(raw: string): string {
     if (slashIndex >= 0) name = name.slice(slashIndex + 1);
     name = name.replace(/^gcli-/, '').replace(/^假流式-/, '');
     name = name.replace(/-假流式$/, '');
-    return name;
+    return name.toLowerCase();
 }
 
-/** 从已拉取模型批量创建逻辑模型并自动映射：每个核心模型独立创建一个（渠道/假流式变体合并），跳过 search/thinking/image 变体。
- *  自动映射：核心名匹配的逻辑模型建立后，把各 Key 中未映射的真实模型映射过去（已有映射不动）。
- *  重建：若已有映射指向“canonical 名相同但 id 不同”的旧逻辑模型（如 -假流式 旧脏名），修正到 canonical 同名逻辑模型；
- *  映射到非核心名逻辑模型（用户手动命名）不覆盖。返回 created / skipped / mapped / rebuilt 数。 */
+/** 从已拉取模型批量创建逻辑模型并自动映射：每个核心模型独立创建一个（渠道/假流式变体合并，统一小写），跳过 search/thinking/image 变体。
+ *  自动映射：核心名匹配的逻辑模型建立后，把各 Key 中未映射的真实模型映射过去。
+ *  全部重置重算：已有映射只要不是指向 canonical 同名逻辑模型，一律重置到 canonical 逻辑模型（覆盖手动映射）。
+ *  返回 created / skipped / mapped / rebuilt 数。 */
 export function buildLogicalModelsFromFetched(
     models: string[],
     logicalModels: LogicalModel[],
@@ -420,6 +420,8 @@ export function buildLogicalModelsFromFetched(
         }
         const target = findLogicalByNameCI(logicalModels, canonical);
         if (!target) continue;
+        // 统一小写：已存在的同名逻辑模型把名字规范成小写核心名
+        if (String(target.name || '') !== canonical) target.name = canonical;
         for (const entry of allGroupEntries(groups)) {
             if (!entry.fetchedModels.includes(name)) continue;
             const existing = entry.mappings.find(mapping => mapping.realModel === name);
@@ -428,10 +430,8 @@ export function buildLogicalModelsFromFetched(
                 mapped++;
                 continue;
             }
-            const mappedModel = logicalModels.find(model => model.id === existing.logicalModelId);
-            if (!mappedModel || mappedModel.id === target.id) continue;
-            // 仅修正 canonical 错配：旧逻辑模型名去前缀后与核心名一致（如 xxx-假流式 → xxx，大小写不敏感）
-            if (canonicalModelName(mappedModel.name).toLowerCase() === canonical.toLowerCase()) {
+            // 全部重置重算：只要不是 canonical 同名逻辑模型就改为 target（覆盖手动映射）
+            if (existing.logicalModelId !== target.id) {
                 existing.logicalModelId = target.id;
                 rebuilt++;
             }
