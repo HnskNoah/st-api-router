@@ -16,6 +16,9 @@ import type { QuickAction, QuickActionPlacement } from '../types.js';
 function ensureQuickManagerStyles(): void {
     if (document.getElementById('quicker-api-quick-manager-styles')) return;
     $('<style id="quicker-api-quick-manager-styles"></style>').text(`
+        /* 内容容器不随 dialog flex-grow 撑满，避免卡片下方留出无用空白 */
+        .popup:has(.quicker-api__quick-manager) .popup-content { flex-grow: 0; }
+        .popup:has(.quicker-api__quick-manager) .popup-body { height: auto; }
         .quicker-api__quick-manager {
             --qa-border: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.28));
             --qa-border-strong: rgba(128, 128, 128, 0.5);
@@ -26,7 +29,7 @@ function ensureQuickManagerStyles(): void {
             --qa-text: var(--SmartThemeBodyColor, #e8e8e8);
             --qa-text-dim: color-mix(in srgb, var(--SmartThemeBodyColor) 70%, transparent);
             display: flex; flex-direction: column; gap: 10px;
-            width: 100%; min-width: 0; max-height: 78vh;
+            width: 100%; min-width: 0; max-height: 78vh; min-height: 0;
             box-sizing: border-box;
             text-align: start;
             color: var(--qa-text); font-size: 13px;
@@ -107,8 +110,8 @@ function ensureQuickManagerStyles(): void {
         }
         @media (max-width: 720px) {
             .quicker-api__quick-columns { grid-template-columns: 1fr; }
-            .quicker-api__quick-manager { max-height: none; }
-            .quicker-api__quick-list { max-height: 220px; overflow: hidden; }
+            .quicker-api__quick-manager { max-height: 85vh; }
+            .quicker-api__quick-list { max-height: 180px; overflow: hidden; }
             .quicker-api__quick-list-items {
                 flex-direction: row; overflow-x: auto; overflow-y: hidden;
                 padding-bottom: 4px;
