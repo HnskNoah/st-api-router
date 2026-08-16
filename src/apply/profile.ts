@@ -115,18 +115,21 @@ async function finalizeAppliedProfile(
 ): Promise<boolean> {
     try {
         await enqueueConnectionMutation(async () => {
-            applyNativeFields(profile, '', applyModel);
-            // Custom 源的原生 status 检查依赖 #api_key_custom 输入框（连接按钮会把它写进 secret 再发请求）。
-            // 激活密钥只在服务端/secret_state 里，若不回填输入框，切到 custom 后 status 会因缺 key 报 Unauthorized。
+            // 先回填 custom key 到输入框，再切 source——否则 ST 原生 reconnect 会读空输入框并覆盖已激活的密钥。
             if (config.secretKey === 'custom') {
                 const active = getActiveSecret(config.secretKey);
                 if (active) {
-                    const value = await findSecretBounded(config.secretKey, active.id);
-                    if (value !== null) {
-                        $('#api_key_custom').val(value).trigger('input');
+                    try {
+                        const value = await findSecretBounded(config.secretKey, active.id);
+                        if (value !== null) {
+                            $('#api_key_custom').val(value).trigger('input');
+                        }
+                    } catch {
+                        // findSecretBounded 内部已打 warn；输入框不回填，原生 status 可能仍 401
                     }
                 }
             }
+            applyNativeFields(profile, '', applyModel);
         });
         if (runtimeState.extensionDisabled) throw new Error('Extension disabled while applying profile');
         clearCredentialSafetyBlock(config.secretKey);
