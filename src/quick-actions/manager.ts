@@ -278,6 +278,7 @@ export async function manageQuickActions(): Promise<void> {
                 searchInputPlaceholder: '搜索模型…',
                 searchInputCssClass: 'text_pole',
                 width: '100%',
+                dropdownParent: content[0],
                 matcher: function (params: any, data: any) {
                     if (!params.term || params.term.trim() === '') return data;
                     const term = String(params.term).toLowerCase();
