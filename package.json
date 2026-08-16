@@ -1,9 +1,9 @@
 {
-    "name": "st-quicker-api",
-    "version": "3.4.7",
+    "name": "st-api-router",
+    "version": "1.0.0",
     "private": true,
     "type": "module",
-    "description": "SillyTavern Quicker Api extension (modular TypeScript refactor)",
+    "description": "SillyTavern API router extension (modular TypeScript)",
     "scripts": {
         "build": "vite build",
         "watch": "vite build --watch",

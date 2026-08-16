@@ -1,12 +1,12 @@
 {
-    "name": "ST Quicker Api",
-    "display_name": "更快更好的酒馆 Api 管理 / ST Quicker Api",
+    "name": "ST Api Router",
+    "display_name": "供应商路由 / ST Api Router",
     "loading_order": 3,
     "requires": [],
     "optional": [],
-    "description": "更方便地管理/切换 API 配置",
+    "description": "按逻辑模型在各 Vendor + Key 间自动路由 API 请求",
     "js": "dist/index.js",
     "css": "style.css",
     "author": "Qianzhuo",
-    "version": "3.4.7"
+    "version": "1.0.0"
 }

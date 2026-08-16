@@ -193,7 +193,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     const panel = $(`
         <section id="st_router_panel" class="quicker-api">
             <div class="quicker-api__title">
-                <span><i class="fa-solid fa-route"></i> 供应商路由</span>
+                <span><i class="fa-solid fa-route"></i> ST Api Router</span>
                 <span class="st-router-title-actions">
                     <button id="st_router_toggle_legacy" class="menu_button" type="button" title="旧版 API Profile 设置（过渡兼容）"><i class="fa-solid fa-clock-rotate-left"></i><span>旧版设置</span></button>
                 </span>
