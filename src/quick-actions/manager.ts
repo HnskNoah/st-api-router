@@ -80,17 +80,6 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__quick-field { display: flex; flex-direction: column; gap: 4px; }
         .quicker-api__quick-field > span { font-size: 12px; color: var(--qa-text-dim); }
         .quicker-api__quick-model-control { display: flex; flex-direction: column; gap: 6px; }
-        .quicker-api__quick-model-candidates {
-            display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto;
-            border: 1px solid var(--qa-border); border-radius: 6px; background: var(--qa-bg);
-            padding: 4px;
-        }
-        .quicker-api__quick-model-candidate {
-            text-align: start; padding: 5px 8px; border-radius: 4px; cursor: pointer;
-            color: var(--qa-text); background: transparent; border: none; font-size: 12px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .quicker-api__quick-model-candidate:hover { background: var(--qa-bg-hover); color: var(--qa-accent); }
         .quicker-api__quick-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
         .quicker-api__quick-editor.has-unsaved-detail { border-color: var(--qa-accent); }
         .quicker-api__empty-state {
@@ -214,41 +203,22 @@ export async function manageQuickActions(): Promise<void> {
         const draft = detailDraft;
         const name = $('<input class="text_pole" type="text" maxlength="120" placeholder="留空自动命名为方案N">').val(draft.name);
         const preset = $(`<select class="text_pole">${presetOptionsHtml(draft.preset)}</select>`);
-        const modelInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="模型名：逻辑模型或真实模型（输入可搜索）">').val(draft.model);
-        const modelCandidates = $('<div class="quicker-api__quick-model-candidates" hidden></div>');
-        let modelOptions: string[] = [];
+        const modelSelect = $('<select class="text_pole quicker-api__quick-model-select"></select>');
         const refreshModels = () => {
-            // 聚合模型（供应商路由）与逻辑模型合并候选，随输入过滤
+            // 聚合模型（供应商路由）与逻辑模型合并候选，select2 提供搜索过滤
             const logicalNames = logicalModels().map(model => model.name);
-            modelOptions = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
+            const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-        };
-        const renderCandidates = () => {
-            const query = String(modelInput.val() || '').trim().toLowerCase();
-            modelCandidates.empty();
-            const matches = query
-                ? modelOptions.filter(model => model.toLowerCase().includes(query))
-                : modelOptions;
-            matches.slice(0, 50).forEach(model => {
-                const item = $('<button type="button" class="quicker-api__quick-model-candidate"></button>').text(model).attr('title', model);
-                item.on('click', () => {
-                    draft.model = model;
-                    modelInput.val(model);
-                    updateDetailSaveState();
-                    modelCandidates.hide();
-                });
-                modelCandidates.append(item);
-            });
-            modelCandidates.toggle(matches.length > 0);
+            modelSelect.empty().append($('<option value="">— 不切换模型 —</option>'));
+            models.forEach(model => modelSelect.append($('<option>').val(model).text(model)));
+            modelSelect.val(draft.model && models.includes(draft.model) ? draft.model : '');
         };
         refreshModels();
-        modelInput.on('focus', renderCandidates);
-        modelInput.on('input', () => {
-            draft.model = normalizeText(modelInput.val()).slice(0, 500);
-            renderCandidates();
+        modelSelect.on('change', () => {
+            draft.model = normalizeText(modelSelect.val()).slice(0, 500);
             updateDetailSaveState();
         });
-        const modelControl = $('<div class="quicker-api__quick-model-control"></div>').append(modelInput, modelCandidates);
+        const modelControl = $('<div class="quicker-api__quick-model-control"></div>').append(modelSelect);
         name.on('input', () => { draft.name = sanitizeName(name.val()); updateDetailSaveState(); });
         preset.on('change', () => { draft.preset = normalizeText(preset.val()); updateDetailSaveState(); });
         const saveScheme = $('<button type="button" class="menu_button quicker-api__save-button"><i class="fa-solid fa-floppy-disk"></i><span>保存方案</span></button>');
@@ -309,6 +279,19 @@ export async function manageQuickActions(): Promise<void> {
             listItems.append(row);
         });
         renderEditor();
+        const modelSelectEl = editor.find('.quicker-api__quick-model-select');
+        if (modelSelectEl.length) {
+            modelSelectEl.each(function () {
+                const el = $(this);
+                if (el.data('select2')) el.select2('destroy');
+            });
+            modelSelectEl.select2({
+                placeholder: '选择或搜索模型…',
+                searchInputPlaceholder: '搜索模型…',
+                searchInputCssClass: 'text_pole',
+                width: '100%',
+            });
+        }
         updateSaveState();
     };
     add.on('click', () => {
