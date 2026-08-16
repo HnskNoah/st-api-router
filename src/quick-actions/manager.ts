@@ -16,9 +16,11 @@ import type { QuickAction, QuickActionPlacement } from '../types.js';
 function ensureQuickManagerStyles(): void {
     if (document.getElementById('quicker-api-quick-manager-styles')) return;
     $('<style id="quicker-api-quick-manager-styles"></style>').text(`
-        /* 内容容器不随 dialog flex-grow 撑满，避免卡片下方留出无用空白 */
-        .popup:has(.quicker-api__quick-manager) .popup-content { flex-grow: 0; }
-        .popup:has(.quicker-api__quick-manager) .popup-body { height: auto; }
+        /* fixed 浮层：借鉴 preset-cards 的 pc-manager-container，避免 ST Popup 黑边/空白问题 */
+        .quicker-api__quick-overlay {
+            position: fixed; inset: 4vh 6vw; z-index: 99999;
+            display: flex; align-items: stretch; justify-content: center;
+        }
         .quicker-api__quick-manager {
             --qa-border: var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.28));
             --qa-border-strong: rgba(128, 128, 128, 0.5);
@@ -29,8 +31,13 @@ function ensureQuickManagerStyles(): void {
             --qa-text: var(--SmartThemeBodyColor, #e8e8e8);
             --qa-text-dim: color-mix(in srgb, var(--SmartThemeBodyColor) 70%, transparent);
             display: flex; flex-direction: column; gap: 10px;
-            width: 100%; min-width: 0; max-height: 78vh; min-height: 0;
+            width: 100%; min-width: 0; min-height: 0;
             box-sizing: border-box;
+            padding: 20px;
+            background: var(--SmartThemeBlurTintColor, rgba(30, 30, 30, 0.85));
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--qa-border); border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
             text-align: start;
             color: var(--qa-text); font-size: 13px;
         }
@@ -46,7 +53,7 @@ function ensureQuickManagerStyles(): void {
         .quicker-api__quick-title i { color: var(--qa-accent); }
         .quicker-api__quick-header-actions { display: flex; align-items: center; gap: 6px; }
         .quicker-api__quick-columns {
-            display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+            display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
             gap: 10px; min-height: 0; flex: 1 1 auto;
         }
         .quicker-api__quick-list {
@@ -109,8 +116,9 @@ function ensureQuickManagerStyles(): void {
             .quicker-api__placement-choices { grid-template-columns: 1fr; }
         }
         @media (max-width: 720px) {
+            .quicker-api__quick-overlay { inset: 3vh 6px; }
+            .quicker-api__quick-manager { padding: 12px; border-radius: 10px; }
             .quicker-api__quick-columns { grid-template-columns: 1fr; }
-            .quicker-api__quick-manager { max-height: 85vh; }
             .quicker-api__quick-list { max-height: 260px; overflow: hidden; }
             .quicker-api__quick-list-items {
                 flex-direction: column; overflow-y: auto; overflow-x: hidden;
@@ -168,7 +176,7 @@ function createQuickManagerDraft() {
     return { globalDraft };
 }
 
-export async function manageQuickActions(): Promise<void> {
+export function manageQuickActions(): void {
     if (runtimeState.extensionDisabled || runtimeState.teardownPending) return;
     ensureQuickManagerStyles();
     const { globalDraft } = createQuickManagerDraft();
@@ -176,7 +184,9 @@ export async function manageQuickActions(): Promise<void> {
     let selectedId = globalDraft[0]?.id || '';
     let detailDraft: QuickAction | null = globalDraft[0] || null;
 
-    const content = $('<div class="quicker-api__quick-manager">');
+    const overlay = $('<div class="quicker-api__quick-overlay"></div>').appendTo(document.body);
+    const content = $('<div class="quicker-api__quick-manager"></div>');
+    overlay.append(content);
     const header = $('<header class="quicker-api__quick-header">');
     const title = $('<div class="quicker-api__quick-title"><i class="fa-solid fa-bolt"></i><span>便捷按钮管理</span></div>');
     const placementButton = $('<button type="button" class="menu_button" title="入口位置" aria-label="设置便捷入口位置"><i class="fa-solid fa-gear"></i><span>位置设置</span></button>');
@@ -197,10 +207,10 @@ export async function manageQuickActions(): Promise<void> {
         ensureQuickActionEntries();
     };
 
-    // 使用 ST 标准 dialog 背景/边框/居中；wider 让弹窗按内容自然居中，不用 wide 的 sheldWidth
-    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { animation: 'none', wider: true });
+    const closeManager = () => {
+        overlay.remove();
+    };
     let managerOpen = true;
-    ownedPopups.add(popup);
     const selectAction = (id: string, force = false) => {
         if (!force && id === selectedId) return;
         selectedId = id;
@@ -315,13 +325,12 @@ export async function manageQuickActions(): Promise<void> {
         ensureQuickActionEntries();
         toastr.success('便捷入口位置已应用。');
     }));
-    close.on('click', () => void popup.completeCancelled());
+    close.on('click', closeManager);
     render();
-    try {
-        await popup.show();
-    } finally {
-        managerOpen = false;
-        ownedPopups.delete(popup);
-    }
     // 自动保存：所有改动在编辑时已通过 persistQuickActions 写入，关闭无需再写
+    // 浮层挂到 body 后一直显示；通过 close 按钮移除。点击浮层空白处也可关闭（不误触卡片内部）
+    overlay.on('mousedown', event => {
+        if (event.target === overlay[0]) closeManager();
+    });
+    managerOpen = false;
 }
