@@ -7,6 +7,7 @@ import { settings, profiles, selectedProfile } from './settings/access.js';
 import { normalizeFormat } from './utils/format.js';
 import { FORMATS } from './constants.js';
 import { saveSettingsDebounced } from '@sillytavern/script';
+import { Popup } from '@sillytavern/scripts/popup';
 import { clearKeyEditor, renderModelControl, renderProfileEditor, renderProfiles, renderStatus, updateCredentialEditor, updatePanelVisibility } from './ui/render.js';
 import { syncEditorModelToNative } from './native/fields.js';
 import { enqueueOperation } from './operation-queue.js';
@@ -19,6 +20,7 @@ import { revealBoundSecret, copyBoundSecret } from './profiles/key-editor.js';
 import { addCustomModel, fetchCustomModels } from './models/fetch.js';
 import { manageCustomModels } from './models/manage.js';
 import { manageQuickActions } from './quick-actions/manager.js';
+import { checkProfileHealth, deleteStaleProfiles } from './profiles/health.js';
 import { ensureQuickActionEntries } from './quick-actions/menu.js';
 import { installPresetSaveObserver, bindNativePresetSaveCapture } from './presets/save-observer.js';
 import { normalizeText } from './utils/text.js';
@@ -56,6 +58,20 @@ function bindToolbarButtons(): void {
     $('#quicker_api_copy').on('click', copySelectedProfile);
     $('#quicker_api_import_native').on('click', () => void enqueueOperation(importNativeProfile));
     $('#quicker_api_delete').on('click', deleteSelectedProfile);
+    $('#quicker_api_health').on('click', () => void enqueueOperation(async () => {
+        const issues = await checkProfileHealth();
+        if (!issues.length) {
+            toastr.success('所有 Profile 密钥状态正常。');
+            return;
+        }
+        const list = issues.map(i => `• [${i.profile.name}] ${i.detail}`).join('\n');
+        const confirmed = await Popup.show.confirm('Profile 健康检查',
+            `发现 ${issues.length} 个问题：\n\n${list}\n\n是否删除这些问题 Profile？`);
+        if (confirmed) {
+            deleteStaleProfiles(issues.map(i => i.profile.id));
+            toastr.success(`已清理 ${issues.length} 个问题 Profile。`);
+        }
+    }));
     $('#quicker_api_reveal_key').on('click', () => void enqueueOperation(revealBoundSecret));
     $('#quicker_api_copy_key').on('click', () => void enqueueOperation(copyBoundSecret));
 }

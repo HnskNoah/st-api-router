@@ -20,6 +20,7 @@ export function toolbarHtml(): string {
                     <button id="quicker_api_copy" class="menu_button quicker-api__icon-button" type="button" title="复制 API 设置" aria-label="复制 API 设置"><i class="fa-solid fa-clone"></i></button>
                     <button id="quicker_api_import_native" class="menu_button quicker-api__text-button" type="button" title="批量迁移 SillyTavern 的 OpenAI、Reverse Proxy Presets 和 Connection Manager 配置"><i class="fa-solid fa-file-import"></i><span>导入原 OAI 设置</span></button>
                     <button id="quicker_api_delete" class="menu_button quicker-api__icon-button quicker-api__delete-button" type="button" title="删除 API 设置" aria-label="删除 API 设置"><i class="fa-solid fa-trash"></i></button>
+                    <button id="quicker_api_health" class="menu_button quicker-api__text-button" type="button" title="检查 Profile 密钥健康状态"><i class="fa-solid fa-stethoscope"></i><span>清理</span></button>
                 </div>
             </div>
             <div class="quicker-api__field">
