@@ -1,8 +1,10 @@
-// 调试日志：默认关闭，不影响生产；在 DevTools Console 执行
+// 调试日志：内存缓冲默认始终收集，因此路由面板的「导出日志」可直接导出最近一次会话的日志。
+// 如需同时在 DevTools Console 实时查看，可在控制台执行
 //   localStorage.setItem('quickerApi.debugLog', '1')
-// 后刷新页面即可开启。关闭：localStorage.removeItem('quickerApi.debugLog') 后刷新。
+// 后刷新页面开启；关闭：localStorage.removeItem('quickerApi.debugLog') 后刷新。
 
 const DEBUG_KEY = 'quickerApi.debugLog';
+const MAX_BUFFER_LINES = 5000;
 
 let enabled = false;
 let seq = 0;
@@ -18,20 +20,17 @@ export function setDebugLogEnabled(value: boolean): void {
 
 export function initDebugLog(): void {
     enabled = typeof localStorage !== 'undefined' && localStorage.getItem(DEBUG_KEY) === '1';
-    if (enabled) {
-        buffer.length = 0;
-        console.log('[ST Api Router] debug log enabled');
-    }
+    if (enabled) console.log('[ST Api Router] debug log enabled');
 }
 
-/** 在开启调试时输出结构化日志，带时间戳和自增序号，方便排查循环/重复触发。 */
+/** 记录结构化日志并带时间戳/自增序号；始终进入导出缓冲，仅开启开关时同步输出到 Console。 */
 export function debugLog(...args: unknown[]): void {
-    if (!enabled) return;
     seq += 1;
     const time = new Date().toISOString().slice(11, 23);
     const line = `[ST Api Router] #${seq} ${time} ${formatArgs(args)}`;
-    console.log(line);
+    if (enabled) console.log(line);
     buffer.push(line);
+    if (buffer.length > MAX_BUFFER_LINES) buffer.splice(0, buffer.length - MAX_BUFFER_LINES);
 }
 
 function formatArgs(args: unknown[]): string {
@@ -49,8 +48,13 @@ function formatArgs(args: unknown[]): string {
     }
 }
 
-/** 把已缓存的调试日志导出为 .log 文件（浏览器下载，不写 ST 服务器文件）。 */
+/** 把当前会话已缓存的调试日志导出为 .log 文件（浏览器下载，不写 ST 服务器文件）。 */
 export function exportDebugLog(): void {
+    if (buffer.length === 0) {
+        console.log('[ST Api Router] no debug log lines buffered yet');
+        toastr.info('当前还没有可导出的调试日志。');
+        return;
+    }
     const body = buffer.join('\n') + '\n';
     const blob = new Blob([body], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);

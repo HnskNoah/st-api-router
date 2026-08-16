@@ -29,7 +29,7 @@ import {
     unmapRealModel,
 } from '../domain/vendor.js';
 import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
-import { exportDebugLog, isDebugLogEnabled } from '../debug.js';
+import { exportDebugLog } from '../debug.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
 export interface RoutingUIDeps {
@@ -1400,10 +1400,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     let legacyVisible = false;
     $('#quicker_api').hide();
     panel.find('#st_router_export_log').on('click', () => {
-        if (!isDebugLogEnabled()) {
-            toastr.warning('调试日志未开启：先在控制台执行 localStorage.setItem(\'quickerApi.debugLog\', \'1\') 并刷新页面。');
-            return;
-        }
         exportDebugLog();
     });
     panel.find('#st_router_toggle_legacy').on('click', function () {
