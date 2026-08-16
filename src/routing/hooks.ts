@@ -9,6 +9,7 @@ import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js'
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
+import { resolveFallbackRoute } from './fallback.js';
 import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
@@ -165,35 +166,18 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
      * 约束：不弹 token 钳制确认窗——emit 是 await 的，弹窗会卡死独立流请求。
      */
     function routeFallbackIfNeeded(generateData: Record<string, any>): void {
-        const type = String(generateData?.type || 'normal');
-        if (type === 'quiet' || type === 'continue' || type === 'impersonate') {
-            debugLog('onChatCompletionSettingsReady fallback skip: non-user type', { type });
+        const result = resolveFallbackRoute({
+            type: String(generateData?.type || 'normal'),
+            routingEnabled: deps.getRouting().enabled,
+            activeGroupId: deps.getActiveGroupId(),
+            groups: deps.getGroups(),
+            vendors: deps.getVendors(),
+        });
+        if (result.skipReason) {
+            debugLog('onChatCompletionSettingsReady fallback skip', { reason: result.skipReason });
             return;
         }
-        const routing = deps.getRouting();
-        if (!routing.enabled) {
-            debugLog('onChatCompletionSettingsReady fallback skip: routing disabled');
-            return;
-        }
-        const groups = deps.getGroups();
-        const activeGroup = groups.find(group => group.id === deps.getActiveGroupId()) || groups[0] || null;
-        if (!activeGroup || !activeGroup.enabled) {
-            debugLog('onChatCompletionSettingsReady fallback skip: no active/enabled group', activeGroup?.id ?? null);
-            return;
-        }
-        const logicalModelId = activeGroup.currentLogicalModelId;
-        if (!logicalModelId) {
-            debugLog('onChatCompletionSettingsReady fallback skip: no logical model');
-            return;
-        }
-        const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId);
-        if (!result.unit) {
-            debugLog('onChatCompletionSettingsReady fallback skip: no route unit', {
-                logicalModelId,
-                reasons: result.reasons,
-            });
-            return;
-        }
+        if (!result.unit) return;
         const unit = result.unit;
         const clamps = computeVendorTokenClamps(unit.vendor, {
             maxContext: Number(oai_settings.openai_max_context) || 0,
