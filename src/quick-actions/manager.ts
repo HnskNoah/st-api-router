@@ -13,6 +13,102 @@ import { presetOptionsHtml } from './options.js';
 import { ensureQuickActionEntries } from './menu.js';
 import type { QuickAction, QuickActionPlacement } from '../types.js';
 
+function ensureQuickManagerStyles(): void {
+    if (document.getElementById('quicker-api-quick-manager-styles')) return;
+    $('<style id="quicker-api-quick-manager-styles"></style>').text(`
+        .quicker-api__quick-manager {
+            --qa-border: rgba(128, 128, 128, 0.25);
+            --qa-border-strong: rgba(128, 128, 128, 0.45);
+            --qa-bg: rgba(0, 0, 0, 0.16);
+            --qa-bg-hover: rgba(255, 255, 255, 0.05);
+            --qa-accent: #5b9bd5;
+            --qa-danger: #d9534f;
+            --qa-text: #ddd;
+            --qa-text-dim: #999;
+            display: flex; flex-direction: column; gap: 10px;
+            width: min(900px, 92vw); min-height: 520px; max-height: 78vh;
+            color: var(--qa-text); font-size: 13px;
+        }
+        .quicker-api__quick-header {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border: 1px solid var(--qa-border); border-radius: 8px;
+            background: var(--qa-bg); flex-wrap: wrap;
+        }
+        .quicker-api__quick-title {
+            display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;
+            flex: 1 1 auto; min-width: 180px;
+        }
+        .quicker-api__quick-title i { color: var(--qa-accent); }
+        .quicker-api__quick-header-actions { display: flex; align-items: center; gap: 6px; }
+        .quicker-api__quick-columns {
+            display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+            gap: 10px; min-height: 0; flex: 1 1 auto;
+        }
+        .quicker-api__quick-list {
+            display: flex; flex-direction: column; gap: 8px; min-height: 0;
+            border: 1px solid var(--qa-border); border-radius: 8px; background: var(--qa-bg);
+            padding: 8px; overflow: hidden;
+        }
+        .quicker-api__quick-list-toolbar { display: flex; gap: 6px; align-items: center; }
+        .quicker-api__quick-list-toolbar .menu_button { flex: 1 1 auto; }
+        .quicker-api__quick-list-items {
+            display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0;
+            padding-right: 2px;
+        }
+        .quicker-api__quick-item {
+            display: flex; align-items: center; gap: 6px;
+            border: 1px solid transparent; border-radius: 6px; padding: 6px 8px;
+            cursor: pointer; transition: background 0.12s, border-color 0.12s;
+        }
+        .quicker-api__quick-item:hover { background: var(--qa-bg-hover); }
+        .quicker-api__quick-item.is-selected {
+            border-color: var(--qa-accent); background: rgba(91, 155, 213, 0.14);
+        }
+        .quicker-api__quick-item-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+        .quicker-api__quick-select { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .quicker-api__quick-summary { font-size: 11px; color: var(--qa-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .quicker-api__quick-item-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+        .quicker-api__quick-item-actions .menu_button { padding: 2px 6px; font-size: 11px; }
+        .quicker-api__quick-editor {
+            display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto;
+            border: 1px solid var(--qa-border); border-radius: 8px; background: var(--qa-bg);
+            padding: 12px;
+        }
+        .quicker-api__quick-editor-title { margin: 0; font-size: 14px; font-weight: 600; }
+        .quicker-api__quick-editor-fields { display: flex; flex-direction: column; gap: 10px; }
+        .quicker-api__quick-field { display: flex; flex-direction: column; gap: 4px; }
+        .quicker-api__quick-field > span { font-size: 12px; color: var(--qa-text-dim); }
+        .quicker-api__quick-model-control { display: flex; gap: 6px; flex-wrap: wrap; }
+        .quicker-api__quick-model-control .text_pole { flex: 1 1 180px; }
+        .quicker-api__quick-model-control .menu_button { flex: none; }
+        .quicker-api__quick-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
+        .quicker-api__quick-editor.has-unsaved-detail { border-color: var(--qa-accent); }
+        .quicker-api__empty-state {
+            font-size: 12px; color: var(--qa-text-dim); line-height: 1.7;
+            border: 1px dashed var(--qa-border-strong); border-radius: 6px; padding: 14px;
+        }
+        .quicker-api__placement-popup {
+            display: flex; flex-direction: column; gap: 10px; width: min(420px, 90vw);
+            color: var(--qa-text); font-size: 13px;
+        }
+        .quicker-api__placement-header {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 8px 10px; border: 1px solid var(--qa-border); border-radius: 8px; background: var(--qa-bg);
+        }
+        .quicker-api__placement-header strong { font-size: 14px; }
+        .quicker-api__placement-actions { display: flex; gap: 6px; }
+        .quicker-api__placement-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .quicker-api__placement-choices .menu_button { justify-content: flex-start; gap: 8px; }
+        .quicker-api__placement-choices .menu_button.is-selected {
+            border-color: var(--qa-accent); background: rgba(91, 155, 213, 0.16);
+        }
+        @media (max-width: 720px) {
+            .quicker-api__quick-columns { grid-template-columns: 1fr; }
+            .quicker-api__quick-manager { max-height: none; }
+        }
+    `).appendTo(document.head);
+}
+
 export async function chooseQuickActionPlacement(current: QuickActionPlacement, onConfirm: (placement: QuickActionPlacement) => void): Promise<void> {
     if (runtimeState.quickActionPlacementPopup) await runtimeState.quickActionPlacementPopup.completeCancelled();
     let selected = normalizeQuickActionPlacement(current);
@@ -64,6 +160,7 @@ function createQuickManagerDraft() {
 
 export async function manageQuickActions(): Promise<void> {
     if (runtimeState.extensionDisabled || runtimeState.teardownPending) return;
+    ensureQuickManagerStyles();
     const { globalDraft, initialGlobalSnapshot } = createQuickManagerDraft();
     let draftPlacement = normalizeQuickActionPlacement(settings().quickActionPlacement);
     let selectedId = globalDraft[0]?.id || '';
@@ -100,7 +197,7 @@ export async function manageQuickActions(): Promise<void> {
     const renderEditor = () => {
         editor.empty().removeClass('has-unsaved-detail');
         if (!detailDraft) {
-            editor.append($('<div class="quicker-api__empty-state">').text('新增方案后，可组合 preset 与模型。模型填逻辑模型名时，点击按钮只切换当前分组的模型（不立即改连接）；填真实模型名时按原有逻辑写入。'));
+            editor.append($('<div class="quicker-api__empty-state">').text('从左侧选择一个方案进行编辑，或点击"新增方案"创建。方案可以切换 preset、逻辑模型或真实模型；留空字段表示不执行对应动作。'));
             return;
         }
         const draft = detailDraft;
@@ -163,7 +260,13 @@ export async function manageQuickActions(): Promise<void> {
             const row = $('<div class="quicker-api__quick-item" role="option" tabindex="0">')
                 .toggleClass('is-selected', action.id === selectedId)
                 .attr('aria-selected', action.id === selectedId ? 'true' : 'false');
-            const name = $('<span class="quicker-api__quick-select">').text(quickActionDisplayName(action, index)).attr('title', quickActionDisplayName(action, index));
+            const info = $('<div class="quicker-api__quick-item-info"></div>');
+            info.append($('<span class="quicker-api__quick-select">').text(quickActionDisplayName(action, index)).attr('title', quickActionDisplayName(action, index)));
+            const summaryParts: string[] = [];
+            if (action.preset) summaryParts.push(`预设：${action.preset}`);
+            if (action.model) summaryParts.push(`模型：${action.model}`);
+            info.append($('<span class="quicker-api__quick-summary">').text(summaryParts.join(' · ') || '未配置'));
+            const actions = $('<div class="quicker-api__quick-item-actions"></div>');
             const makeRowButton = (label: string, icon: string, disabled: boolean, handler: () => void, danger = false) => $('<button type="button" class="menu_button">')
                 .toggleClass('quicker-api__delete-button', danger).attr({ title: label, 'aria-label': label }).prop('disabled', disabled)
                 .append($(`<i class="fa-solid ${icon}"></i>`)).on('click', event => { event.stopPropagation(); handler(); });
@@ -181,7 +284,8 @@ export async function manageQuickActions(): Promise<void> {
                 globalDraft.splice(index, 1);
                 selectAction(globalDraft[Math.min(index, globalDraft.length - 1)]?.id || '');
             }, true);
-            row.append(name, up, down, copy, remove).on('click', () => selectAction(action.id)).on('keydown', event => {
+            actions.append(up, down, copy, remove);
+            row.append(info, actions).on('click', () => selectAction(action.id)).on('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectAction(action.id); }
             });
             listItems.append(row);
