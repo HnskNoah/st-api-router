@@ -7,6 +7,7 @@ import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
+import { isKeyUnused, isVendorUnused } from './ui-helpers.js';
 import { normalizeRoutingSettings } from '../domain/routing.js';
 import {
     assignModelToLogical,
@@ -86,12 +87,15 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 background: rgba(255, 255, 255, 0.05); border-radius: 6px; line-height: 1.5;
             }
 
-            /* ── Vendor 行 ── */
+            /* ── Vendor 容器（可展开） ── */
+            .st-router-provider-container { margin-bottom: 4px; }
+            .st-router-provider-container:last-child { margin-bottom: 0; }
             .st-router-provider {
                 display: flex; align-items: center; gap: 8px; padding: 8px 0;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.07); flex-wrap: wrap;
             }
             .st-router-provider:last-child { border-bottom: none; }
+            .st-router-provider--unused { opacity: 0.45; }
             .st-router-provider-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
             .st-router-provider-name { flex: none; font-weight: 600; white-space: nowrap; }
             .st-router-provider-endpoint {
@@ -99,6 +103,25 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             .st-router-provider-meta { flex-basis: 100%; font-size: 12px; color: #999; opacity: 0.9; }
             .st-router-provider-actions { flex: none; display: flex; gap: 4px; }
+            .st-router-provider-expand {
+                flex: none; font-size: 11px; cursor: pointer; transition: transform 0.15s;
+                color: #5b9bd5; padding: 4px;
+            }
+            .st-router-provider-expand--open { transform: rotate(90deg); }
+
+            /* ── Vendor 下的 Key 列表 ── */
+            .st-router-keys {
+                padding: 4px 0 8px 28px; border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            }
+            .st-router-keys:last-child { border-bottom: none; }
+            .st-router-key-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; flex-wrap: wrap; }
+            .st-router-key-row--header { font-size: 12px; color: #999; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+            .st-router-key-row--unused { opacity: 0.45; }
+            .st-router-key-row > input[type="password"] { width: auto; flex: 2 1 180px; min-width: 140px; margin: 0; }
+            .st-router-key-row > input[type="text"] { width: auto; flex: 1 1 90px; min-width: 70px; margin: 0; }
+            .st-router-key-row > input[type="checkbox"] { flex: none; }
+            .st-router-key-row > .menu_button { flex: none; }
+            .st-router-key-col { flex: 1 1 0; min-width: 0; font-size: 12px; color: #999; }
 
             /* ── 状态徽章 ── */
             .st-router-badge {
@@ -108,16 +131,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             .st-router-badge--ok { color: #7ecf8a; border-color: rgba(126, 207, 138, 0.5); }
             .st-router-badge--disabled { color: #e08a8a; border-color: rgba(224, 138, 138, 0.5); }
             .st-router-badge--rpm { color: #e0c07e; border-color: rgba(224, 192, 126, 0.5); }
-
-            /* ── Key 条目表 ── */
-            .st-router-key-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; flex-wrap: wrap; }
-            .st-router-key-row--header { font-size: 12px; color: #999; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
-            .st-router-key-row > select.text_pole { width: auto; flex: 1 1 130px; min-width: 100px; margin: 0; }
-            .st-router-key-row > input[type="password"] { width: auto; flex: 2 1 180px; min-width: 140px; margin: 0; }
-            .st-router-key-row > input[type="text"] { width: auto; flex: 1 1 90px; min-width: 70px; margin: 0; }
-            .st-router-key-row > input[type="checkbox"] { flex: none; }
-            .st-router-key-row > .menu_button { flex: none; }
-            .st-router-key-col { flex: 1 1 0; min-width: 0; font-size: 12px; color: #999; }
 
             /* ── 逻辑模型 chips ── */
             .st-router-model-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 12px; }
@@ -234,17 +247,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
             <div class="st-router-section">
                 <div class="st-router-section-head">
-                    <span class="st-router-step-badge">3</span><span class="st-router-section-title">当前分组 Key</span>
-                    <div class="st-router-section-tools">
-                        <button id="st_router_add_entry" class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>添加 Key</span></button>
-                    </div>
-                </div>
-                <div id="st_router_group_entries" class="st-router-list"></div>
-            </div>
-
-            <div class="st-router-section">
-                <div class="st-router-section-head">
-                    <span class="st-router-step-badge">4</span><span class="st-router-section-title">逻辑模型</span>
+                    <span class="st-router-step-badge">3</span><span class="st-router-section-title">逻辑模型</span>
                     <div class="st-router-section-tools">
                         <button id="st_router_refresh_models" class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表（无 Key 的 Vendor 跳过）"><i class="fa-solid fa-arrows-rotate"></i><span>刷新模型</span></button>
                         <button id="st_router_build_logical" class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射（跳过 search/thinking/image/cache 变体）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>
@@ -316,96 +319,10 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         return deps.getGroups().find(group => group.id === id) || deps.getGroups()[0] || null;
     }
 
-    const groupEntriesList = panel.find('#st_router_group_entries');
+    const expandedVendors = new Set<string>();
 
     function renderGroupEntries(): void {
-        const group = activeGroup();
-        groupEntriesList.empty();
-        if (!group) {
-            groupEntriesList.append($('<div class="st-router-empty">').text('还没有分组。先新增分组，再为它配置 Vendor + Key。'));
-            return;
-        }
-        if (deps.getVendors().length === 0) {
-            groupEntriesList.append($('<div class="st-router-empty">').text('先在上方"Vendor"区新增 Vendor，再为该分组添加 Key。'));
-            return;
-        }
-        const header = $('<div class="st-router-key-row st-router-key-row--header"></div>');
-        header.append(
-            $('<span class="st-router-key-col">').text('Vendor'),
-            $('<span class="st-router-key-col" style="flex:2 1 0;">').text('Key'),
-            $('<span class="st-router-key-col">').text('名称'),
-            $('<span class="st-router-key-col" style="flex:0 0 54px;">').text('模型数'),
-            $('<span class="st-router-key-col" style="flex:0 0 30px;">').text('启用'),
-            $('<span class="st-router-key-col" style="flex:0 0 26px;">').text('拉取'),
-            $('<span class="st-router-key-col" style="flex:0 0 26px;">'),
-        );
-        groupEntriesList.append(header);
-        if (group.entries.length === 0) {
-            groupEntriesList.append($('<div class="st-router-empty">').text('该分组还没有 Key。点击右上角"添加 Key"，选 Vendor、填真实 Key 后点 ↻ 拉取模型。'));
-            return;
-        }
-        for (const entry of group.entries) {
-            const row = $('<div class="st-router-key-row"></div>');
-            const vendorSelect = $('<select class="text_pole" title="Vendor"></select>');
-            for (const vendor of deps.getVendors()) {
-                vendorSelect.append($('<option>').val(vendor.id).text(vendor.name));
-            }
-            vendorSelect.val(entry.vendorId || '');
-            if (!entry.vendorId || !deps.getVendors().some(vendor => vendor.id === entry.vendorId)) {
-                vendorSelect.prepend($('<option value="">— 选择 Vendor —</option>'));
-                vendorSelect.val(entry.vendorId || '');
-            }
-            vendorSelect.on('change', function () {
-                entry.vendorId = String($(this).val() || '');
-                deps.save();
-            });
-            const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">')
-                .val(entry.apiKey || '')
-                .on('input', function () {
-                    entry.apiKey = String($(this).val() ?? '').trim();
-                    deps.save();
-                });
-            const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="名称，如：主号 / 备用">')
-                .val(entry.label || '')
-                .on('input', function () {
-                    entry.label = String($(this).val() ?? '').trim() || 'Key';
-                    deps.save();
-                });
-            const modelCount = $('<span class="st-router-key-col" title="该 Key 已拉取的模型数">').text(`${entry.fetchedModels.length} 模型`);
-            const enabled = $('<input type="checkbox" title="启用该 Key">').prop('checked', entry.enabled)
-                .on('change', function () {
-                    entry.enabled = $(this).prop('checked');
-                    deps.save();
-                });
-            const fetchBtn = $('<button class="menu_button" type="button" title="用该 Vendor 的 Key 拉取模型并自动映射"><i class="fa-solid fa-arrows-rotate"></i></button>')
-                .on('click', async () => {
-                    const vendor = deps.getVendors().find(item => item.id === entry.vendorId);
-                    if (!vendor) {
-                        toastr.warning('请先为该条目选择 Vendor。');
-                        return;
-                    }
-                    const key = String(entry.apiKey || '').trim();
-                    if (!key) {
-                        toastr.warning(`请先填写 Vendor「${vendor.name}」的 Key 再拉取。`);
-                        return;
-                    }
-                    const models = await fetchModelsForVendor(vendor, entry);
-                    if (!models) return;
-                    renderProviderList();
-                    renderGroupEntries();
-                    renderModelList();
-                    toastr.success(`Vendor「${vendor.name}」获取 ${models.length} 个模型并已映射。`);
-                });
-            const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
-                .on('click', () => {
-                    group.entries = group.entries.filter(item => item.id !== entry.id);
-                    deps.save();
-                    renderGroupEntries();
-                    renderGroupSummary();
-                });
-            row.append(vendorSelect, keyInput, labelInput, modelCount, enabled, fetchBtn, removeBtn);
-            groupEntriesList.append(row);
-        }
+        // Key 列表已合并到 renderProviderList() 的 Vendor 展开区
     }
 
     let logicalExpanded = false;
@@ -672,13 +589,20 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
     function renderProviderList(): void {
         const vendors = deps.getVendors();
+        const group = activeGroup();
         providerList.empty();
         if (vendors.length === 0) {
             providerList.append($('<div class="st-router-empty">').text('还没有 Vendor。点击右上角"新增 Vendor"，填名称与站点地址（Endpoint）。'));
             return;
         }
         for (const vendor of vendors) {
+            const container = $('<div class="st-router-provider-container"></div>');
             const row = $('<div class="st-router-provider"></div>');
+
+            // 判断 Vendor 是否未使用
+            const vendorKeys = group?.entries.filter(e => e.vendorId === vendor.id) ?? [];
+            if (isVendorUnused(vendor, vendor.id, vendorKeys)) row.addClass('st-router-provider--unused');
+
             const enabledCheck = $('<label class="checkbox_label" title="启用/禁用 Vendor"><input type="checkbox" class="st-router-provider-enabled"></label>');
             enabledCheck.find('input').prop('checked', vendor.enabled).on('change', function () {
                 vendor.enabled = $(this).prop('checked');
@@ -688,6 +612,17 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 renderModelList();
             });
             row.append(enabledCheck);
+
+            const isExpanded = expandedVendors.has(vendor.id);
+            const expandArrow = $('<i class="fa-solid fa-chevron-right st-router-provider-expand"></i>');
+            if (isExpanded) expandArrow.addClass('st-router-provider-expand--open');
+            expandArrow.on('click', () => {
+                if (expandedVendors.has(vendor.id)) expandedVendors.delete(vendor.id);
+                else expandedVendors.add(vendor.id);
+                renderProviderList();
+            });
+            row.append(expandArrow);
+
             const info = $('<div class="st-router-provider-info st-router-provider-info--editable"></div>');
             info.append($('<span class="st-router-provider-name">').text(vendor.name));
             const endpointInput = $('<input class="text_pole st-router-provider-endpoint" type="text" maxlength="2048" placeholder="站点地址，如 https://api.example.com/v1">')
@@ -698,8 +633,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 });
             info.append(endpointInput);
             const vendorModels = new Set<string>();
-            for (const group of deps.getGroups()) {
-                for (const entry of group.entries) {
+            for (const g of deps.getGroups()) {
+                for (const entry of g.entries) {
                     if (entry.vendorId !== vendor.id) continue;
                     for (const model of entry.fetchedModels) vendorModels.add(model);
                 }
@@ -719,17 +654,112 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                     const list = deps.getVendors();
                     const index = list.findIndex(item => item.id === vendor.id);
                     if (index >= 0) list.splice(index, 1);
-                    for (const group of deps.getGroups()) group.entries = group.entries.filter(entry => entry.vendorId !== vendor.id);
+                    for (const g of deps.getGroups()) g.entries = g.entries.filter(entry => entry.vendorId !== vendor.id);
                     deps.save();
                     renderProviderList();
-                    renderGroupEntries();
                     renderModelList();
                     renderGroupSummary();
                 });
             const actions = $('<div class="st-router-provider-actions"></div>');
             actions.append(editBtn, deleteBtn);
             row.append(actions);
-            providerList.append(row);
+            container.append(row);
+
+            // 展开的 Key 列表
+            if (isExpanded && group) {
+                const keySection = $('<div class="st-router-keys"></div>');
+                const keysForVendor = group.entries.filter(e => e.vendorId === vendor.id);
+
+                // 表头
+                const header = $('<div class="st-router-key-row st-router-key-row--header"></div>');
+                header.append(
+                    $('<span class="st-router-key-col" style="flex:0 0 30px;">').text('启用'),
+                    $('<span class="st-router-key-col" style="flex:0 0 90px;">').text('名称'),
+                    $('<span class="st-router-key-col" style="flex:2 1 0;">').text('Key'),
+                    $('<span class="st-router-key-col" style="flex:0 0 26px;">').text('拉取'),
+                    $('<span class="st-router-key-col" style="flex:0 0 54px;">').text('模型数'),
+                    $('<span class="st-router-key-col" style="flex:0 0 26px;">'),
+                );
+                keySection.append(header);
+
+                if (keysForVendor.length === 0) {
+                    keySection.append($('<div class="st-router-empty">').text('该 Vendor 在当前分组还没有 Key。'));
+                } else {
+                    for (const entry of keysForVendor) {
+                        const keyRow = $('<div class="st-router-key-row"></div>');
+                        if (isKeyUnused(entry)) keyRow.addClass('st-router-key-row--unused');
+
+                        // 启用
+                        const enabled = $('<input type="checkbox" title="启用该 Key">').prop('checked', entry.enabled)
+                            .on('change', function () {
+                                entry.enabled = $(this).prop('checked');
+                                deps.save();
+                                renderProviderList();
+                            });
+
+                        // 名称
+                        const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="名称，如：主号 / 备用">')
+                            .val(entry.label || '')
+                            .on('input', function () {
+                                entry.label = String($(this).val() ?? '').trim() || 'Key';
+                                deps.save();
+                            });
+
+                        // Key 输入
+                        const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">')
+                            .val(entry.apiKey || '')
+                            .on('input', function () {
+                                entry.apiKey = String($(this).val() ?? '').trim();
+                                deps.save();
+                                // 实时更新未使用状态
+                                keyRow.toggleClass('st-router-key-row--unused', isKeyUnused(entry));
+                            });
+
+                        // 拉取
+                        const fetchBtn = $('<button class="menu_button" type="button" title="用该 Key 拉取模型并自动映射"><i class="fa-solid fa-arrows-rotate"></i></button>')
+                            .on('click', async () => {
+                                const key = String(entry.apiKey || '').trim();
+                                if (!key) {
+                                    toastr.warning('请先填写 Key 再拉取。');
+                                    return;
+                                }
+                                const models = await fetchModelsForVendor(vendor, entry);
+                                if (!models) return;
+                                renderProviderList();
+                                renderModelList();
+                                toastr.success(`Vendor「${vendor.name}」获取 ${models.length} 个模型并已映射。`);
+                            });
+
+                        // 模型数
+                        const modelCount = $('<span class="st-router-key-col" title="该 Key 已拉取的模型数">').text(`${entry.fetchedModels.length} 模型`);
+
+                        // 删除
+                        const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
+                            .on('click', () => {
+                                group.entries = group.entries.filter(item => item.id !== entry.id);
+                                deps.save();
+                                renderProviderList();
+                                renderGroupSummary();
+                            });
+
+                        keyRow.append(enabled, labelInput, keyInput, fetchBtn, modelCount, removeBtn);
+                        keySection.append(keyRow);
+                    }
+                }
+
+                // 添加 Key 按钮
+                const addBtn = $('<button class="menu_button st-router-add" type="button" style="margin-top:4px"><i class="fa-solid fa-plus"></i><span>为此 Vendor 添加 Key</span></button>')
+                    .on('click', () => {
+                        group.entries.push({ id: makeId('group-entry'), vendorId: vendor.id, apiKey: '', label: 'Key', enabled: true, fetchedModels: [], mappings: [] });
+                        deps.save();
+                        renderProviderList();
+                        renderGroupSummary();
+                    });
+                keySection.append(addBtn);
+                container.append(keySection);
+            }
+
+            providerList.append(container);
         }
     }
 
@@ -1133,7 +1163,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     panel.find('#st_router_group_select').on('change', function () {
         deps.setActiveGroupId(String($(this).val() || ''));
         renderGroupSummary();
-        renderGroupEntries();
+        renderProviderList();
         renderModelList();
     });
     panel.find('#st_router_add_group').on('click', async () => {
@@ -1144,7 +1174,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         deps.setActiveGroupId(group.id);
         renderGroupSelect();
         renderGroupSummary();
-        renderGroupEntries();
+        renderProviderList();
         renderModelList();
         await openGroupEditor(group);
     });
@@ -1182,7 +1212,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 if (index < workItems.length - 1) await jitterDelay();
             }
             renderProviderList();
-            renderGroupEntries();
             renderModelList();
             renderGroupSummary();
             const parts = [`成功 ${ok} 个`];
@@ -1214,7 +1243,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             const stats = resetModelData(deps.getLogicalModels(), deps.getGroups());
             deps.save();
             renderProviderList();
-            renderGroupEntries();
             renderModelList();
             renderGroupSummary();
             const workItems: { vendor: Vendor; entry: GroupEntry }[] = [];
@@ -1234,7 +1262,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 if (index < workItems.length - 1) await jitterDelay();
             }
             renderProviderList();
-            renderGroupEntries();
             renderModelList();
             renderGroupSummary();
             const parts = [`已删除 ${stats.removedLogicalModels} 个逻辑模型、${stats.removedMappings} 条映射`];
@@ -1343,7 +1370,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 }
                 deps.save();
                 renderProviderList();
-                renderGroupEntries();
                 renderModelList();
                 renderGroupSummary();
                 renderGroupSelect();
@@ -1377,27 +1403,11 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             deps.getVendors().push(vendor);
             deps.save();
             renderProviderList();
-            renderGroupEntries();
             await popup.completeCancelled();
             toastr.success(`Vendor「${name}」已添加。`);
         });
         cancelBtn.on('click', () => void popup.completeCancelled());
         void popup.show();
-    });
-    panel.find('#st_router_add_entry').on('click', () => {
-        const group = activeGroup();
-        if (!group) {
-            toastr.warning('请先新增分组。');
-            return;
-        }
-        if (deps.getVendors().length === 0) {
-            toastr.warning('请先新增 Vendor。');
-            return;
-        }
-        group.entries.push({ id: makeId('group-entry'), vendorId: deps.getVendors()[0].id, apiKey: '', label: 'Key', enabled: true, fetchedModels: [], mappings: [] });
-        deps.save();
-        renderGroupEntries();
-        renderGroupSummary();
     });
 
     // 路由面板为主界面：插到旧版 Profile 区之前；旧版区默认折叠（保留功能，快捷方案仍引用 profiles）
@@ -1415,7 +1425,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     renderRoutingControls();
     renderGroupSelect();
     renderProviderList();
-    renderGroupEntries();
     renderModelList();
 
     // 打开面板/刷新后：若上次已选择逻辑模型，恢复 ST 已启用状态
@@ -1440,5 +1449,5 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         }
     });
 
-    return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderGroupEntries(); renderModelList(); } };
+    return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderModelList(); } };
 }
