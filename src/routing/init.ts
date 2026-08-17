@@ -6,7 +6,7 @@ import { activeGroup, groups, logicalModels, routingSettings, settings, vendors 
 import { createFailureObserver } from './failure-observer.js';
 import { createRoutingHooks } from './hooks.js';
 import { initRoutingUI } from './ui.js';
-import { ensureManualRouteEntry, removeManualRouteEntry } from './manual-route-entry.js';
+import { ensureManualRouteEntry, removeManualRouteEntry, setManualRouteLocker } from './manual-route-entry.js';
 import { debugLog } from '../debug.js';
 
 interface RoutingRegistration {
@@ -47,6 +47,7 @@ export function initRouting(): void {
         getRouting: routingSettings,
         save: () => saveSettingsDebounced(),
     });
+    setManualRouteLocker(unit => hooks.lockManualRoute(unit));
     ensureManualRouteEntry();
     registration = {
         teardown() {
@@ -59,6 +60,7 @@ export function initRouting(): void {
             }
             failureObserver.uninstall();
             removeManualRouteEntry();
+            setManualRouteLocker(null);
             $('#st_router_panel').remove();
         },
     };

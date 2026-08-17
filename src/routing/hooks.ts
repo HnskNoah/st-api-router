@@ -5,11 +5,12 @@
 import { saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { Popup } from '@sillytavern/scripts/popup';
-import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js';
+import { routeGroupOnce, recordGroupSelection, type GroupRouteUnit } from '../domain/group-routing.js';
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
 import { resolveFallbackRoute } from './fallback.js';
+import { isManualLockApplicable } from './manual-route.js';
 import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
@@ -32,15 +33,18 @@ export interface RoutingHooks {
     onGenerationStopped(): void;
     onGenerationEnded(): void;
     getActiveUnit(): GroupRouteUnit | null;
+    lockManualRoute(unit: GroupRouteUnit): void;
 }
 
 export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     const state: {
         active: { unit: GroupRouteUnit; logicalModelId: string } | null;
         userStopPending: boolean;
+        manualLockedUnit: GroupRouteUnit | null;
     } = {
         active: null,
         userStopPending: false,
+        manualLockedUnit: null,
     };
 
     async function onGenerationStarted(type?: string, automaticTrigger?: unknown): Promise<void> {
@@ -90,13 +94,32 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             debugLog('onGenerationStarted skip: no logical model', { activeGroupId: activeGroup.id });
             return;
         }
-        const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId);
-        if (!result.unit) {
-            toastr.warning(`Quicker Api：逻辑模型当前无可用 Vendor（${result.reasons.join('；') || '无候选'}）。`);
-            debugLog('onGenerationStarted skip: no route unit', { logicalModelId, reasons: result.reasons });
-            return;
+        let unit: GroupRouteUnit | null = null;
+        const locked = state.manualLockedUnit;
+        if (locked) {
+            // 一次性锁定：消费即清除，下下次恢复随机
+            state.manualLockedUnit = null;
+            if (isManualLockApplicable(locked, activeGroup, logicalModelId)) {
+                recordGroupSelection(locked);
+                unit = locked;
+                debugLog('onGenerationStarted consumed manual lock', {
+                    vendorName: locked.vendor.name,
+                    entryLabel: locked.entry.label,
+                    realModel: locked.realModel,
+                });
+            } else {
+                debugLog('onGenerationStarted manual lock invalid, fallback to random');
+            }
         }
-        const unit = result.unit;
+        if (!unit) {
+            const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId);
+            if (!result.unit) {
+                toastr.warning(`Quicker Api：逻辑模型当前无可用 Vendor（${result.reasons.join('；') || '无候选'}）。`);
+                debugLog('onGenerationStarted skip: no route unit', { logicalModelId, reasons: result.reasons });
+                return;
+            }
+            unit = result.unit;
+        }
         debugLog('onGenerationStarted routed', {
             vendorId: unit.vendor.id,
             vendorName: unit.vendor.name,
@@ -245,11 +268,21 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }, USER_STOP_GRACE_MS);
     }
 
+    function lockManualRoute(unit: GroupRouteUnit): void {
+        state.manualLockedUnit = unit;
+        debugLog('manual route locked', {
+            vendorName: unit.vendor.name,
+            entryLabel: unit.entry.label,
+            realModel: unit.realModel,
+        });
+    }
+
     return {
         onGenerationStarted,
         onChatCompletionSettingsReady,
         onGenerationStopped,
         onGenerationEnded,
         getActiveUnit: () => state.active?.unit ?? null,
+        lockManualRoute,
     };
 }

@@ -321,10 +321,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
     const expandedVendors = new Set<string>();
 
-    function renderGroupEntries(): void {
-        // Key 列表已合并到 renderProviderList() 的 Vendor 展开区
-    }
-
     let logicalExpanded = false;
     let mappedExpanded = false;
     let unmappedExpanded = false;
@@ -694,7 +690,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                             .on('change', function () {
                                 entry.enabled = $(this).prop('checked');
                                 deps.save();
-                                renderProviderList();
+                                keyRow.toggleClass('st-router-key-row--unused', isKeyUnused(entry));
+                                row.toggleClass('st-router-provider--unused', isVendorUnused(vendor, vendor.id, vendorKeys));
                             });
 
                         // 名称
@@ -711,8 +708,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                             .on('input', function () {
                                 entry.apiKey = String($(this).val() ?? '').trim();
                                 deps.save();
-                                // 实时更新未使用状态
+                                // 实时更新未使用状态（Key 行 + 所属 Vendor 行）
                                 keyRow.toggleClass('st-router-key-row--unused', isKeyUnused(entry));
+                                row.toggleClass('st-router-provider--unused', isVendorUnused(vendor, vendor.id, vendorKeys));
                             });
 
                         // 拉取

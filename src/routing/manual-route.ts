@@ -1,22 +1,21 @@
-// 手动路由决策（纯函数，无 ST 依赖，便于单元测试）。
-// 手动路由按钮触发：按当前分组逻辑模型选一个 Vendor/Key，写进 ST 连接字段并提示结果。
+// 手动路由锁定决策（纯函数，无 ST 依赖，便于单元测试）。
+// 手动路由按钮触发：按当前分组逻辑模型只读选一个 Vendor/Key（不记录 RPM），
+// 锁定到下一次生成；下一次生成消费锁定并记录 RPM，之后恢复随机。
 
-import { resolveFallbackRoute } from './fallback.js';
-import type { GroupRouteUnit } from '../domain/group-routing.js';
+import { resolveActiveRoutingContext } from './fallback.js';
+import { candidateGroupUnits, groupUnitUnavailabilityReason, pickGroupUnit, type GroupRouteUnit } from '../domain/group-routing.js';
 import type { Group, Vendor } from '../types.js';
 
-export interface ManualRouteOutcome {
-    unit: GroupRouteUnit | null;
-    toastrType: 'info' | 'warning';
-    toastrTitle: string;
-    toastrText: string;
-}
-
-export interface ManualRouteInput {
+export interface ManualLockInput {
     routingEnabled: boolean;
     activeGroupId: string | null;
     groups: Group[];
     vendors: Vendor[];
+}
+
+export interface ManualLockResult {
+    unit: GroupRouteUnit | null;
+    skipReason: string | null;
 }
 
 export function manualRouteSkipMessage(reason: string | null): string {
@@ -32,21 +31,26 @@ export function manualRouteSkipMessage(reason: string | null): string {
     }
 }
 
-export function resolveManualRouteOutcome(input: ManualRouteInput): ManualRouteOutcome {
-    const result = resolveFallbackRoute({ type: 'normal', ...input });
-    if (!result.unit) {
-        return {
-            unit: null,
-            toastrType: 'warning',
-            toastrTitle: '手动路由',
-            toastrText: manualRouteSkipMessage(result.skipReason),
-        };
-    }
-    const { vendor, entry, realModel } = result.unit;
-    return {
-        unit: result.unit,
-        toastrType: 'info',
-        toastrTitle: '手动路由',
-        toastrText: `${vendor.name} / ${entry.label} / ${realModel}`,
-    };
+export function resolveManualLock(input: ManualLockInput): ManualLockResult {
+    const ctx = resolveActiveRoutingContext(input);
+    if ('skipReason' in ctx) return { unit: null, skipReason: ctx.skipReason };
+    const unit = pickGroupUnit(candidateGroupUnits(input.vendors, ctx.group, ctx.logicalModelId));
+    if (!unit) return { unit: null, skipReason: 'no route unit' };
+    return { unit, skipReason: null };
+}
+
+/**
+ * 锁定的 unit 是否仍适用于当前生成上下文：
+ * 属于当前分组、逻辑模型一致、且 Vendor/Key/RPM 仍可用。
+ * 分组切换或逻辑模型变化后，旧锁定应失效，回退随机选路。
+ */
+export function isManualLockApplicable(
+    locked: GroupRouteUnit,
+    group: Group | null,
+    logicalModelId: string,
+    now = Date.now(),
+): boolean {
+    if (!locked || !group || locked.mapping?.logicalModelId !== logicalModelId) return false;
+    if (!group.entries.some(entry => entry.id === locked.entry?.id)) return false;
+    return !groupUnitUnavailabilityReason(locked, now);
 }

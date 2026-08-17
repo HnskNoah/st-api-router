@@ -1,28 +1,34 @@
-// 手动路由按钮：注入发送按钮旁边，点击后按当前分组逻辑模型选一个 Vendor/Key，
-// 写进 ST 原生连接字段并提示结果。下一次生成时拦截模式仍会重新随机路由。
+// 手动路由按钮：注入发送按钮旁边，点击后按当前分组逻辑模型只读选一个 Vendor/Key，
+// 锁定到下一次生成（不记 RPM、不写 secrets、不发消息）。下一次生成消费锁定并清除。
 
 import { activeGroup, groups, routingSettings, vendors } from '../settings/access.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
-import { resolveManualRouteOutcome } from './manual-route.js';
-import { applyVendorConnection } from './apply-provider.js';
+import { resolveManualLock, manualRouteSkipMessage } from './manual-route.js';
+import type { GroupRouteUnit } from '../domain/group-routing.js';
+
+let manualRouteLocker: ((unit: GroupRouteUnit) => void) | null = null;
+
+/** 由 initRouting 注入 hooks.lockManualRoute，避免本模块反向依赖 hooks。 */
+export function setManualRouteLocker(locker: ((unit: GroupRouteUnit) => void) | null): void {
+    manualRouteLocker = locker;
+}
 
 export function runManualRoute(): void {
-    const outcome = resolveManualRouteOutcome({
+    const result = resolveManualLock({
         routingEnabled: routingSettings().enabled,
         activeGroupId: activeGroup()?.id ?? null,
         groups: groups(),
         vendors: vendors(),
     });
-    if (outcome.unit) {
-        applyVendorConnection(outcome.unit.vendor, outcome.unit.entry.apiKey, outcome.unit.realModel);
-        debugLog('manual route applied', {
-            vendorName: outcome.unit.vendor.name,
-            entryLabel: outcome.unit.entry.label,
-            realModel: outcome.unit.realModel,
-        });
+    if (result.unit) {
+        manualRouteLocker?.(result.unit);
+        const { vendor, entry, realModel } = result.unit;
+        toastr.info(`已锁定下一次生成：${vendor.name} / ${entry.label} / ${realModel}`, '手动路由', { timeOut: 8000 });
+        debugLog('manual route locked via button', { vendorName: vendor.name, entryLabel: entry.label, realModel });
+    } else {
+        toastr.warning(manualRouteSkipMessage(result.skipReason), '手动路由', { timeOut: 8000 });
     }
-    toastr[outcome.toastrType](outcome.toastrText, outcome.toastrTitle, { timeOut: 8000 });
 }
 
 export function makeManualRouteEntry(): JQuery<HTMLElement> {

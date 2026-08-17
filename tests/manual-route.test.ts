@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveManualRouteOutcome } from '../src/routing/manual-route.js';
+import { resolveManualLock, isManualLockApplicable } from '../src/routing/manual-route.js';
 import type { Group, GroupEntry, Vendor, VendorModelMapping } from '../src/types.js';
 
 function vendor(overrides: Partial<Vendor> = {}): Vendor {
@@ -60,52 +60,87 @@ function usableVendorGroup(): { vendors: Vendor[]; groups: Group[] } {
     return { vendors: [v], groups: [g] };
 }
 
-describe('resolveManualRouteOutcome：手动路由决策', () => {
-    it('选中可用 unit（正常路径）', () => {
+describe('resolveManualLock：手动锁定下一次模型（只读选路）', () => {
+    it('选中可用 unit 且不记录 RPM', () => {
         const { vendors, groups } = usableVendorGroup();
-        const outcome = resolveManualRouteOutcome({
+        const result = resolveManualLock({
             routingEnabled: true,
             activeGroupId: 'g1',
             groups,
             vendors,
         });
-        expect(outcome.unit).not.toBeNull();
-        expect(outcome.toastrType).toBe('info');
-        expect(outcome.toastrText).toContain('TestVendor');
-        expect(outcome.toastrText).toContain('gpt-4o');
+        expect(result.skipReason).toBeNull();
+        expect(result.unit).not.toBeNull();
+        expect(result.unit!.vendor.name).toBe('TestVendor');
+        expect(result.unit!.realModel).toBe('gpt-4o');
+        // 只读选路：不得消耗 RPM 窗口
+        expect(vendors[0].window.length).toBe(0);
     });
 
-    it('路由未启用 → warning', () => {
+    it('路由未启用 → skipReason=routing disabled', () => {
         const { vendors, groups } = usableVendorGroup();
-        const outcome = resolveManualRouteOutcome({ routingEnabled: false, activeGroupId: 'g1', groups, vendors });
-        expect(outcome.unit).toBeNull();
-        expect(outcome.toastrType).toBe('warning');
-        expect(outcome.toastrText).toContain('路由未启用');
+        const result = resolveManualLock({ routingEnabled: false, activeGroupId: 'g1', groups, vendors });
+        expect(result.unit).toBeNull();
+        expect(result.skipReason).toBe('routing disabled');
     });
 
-    it('无启用分组 → warning', () => {
+    it('无启用分组 → skipReason=no active/enabled group', () => {
         const { vendors } = usableVendorGroup();
-        const outcome = resolveManualRouteOutcome({ routingEnabled: true, activeGroupId: 'missing', groups: [], vendors });
-        expect(outcome.unit).toBeNull();
-        expect(outcome.toastrType).toBe('warning');
-        expect(outcome.toastrText).toContain('没有启用的分组');
+        const result = resolveManualLock({ routingEnabled: true, activeGroupId: 'missing', groups: [], vendors });
+        expect(result.unit).toBeNull();
+        expect(result.skipReason).toBe('no active/enabled group');
     });
 
-    it('未选择逻辑模型 → warning', () => {
+    it('未选择逻辑模型 → skipReason=no logical model', () => {
         const { vendors } = usableVendorGroup();
         const groups = [group({ id: 'g1', enabled: true, currentLogicalModelId: '' })];
-        const outcome = resolveManualRouteOutcome({ routingEnabled: true, activeGroupId: 'g1', groups, vendors });
-        expect(outcome.unit).toBeNull();
-        expect(outcome.toastrType).toBe('warning');
-        expect(outcome.toastrText).toContain('尚未选择逻辑模型');
+        const result = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors });
+        expect(result.unit).toBeNull();
+        expect(result.skipReason).toBe('no logical model');
     });
 
-    it('无可用 Vendor → warning 且带原因', () => {
+    it('无可用 Vendor → skipReason=no route unit', () => {
         const { groups } = usableVendorGroup();
         const vendors = [vendor({ id: 'v1', enabled: false })];
-        const outcome = resolveManualRouteOutcome({ routingEnabled: true, activeGroupId: 'g1', groups, vendors });
-        expect(outcome.unit).toBeNull();
-        expect(outcome.toastrType).toBe('warning');
-        expect(outcome.toastrText).toContain('手动路由失败');
+        const result = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors });
+        expect(result.unit).toBeNull();
+        expect(result.skipReason).toBe('no route unit');
+    });
+});
+
+describe('isManualLockApplicable：锁定是否仍适用于当前上下文', () => {
+    it('属于当前分组且逻辑模型匹配且可用 → true', () => {
+        const { vendors, groups } = usableVendorGroup();
+        const unit = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors }).unit!;
+        expect(isManualLockApplicable(unit, groups[0], 'lm1')).toBe(true);
+    });
+
+    it('group 为 null → false', () => {
+        const { vendors, groups } = usableVendorGroup();
+        const unit = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors }).unit!;
+        expect(isManualLockApplicable(unit, null, 'lm1')).toBe(false);
+    });
+
+    it('逻辑模型不匹配 → false', () => {
+        const { vendors, groups } = usableVendorGroup();
+        const unit = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors }).unit!;
+        expect(isManualLockApplicable(unit, groups[0], 'lm2')).toBe(false);
+    });
+
+    it('entry 不属于当前分组 → false', () => {
+        const { vendors } = usableVendorGroup();
+        const v = vendor({ id: 'v1', enabled: true });
+        const e = entry({ id: 'k1', vendorId: 'v1', apiKey: 'sk-123', mappings: [mapping()] });
+        const lockedUnit = { vendor: v, entry: e, mapping: mapping(), realModel: 'gpt-4o' };
+        const otherGroup = group({ id: 'g1', currentLogicalModelId: 'lm1', entries: [] });
+        expect(isManualLockApplicable(lockedUnit, otherGroup, 'lm1')).toBe(false);
+    });
+
+    it('vendor 被禁用 → false', () => {
+        const { groups } = usableVendorGroup();
+        const v = vendor({ id: 'v1', enabled: false });
+        const e = entry({ id: 'k1', vendorId: 'v1', apiKey: 'sk-123', mappings: [mapping()] });
+        const lockedUnit = { vendor: v, entry: e, mapping: mapping(), realModel: 'gpt-4o' };
+        expect(isManualLockApplicable(lockedUnit, groups[0], 'lm1')).toBe(false);
     });
 });

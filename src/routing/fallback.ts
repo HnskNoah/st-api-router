@@ -20,22 +20,34 @@ export interface FallbackRouteResult {
     skipReason: string | null;
 }
 
+export interface ActiveRoutingContextInput {
+    routingEnabled: boolean;
+    activeGroupId: string | null;
+    groups: Group[];
+    logicalModelId?: string;
+}
+
+/** 解析后的有效路由上下文，或一个跳过原因。供兜底路由与手动锁定复用同一套前置校验。 */
+export type ActiveRoutingContext =
+    | { group: Group; logicalModelId: string }
+    | { skipReason: string };
+
+export function resolveActiveRoutingContext(input: ActiveRoutingContextInput): ActiveRoutingContext {
+    if (!input.routingEnabled) return { skipReason: 'routing disabled' };
+    const group = input.groups.find(item => item.id === input.activeGroupId) || input.groups[0] || null;
+    if (!group || !group.enabled) return { skipReason: 'no active/enabled group' };
+    const logicalModelId = input.logicalModelId ?? group.currentLogicalModelId;
+    if (!logicalModelId) return { skipReason: 'no logical model' };
+    return { group, logicalModelId };
+}
+
 export function resolveFallbackRoute(input: FallbackRouteInput): FallbackRouteResult {
     if (input.type === 'quiet' || input.type === 'continue' || input.type === 'impersonate') {
         return { unit: null, skipReason: 'non-user type' };
     }
-    if (!input.routingEnabled) {
-        return { unit: null, skipReason: 'routing disabled' };
-    }
-    const activeGroup = input.groups.find(group => group.id === input.activeGroupId) || input.groups[0] || null;
-    if (!activeGroup || !activeGroup.enabled) {
-        return { unit: null, skipReason: 'no active/enabled group' };
-    }
-    const logicalModelId = input.logicalModelId ?? activeGroup.currentLogicalModelId;
-    if (!logicalModelId) {
-        return { unit: null, skipReason: 'no logical model' };
-    }
-    const result = routeGroupOnce(input.vendors, activeGroup, logicalModelId);
+    const ctx = resolveActiveRoutingContext(input);
+    if ('skipReason' in ctx) return { unit: null, skipReason: ctx.skipReason };
+    const result = routeGroupOnce(input.vendors, ctx.group, ctx.logicalModelId);
     if (!result.unit) {
         return { unit: null, skipReason: `no route unit: ${result.reasons.join(';') || 'no candidates'}` };
     }
