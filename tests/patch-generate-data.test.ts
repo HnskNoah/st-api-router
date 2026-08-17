@@ -31,6 +31,7 @@ function entry(overrides: Partial<GroupEntry> = {}): GroupEntry {
         id: 'k1',
         vendorId: 'v1',
         apiKey: 'sk-test-123',
+        secretId: 'sid-1',
         label: 'A',
         enabled: true,
         fetchedModels: [],
@@ -54,55 +55,59 @@ function unit(overrides: Partial<GroupRouteUnit> = {}): GroupRouteUnit {
 }
 
 describe('patchGenerateData：拦截模式连接字段写入', () => {
-    it('custom 格式 → source=openai + reverse_proxy + proxy_password + model', () => {
-        const gd: Record<string, any> = { chat_completion_source: 'custom', custom_url: 'x' };
+    it('custom 格式 → source=custom + custom_url + secret_id + model', () => {
+        const gd: Record<string, any> = { chat_completion_source: 'openai', reverse_proxy: 'x', proxy_password: 'y' };
         patchGenerateData(gd, unit());
-        expect(gd.chat_completion_source).toBe('openai');
-        expect(gd.reverse_proxy).toBe('https://example.com/v1');
-        expect(gd.proxy_password).toBe('sk-test-123');
+        expect(gd.chat_completion_source).toBe('custom');
+        expect(gd.custom_url).toBe('https://example.com/v1');
+        expect(gd.secret_id).toBe('sid-1');
         expect(gd.model).toBe('gpt-4o');
     });
 
-    it('deepseek 格式 → source=deepseek，其余字段相同', () => {
+    it('custom 写入逻辑模型透传的 include/exclude/headers', () => {
+        const gd: Record<string, any> = {};
+        patchGenerateData(gd, unit(), { includeBody: 'top_k: 20', excludeBody: 'stop', includeHeaders: 'X-A: b' });
+        expect(gd.custom_include_body).toBe('top_k: 20');
+        expect(gd.custom_exclude_body).toBe('stop');
+        expect(gd.custom_include_headers).toBe('X-A: b');
+    });
+
+    it('custom 无附加参数时写空字符串', () => {
+        const gd: Record<string, any> = {};
+        patchGenerateData(gd, unit());
+        expect(gd.custom_include_body).toBe('');
+        expect(gd.custom_exclude_body).toBe('');
+        expect(gd.custom_include_headers).toBe('');
+    });
+
+    it('custom 空 secretId 写空字符串', () => {
+        const gd: Record<string, any> = {};
+        patchGenerateData(gd, unit({ entry: entry({ secretId: '' }) }));
+        expect(gd.secret_id).toBe('');
+    });
+
+    it('deepseek 格式 → source=deepseek + reverse_proxy + proxy_password，不写 custom 参数', () => {
         const gd: Record<string, any> = {};
         patchGenerateData(gd, unit({ vendor: vendor({ format: 'deepseek' }) }));
         expect(gd.chat_completion_source).toBe('deepseek');
         expect(gd.reverse_proxy).toBe('https://example.com/v1');
         expect(gd.proxy_password).toBe('sk-test-123');
         expect(gd.model).toBe('gpt-4o');
+        expect(gd.custom_include_body).toBeUndefined();
+        expect(gd.secret_id).toBeUndefined();
     });
 
-    it('未指定格式默认走 custom（openai）分支', () => {
-        const gd: Record<string, any> = {};
-        patchGenerateData(gd, unit({ vendor: vendor({ format: undefined as unknown as Vendor['format'] }) }));
-        expect(gd.chat_completion_source).toBe('openai');
-    });
-
-    it('空 key 也写入空字符串（不抛错，不读 secrets）', () => {
-        const gd: Record<string, any> = {};
-        patchGenerateData(gd, unit({ entry: entry({ apiKey: '' }) }));
-        expect(gd.proxy_password).toBe('');
-    });
-
-    it('endpoint 首尾空白被 trim', () => {
+    it('custom endpoint 首尾空白被 trim 后写 custom_url', () => {
         const gd: Record<string, any> = {};
         patchGenerateData(gd, unit({ vendor: vendor({ endpoint: '  https://example.com/v1  ' }) }));
-        expect(gd.reverse_proxy).toBe('https://example.com/v1');
-    });
-
-    it('不写入 secrets 相关字段（无 secret_id / custom_url 副作用）', () => {
-        const gd: Record<string, any> = { secret_id: 'old', custom_url: 'old-url' };
-        patchGenerateData(gd, unit());
-        // 不触碰 secret_id 与 custom_url——ST 后端只认 reverse_proxy + proxy_password
-        expect(gd.secret_id).toBe('old');
-        expect(gd.custom_url).toBe('old-url');
+        expect(gd.custom_url).toBe('https://example.com/v1');
     });
 
     it('覆盖旧连接字段（同一对象多次写入）', () => {
         const gd: Record<string, any> = {};
         patchGenerateData(gd, unit());
-        patchGenerateData(gd, unit({ realModel: 'gpt-4o-mini', entry: entry({ apiKey: 'sk-new' }) }));
+        patchGenerateData(gd, unit({ realModel: 'gpt-4o-mini', entry: entry({ secretId: 'sid-2' }) }));
         expect(gd.model).toBe('gpt-4o-mini');
-        expect(gd.proxy_password).toBe('sk-new');
+        expect(gd.secret_id).toBe('sid-2');
     });
 });

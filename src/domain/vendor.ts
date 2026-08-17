@@ -83,11 +83,38 @@ export function normalizeVendors(raw: unknown): Vendor[] {
     return raw.map(item => normalizeVendor(item));
 }
 
+/** 当 Vendor 下已配置的 Key 全部不可用时自动禁用 Vendor；没有配置 Key 时不处理。 */
+export function disableVendorIfNoUsableKeys(vendor: Vendor, groups: Group[]): boolean {
+    if (!vendor || vendor.enabled === false) return false;
+    const entries = allGroupEntries(groups).filter(entry => entry.vendorId === vendor.id && entry.apiKey);
+    if (entries.length === 0 || entries.some(entry => entry.enabled)) return false;
+    vendor.enabled = false;
+    vendor.disabledReason = '所有 Key 均已失效，已自动禁用';
+    return true;
+}
+
+/** 真实模型是否仍可用：至少一个启用 Vendor + 启用 Key 承载它（fetchedModels 或 mappings 命中）。 */
+export function isRealModelUsable(vendors: Vendor[], groups: Group[], realModel: string): boolean {
+    const name = String(realModel || '').trim();
+    if (!name) return false;
+    for (const entry of allGroupEntries(groups)) {
+        if (entry.enabled === false || !entry.apiKey) continue;
+        const carries = entry.fetchedModels.includes(name) || entry.mappings.some(mapping => mapping.realModel === name);
+        if (!carries) continue;
+        const vendor = (vendors || []).find(item => item.id === entry.vendorId);
+        if (vendor && vendor.enabled !== false) return true;
+    }
+    return false;
+}
+
 export function normalizeLogicalModel(raw: Record<string, any> | undefined): LogicalModel {
     return {
         id: normalizeText(raw?.id) || makeId('logical'),
         name: sanitizeName(raw?.name) || 'Logical Model',
         matchPattern: String(raw?.matchPattern ?? '').slice(0, 500),
+        customIncludeBody: String(raw?.customIncludeBody ?? '').slice(0, 100000),
+        customExcludeBody: String(raw?.customExcludeBody ?? '').slice(0, 100000),
+        customIncludeHeaders: String(raw?.customIncludeHeaders ?? '').slice(0, 100000),
     };
 }
 
@@ -225,6 +252,8 @@ export function mergeImportedRoutingConfig(
             const entryById = new Map(existing.entries.map(entry => [entry.id, entry]));
             for (const entry of group.entries) {
                 const currentEntry = entryById.get(entry.id);
+                // secretId 是本机 secrets 指针，跨机导入无效：保留本机已有值，新条目置空等待重建
+                entry.secretId = currentEntry?.secretId ?? '';
                 if (currentEntry) Object.assign(currentEntry, entry);
                 else {
                     entryById.set(entry.id, entry);
@@ -356,6 +385,13 @@ export function deleteLogicalModel(
     const index = logicalModels.findIndex(model => model.id === logicalModelId);
     if (index >= 0) logicalModels.splice(index, 1);
     return { removedMappings };
+}
+
+/** 完整配置导出前脱敏：剥离 GroupEntry.secretId（本机 secrets 指针，不可移植）；apiKey 仍保留。 */
+export function sanitizeGroupForExport(group: Group): Group {
+    const copy = normalizeGroup(structuredClone(group));
+    for (const entry of copy.entries) delete entry.secretId;
+    return copy;
 }
 
 /** 模型列表导出（txt）：所有 Key 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
@@ -492,6 +528,7 @@ export function normalizeGroupEntry(raw: Record<string, any> | undefined): Group
         id: normalizeText(raw?.id) || makeId('group-entry'),
         vendorId: normalizeText(raw?.vendorId).slice(0, 200),
         apiKey: normalizeText(raw?.apiKey).slice(0, 2048),
+        secretId: normalizeText(raw?.secretId).slice(0, 200),
         label: sanitizeName(raw?.label) || 'Key',
         enabled: raw?.enabled === undefined ? true : Boolean(raw.enabled),
         fetchedModels: normalizeModelList(raw?.fetchedModels),

@@ -106,4 +106,25 @@ describe('domain/vendor > mergeImportedRoutingConfig 导入配置合并', () => 
         expect(merged.logicalModels).toHaveLength(1);
         expect(merged.groups).toHaveLength(1);
     });
+
+    it('导入不信任 secretId：已有 entry 保留本机值', () => {
+        const current = [makeGroup('g1', [{
+            id: 'e1', vendorId: 'v1', apiKey: 'local', secretId: 'local-sid', label: 'L', enabled: true, fetchedModels: [], mappings: [],
+        }])];
+        const imported = [makeGroup('g1', [{
+            id: 'e1', vendorId: 'v1', apiKey: 'foreign', secretId: 'foreign-sid', label: 'F', enabled: true, fetchedModels: [], mappings: [],
+        }])];
+        const merged = mergeImportedRoutingConfig({ vendors: [], logicalModels: [], groups: current }, { vendors: [], logicalModels: [], groups: imported });
+        expect(merged.groups[0].entries[0].apiKey).toBe('foreign');
+        expect(merged.groups[0].entries[0].secretId).toBe('local-sid');
+    });
+
+    it('导入不信任 secretId：新增 entry 的 secretId 置空', () => {
+        const current = [makeGroup('g1')];
+        const imported = [makeGroup('g1', [{
+            id: 'e2', vendorId: 'v2', apiKey: 'k2', secretId: 'foreign-sid', label: 'K2', enabled: true, fetchedModels: [], mappings: [],
+        }])];
+        const merged = mergeImportedRoutingConfig({ vendors: [], logicalModels: [], groups: current }, { vendors: [], logicalModels: [], groups: imported });
+        expect(merged.groups[0].entries[0].secretId).toBe('');
+    });
 });

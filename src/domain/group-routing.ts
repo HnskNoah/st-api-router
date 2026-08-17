@@ -16,6 +16,13 @@ export interface GroupRouteUnit {
 export interface GroupRouteResult {
     unit: GroupRouteUnit | null;
     reasons: string[];
+    nextLastPicked: GroupRouteSticky | null;
+}
+
+export interface GroupRouteSticky {
+    unitKey: string;
+    /** 剩余可消费次数（0 = 本次消费后归零，不再复用）。 */
+    remaining: number;
 }
 
 export function rpmWindow(vendor: Vendor, now: number): { window: number[]; count: number } {
@@ -90,20 +97,42 @@ export function summarizeGroupUnavailable(vendors: Vendor[], group: Group | null
     return reasons;
 }
 
+/** 路由单元唯一标识（sticky 复用判断：固定 Vendor + Key 粒度）。 */
+export function groupUnitKey(unit: GroupRouteUnit): string {
+    return `${unit?.vendor?.id ?? ''}::${unit?.entry?.id ?? ''}`;
+}
+
 export function routeGroupOnce(
     vendors: Vendor[],
     group: Group | null | undefined,
     logicalModelId: string,
-    { now = Date.now() }: { now?: number } = {},
+    { now = Date.now(), stickyCount = 0, lastPicked = null }: {
+        now?: number;
+        stickyCount?: number;
+        lastPicked?: GroupRouteSticky | null;
+    } = {},
 ): GroupRouteResult {
     const candidates = candidateGroupUnits(vendors, group, logicalModelId, now);
     if (candidates.length === 0) {
         const reasons = summarizeGroupUnavailable(vendors, group, logicalModelId, now);
         if (reasons.length === 0) reasons.push('当前 Group 未配置该逻辑模型的 Vendor 映射');
-        return { unit: null, reasons };
+        return { unit: null, reasons, nextLastPicked: null };
     }
-    const unit = pickGroupUnit(candidates);
-    if (!unit) return { unit: null, reasons: ['无可选候选'] };
+    let unit = pickGroupUnit(candidates);
+    // sticky：按次。上次选中的 unit 还有剩余次数且仍可用时复用
+    if (stickyCount > 0 && lastPicked && lastPicked.remaining > 0) {
+        unit = candidates.find(item => groupUnitKey(item) === lastPicked.unitKey) || unit;
+    }
+    if (!unit) return { unit: null, reasons: ['无可选候选'], nextLastPicked: null };
     recordGroupSelection(unit, now);
-    return { unit, reasons: [] };
+    // sticky 返回：复用上一次 → 剩余次数减 1；新选 → 用 stickyCount-1 作为新剩余次数
+    const isReused = Boolean(lastPicked && stickyCount > 0 && lastPicked.remaining > 0 && groupUnitKey(unit) === lastPicked.unitKey);
+    const nextRemaining = isReused ? Math.max(0, lastPicked!.remaining - 1) : (stickyCount > 0 ? stickyCount - 1 : 0);
+    return {
+        unit,
+        reasons: [],
+        nextLastPicked: stickyCount > 0
+            ? { unitKey: groupUnitKey(unit), remaining: nextRemaining }
+            : null,
+    };
 }

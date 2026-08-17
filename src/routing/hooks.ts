@@ -4,8 +4,10 @@
 
 import { saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
 import { oai_settings } from '@sillytavern/scripts/openai';
+import { SECRET_KEYS } from '@sillytavern/scripts/secrets';
 import { Popup } from '@sillytavern/scripts/popup';
-import { routeGroupOnce, recordGroupSelection, type GroupRouteUnit } from '../domain/group-routing.js';
+import { ensureSecretId } from '../secrets/api.js';
+import { routeGroupOnce, recordGroupSelection, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
 import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
@@ -14,13 +16,14 @@ import { isManualLockApplicable } from './manual-route.js';
 import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
-import type { Group, RoutingSettings, Vendor } from '../types.js';
+import type { Group, LogicalModel, RoutingSettings, Vendor } from '../types.js';
 
 const USER_STOP_GRACE_MS = 50;
 
 export interface RoutingHooksDeps {
     getVendors(): Vendor[];
     getGroups(): Group[];
+    getLogicalModels(): LogicalModel[];
     getActiveGroupId(): string | null;
     getRouting(): RoutingSettings;
     beginGeneration?(): void;
@@ -41,11 +44,36 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         active: { unit: GroupRouteUnit; logicalModelId: string } | null;
         userStopPending: boolean;
         manualLockedUnit: GroupRouteUnit | null;
+        lastPicked: GroupRouteSticky | null;
     } = {
         active: null,
         userStopPending: false,
         manualLockedUnit: null,
+        lastPicked: null,
     };
+
+    function customParamsForUnit(unit: GroupRouteUnit): { includeBody: string; excludeBody: string; includeHeaders: string } {
+        const logical = deps.getLogicalModels().find(item => item.id === unit.mapping?.logicalModelId);
+        return {
+            includeBody: logical?.customIncludeBody ?? '',
+            excludeBody: logical?.customExcludeBody ?? '',
+            includeHeaders: logical?.customIncludeHeaders ?? '',
+        };
+    }
+
+    /** custom Vendor 的 Key 若还没有 secretId，则在生成前按值找/写一条并缓存，避免 custom 源读不到 key。 */
+    async function ensureEntrySecret(unit: GroupRouteUnit): Promise<void> {
+        if (unit.vendor?.format !== 'custom' || !unit.entry?.apiKey || unit.entry.secretId) return;
+        const id = await ensureSecretId(SECRET_KEYS.CUSTOM, unit.entry.apiKey, `quicker-api:${unit.vendor.name}`);
+        if (!id) return;
+        unit.entry.secretId = id;
+        saveSettingsDebounced();
+        debugLog('ensureEntrySecret cached', {
+            vendorName: unit.vendor.name,
+            entryLabel: unit.entry.label,
+            secretId: id,
+        });
+    }
 
     async function onGenerationStarted(type?: string, automaticTrigger?: unknown): Promise<void> {
         // 新一轮生成开始：清掉上一轮 STOPPED 留下的 pending 标记
@@ -96,7 +124,11 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         let unit: GroupRouteUnit | null = consumeManualLock(activeGroup, logicalModelId);
         if (!unit) {
-            const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId);
+            const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId, {
+                stickyCount: routing.stickyCount,
+                lastPicked: state.lastPicked,
+            });
+            state.lastPicked = result.nextLastPicked;
             if (!result.unit) {
                 toastr.warning(`Quicker Api：逻辑模型当前无可用 Vendor（${result.reasons.join('；') || '无候选'}）。`);
                 debugLog('onGenerationStarted skip: no route unit', { logicalModelId, reasons: result.reasons });
@@ -112,6 +144,8 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             realModel: unit.realModel,
             rpmWindowCount: unit.vendor.window?.length ?? 0,
         });
+
+        await ensureEntrySecret(unit);
 
         // token 限制确认并钳制（只改 oai_settings，不触发 reconnect）
         const clamps = computeVendorTokenClamps(unit.vendor, {
@@ -135,13 +169,19 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
 
         // 存储选中的 unit，等 CHAT_COMPLETION_SETTINGS_READY 时直接改 generateData
         state.active = { unit, logicalModelId };
+        debugLog('onGenerationStarted active set', {
+            vendorName: unit.vendor.name,
+            entryLabel: unit.entry.label,
+            realModel: unit.realModel,
+            presetTransitionBlocked: runtimeState.presetTransitionBlocked,
+        });
         deps.beginGeneration?.();
         setOnlineStatus('Valid');
         toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
         debugLog('onGenerationStarted done');
     }
 
-    function onChatCompletionSettingsReady(generateData: Record<string, any>): void {
+    async function onChatCompletionSettingsReady(generateData: Record<string, any>): Promise<void> {
         // guard 已阻断本次生成（预设切换中 / 密钥安全阻断）时不覆盖，避免拦截模式绕过安全阻断
         if (isGenerationBlockedByGuard(generateData?.chat_completion_source)) {
             debugLog('onChatCompletionSettingsReady skip: generation blocked by guard', {
@@ -151,19 +191,24 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         const active = state.active;
         if (active) {
-            patchGenerateData(generateData, active.unit);
+            patchGenerateData(generateData, active.unit, customParamsForUnit(active.unit));
             debugLog('onChatCompletionSettingsReady patch', {
                 vendorName: active.unit.vendor.name,
                 entryLabel: active.unit.entry.label,
                 realModel: active.unit.realModel,
                 source: generateData.chat_completion_source,
-                endpoint: generateData.reverse_proxy,
+                endpoint: generateData.custom_url ?? generateData.reverse_proxy,
                 model: generateData.model,
-                hasKey: Boolean(generateData.proxy_password),
+                hasKey: Boolean(generateData.secret_id ?? generateData.proxy_password),
             });
             return;
         }
-        routeFallbackIfNeeded(generateData);
+        debugLog('onChatCompletionSettingsReady no active route', {
+            source: generateData?.chat_completion_source,
+            presetTransitionBlocked: runtimeState.presetTransitionBlocked,
+            manualLocked: Boolean(state.manualLockedUnit),
+        });
+        await routeFallbackIfNeeded(generateData);
     }
 
     /**
@@ -172,7 +217,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
      * 避免独立流用原生（可能过期）key 直接打出去。
      * 约束：不弹 token 钳制确认窗——emit 是 await 的，弹窗会卡死独立流请求。
      */
-    function routeFallbackIfNeeded(generateData: Record<string, any>): void {
+    async function routeFallbackIfNeeded(generateData: Record<string, any>): Promise<void> {
         const type = String(generateData?.type || 'normal');
         const activeGroup = deps.getGroups().find(group => group.id === deps.getActiveGroupId()) || deps.getGroups()[0] || null;
         const logicalModelId = activeGroup?.currentLogicalModelId ?? '';
@@ -188,7 +233,10 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                 activeGroupId: deps.getActiveGroupId(),
                 groups: deps.getGroups(),
                 vendors: deps.getVendors(),
+                stickyCount: deps.getRouting().stickyCount,
+                lastPicked: state.lastPicked,
             });
+            state.lastPicked = result.nextLastPicked;
             if (result.skipReason) {
                 debugLog('onChatCompletionSettingsReady fallback skip', { reason: result.skipReason });
                 return;
@@ -196,6 +244,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             if (!result.unit) return;
             unit = result.unit;
         }
+        await ensureEntrySecret(unit);
         const clamps = computeVendorTokenClamps(unit.vendor, {
             maxContext: Number(oai_settings.openai_max_context) || 0,
             maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
@@ -205,7 +254,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             // 独立流无弹窗阶段：跳过钳制，避免卡死请求；正常流（GENERATION_STARTED 路径）仍会弹窗确认
             debugLog('onChatCompletionSettingsReady fallback: token clamps skipped (no popup in fallback)', { clamps });
         }
-        patchGenerateData(generateData, unit);
+        patchGenerateData(generateData, unit, customParamsForUnit(unit));
         setOnlineStatus('Valid');
         toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
         debugLog('onChatCompletionSettingsReady fallback routed', {
@@ -213,22 +262,30 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             entryLabel: unit.entry.label,
             realModel: unit.realModel,
             source: generateData.chat_completion_source,
-            endpoint: generateData.reverse_proxy,
+            endpoint: generateData.custom_url ?? generateData.reverse_proxy,
             model: generateData.model,
-            hasKey: Boolean(generateData.proxy_password),
+            hasKey: Boolean(generateData.secret_id ?? generateData.proxy_password),
             tokenClampsSkipped: needsApply,
         });
     }
 
     function onGenerationStopped(): void {
-        debugLog('onGenerationStopped', { hadActive: Boolean(state.active) });
+        debugLog('onGenerationStopped', {
+            hadActive: Boolean(state.active),
+            presetTransitionBlocked: runtimeState.presetTransitionBlocked,
+            activeVendor: state.active?.unit?.vendor?.name ?? null,
+        });
         state.userStopPending = true;
         state.active = null;
         deps.endGeneration?.();
     }
 
     function onGenerationEnded(): void {
-        debugLog('onGenerationEnded enter', { hadActive: Boolean(state.active), userStopPending: state.userStopPending });
+        debugLog('onGenerationEnded enter', {
+            hadActive: Boolean(state.active),
+            userStopPending: state.userStopPending,
+            presetTransitionBlocked: runtimeState.presetTransitionBlocked,
+        });
         const active = state.active;
         if (!active) {
             debugLog('onGenerationEnded skip: no active route');

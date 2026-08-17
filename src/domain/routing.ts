@@ -1,6 +1,5 @@
 // 路由引擎（key 粒度，熔断按模型）：候选过滤 → 加权随机选择 → RPM 限流 → 熔断状态机。
 // 熔断针对（key × 模型）：一个模型熔断后，同 key 的其他模型仍可选；RPM 窗口独立于熔断。
-// sticky 按「绝对时间」：窗口内固定 key，换对话/角色/模型都不重置；到期重选。
 // 纯函数，可独立测试。
 
 import { DEFAULT_ROUTING_SETTINGS } from '../constants.js';
@@ -12,14 +11,19 @@ export const FAIL_THRESHOLD_DEFAULT = 3;
 export const COOLDOWN_MS_DEFAULT = 60 * 1000;
 export const STICKY_SECONDS_DEFAULT = 600;
 
-/** 规范化路由设置（载入时迁移用，与 DEFAULT_ROUTING_SETTINGS 语义一致）。 */
+/** 规范化路由设置（载入时迁移用，与 DEFAULT_ROUTING_SETTINGS 语义一致）。
+ *  兼容旧版 stickySeconds：若存在且 >0 则迁移为 stickyCount=1。 */
 export function normalizeRoutingSettings(raw: unknown): RoutingSettings {
     const routing = (raw && typeof raw === 'object' ? raw : {}) as Record<string, any>;
+    // 从旧版 stickySeconds 迁移：>0 则转 1 次保持
+    if (routing.stickyCount === undefined && routing.stickySeconds !== undefined) {
+        routing.stickyCount = Number(routing.stickySeconds) > 0 ? 1 : 0;
+    }
     return {
         enabled: Boolean(routing.enabled),
-        stickySeconds: Number.isFinite(Number(routing.stickySeconds)) && Number(routing.stickySeconds) >= 0
-            ? Math.floor(Number(routing.stickySeconds))
-            : DEFAULT_ROUTING_SETTINGS.stickySeconds,
+        stickyCount: Number.isFinite(Number(routing.stickyCount)) && Number(routing.stickyCount) >= 0
+            ? Math.floor(Number(routing.stickyCount))
+            : DEFAULT_ROUTING_SETTINGS.stickyCount,
         failThreshold: Number.isFinite(Number(routing.failThreshold)) && Number(routing.failThreshold) > 0
             ? Math.floor(Number(routing.failThreshold))
             : DEFAULT_ROUTING_SETTINGS.failThreshold,

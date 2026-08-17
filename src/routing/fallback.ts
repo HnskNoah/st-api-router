@@ -2,7 +2,7 @@
 // JS-Slash-Runner 等插件走独立请求流：只发 CHAT_COMPLETION_SETTINGS_READY、不发 GENERATION_STARTED，
 // state.active 为空。此时用当前 Group 逻辑模型选路，接管连接字段。
 
-import { routeGroupOnce, type GroupRouteUnit } from '../domain/group-routing.js';
+import { routeGroupOnce, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
 import type { Group, Vendor } from '../types.js';
 
 export interface FallbackRouteInput {
@@ -13,11 +13,15 @@ export interface FallbackRouteInput {
     vendors: Vendor[];
     /** 可选覆盖逻辑模型 id（默认取 active group 的 currentLogicalModelId）。 */
     logicalModelId?: string;
+    /** sticky：保持同一 Vendor 的次数（0 = 每次随机）。 */
+    stickyCount?: number;
+    lastPicked?: GroupRouteSticky | null;
 }
 
 export interface FallbackRouteResult {
     unit: GroupRouteUnit | null;
     skipReason: string | null;
+    nextLastPicked: GroupRouteSticky | null;
 }
 
 export interface ActiveRoutingContextInput {
@@ -43,13 +47,16 @@ export function resolveActiveRoutingContext(input: ActiveRoutingContextInput): A
 
 export function resolveFallbackRoute(input: FallbackRouteInput): FallbackRouteResult {
     if (input.type === 'quiet' || input.type === 'continue' || input.type === 'impersonate') {
-        return { unit: null, skipReason: 'non-user type' };
+        return { unit: null, skipReason: 'non-user type', nextLastPicked: null };
     }
     const ctx = resolveActiveRoutingContext(input);
-    if ('skipReason' in ctx) return { unit: null, skipReason: ctx.skipReason };
-    const result = routeGroupOnce(input.vendors, ctx.group, ctx.logicalModelId);
+    if ('skipReason' in ctx) return { unit: null, skipReason: ctx.skipReason, nextLastPicked: null };
+    const result = routeGroupOnce(input.vendors, ctx.group, ctx.logicalModelId, {
+        stickyCount: input.stickyCount ?? 0,
+        lastPicked: input.lastPicked ?? null,
+    });
     if (!result.unit) {
-        return { unit: null, skipReason: `no route unit: ${result.reasons.join(';') || 'no candidates'}` };
+        return { unit: null, skipReason: `no route unit: ${result.reasons.join(';') || 'no candidates'}`, nextLastPicked: null };
     }
-    return { unit: result.unit, skipReason: null };
+    return { unit: result.unit, skipReason: null, nextLastPicked: result.nextLastPicked };
 }

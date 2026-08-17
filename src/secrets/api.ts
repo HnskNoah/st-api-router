@@ -1,11 +1,12 @@
 // Secrets API 服务（宿主 /api/secrets/* 交互）
 
 import { getRequestHeaders, eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
-import { secret_state } from '@sillytavern/scripts/secrets';
+import { SECRET_KEYS, secret_state } from '@sillytavern/scripts/secrets';
 import { EMPTY_SECRET_LABEL, FORMATS } from '../constants.js';
 import { runtimeState } from '../state.js';
 import { normalizeText } from '../utils/text.js';
 import { settings } from '../settings/access.js';
+import { clearableQuickApiSecretIds } from '../domain/secrets.js';
 import { getSecretEntries } from './access.js';
 import { fetchJsonWithTimeout, fetchWithTimeout } from '../fetch.js';
 
@@ -118,4 +119,45 @@ export async function ensureSecret(key: string, value: string, label: string): P
     const state = id ? await readAuthoritativeSecretState() : null;
     const verified = Boolean(id && state?.[key]?.some(entry => entry.id === id && entry.active));
     return { id: verified ? id : '', reused: false, exposureAvailable: match.exposureAvailable };
+}
+
+/** 只为拿到一个可用的 secret id：已有同值 secret 就复用其 id（不切换 active），没有才写一条新的。 */
+export async function ensureSecretId(key: string, value: string, label: string): Promise<string> {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    const match = await findMatchingSecret(key, normalized);
+    if (match.entry) return match.entry.id;
+    return await writeSecretVerified(key, normalized, label);
+}
+
+/** 删除指定 secret 条目。 */
+export async function deleteSecretVerified(key: string, id: string): Promise<boolean> {
+    if (!id) return false;
+    try {
+        const response = await fetchWithTimeout('/api/secrets/delete', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ key, id }),
+        }, 15000) as Response;
+        return response.ok;
+    } catch (error) {
+        console.error('[QuickerApi] Secret delete failed:', key, error);
+        return false;
+    }
+}
+
+/** 一键清除插件写入的临时 secret：清 CUSTOM + DEEPSEEK 下 quicker-api: 前缀条目，各留一个空 active。 */
+export async function clearQuickApiSecrets(): Promise<{ deleted: number }> {
+    const state = await readAuthoritativeSecretState();
+    const keys = [SECRET_KEYS.CUSTOM, SECRET_KEYS.DEEPSEEK];
+    let deleted = 0;
+    for (const key of keys) {
+        const ids = clearableQuickApiSecretIds(Array.isArray(state?.[key]) ? state[key] : []);
+        for (const id of ids) {
+            if (await deleteSecretVerified(key, id)) deleted++;
+        }
+        await ensureEmptySecret(key);
+    }
+    await readAuthoritativeSecretState();
+    return { deleted };
 }

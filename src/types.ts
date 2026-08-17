@@ -85,7 +85,7 @@ export interface ModelEntry {
 
 export interface RoutingSettings {
     enabled: boolean;
-    stickySeconds: number;
+    stickyCount: number;
     failThreshold: number;
     cooldownSeconds: number;
 }
@@ -136,6 +136,12 @@ export interface LogicalModel {
     name: string;
     /** 拉取模型时的自动归类正则（真实模型名命中即归入该逻辑模型）；空 = 不参与正则匹配。 */
     matchPattern: string;
+    /** 路由到该逻辑模型时透传进 custom 源的 include body 参数（YAML，与 ST 原生语义一致）。可选，normalize 后为 ''。 */
+    customIncludeBody?: string;
+    /** 路由到该逻辑模型时透传进 custom 源的 exclude body 参数（YAML）。可选，normalize 后为 ''。 */
+    customExcludeBody?: string;
+    /** 路由到该逻辑模型时透传进 custom 源的附加请求头（YAML）。可选，normalize 后为 ''。 */
+    customIncludeHeaders?: string;
 }
 
 /** Group 条目：Vendor + Key。同一 Vendor 可在同一 Group 中挂多个条目；每个 Key 独立持有模型数据（部分模型只在特定 Key 上可获取）。 */
@@ -143,6 +149,8 @@ export interface GroupEntry {
     id: string;
     vendorId: string;
     apiKey: string;
+    /** 该 Key 在本机 ST secrets 里的 secret id（custom Vendor 用 CUSTOM，deepseek 用 DEEPSEEK）；custom 源生成时透传为 secret_id。可选，normalize 后为 ''。 */
+    secretId?: string;
     label: string;
     enabled: boolean;
     fetchedModels: string[];

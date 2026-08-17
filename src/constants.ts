@@ -51,7 +51,7 @@ export const QUICK_ACTION_PLACEMENTS: QuickActionPlacement[] = ['leftSendForm', 
 
 export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
     enabled: false,
-    stickySeconds: 600,
+    stickyCount: 0,
     failThreshold: 3,
     cooldownSeconds: 60,
 });

@@ -4,17 +4,20 @@ import {
     migrateProvidersToVendorModel,
     normalizeGroup,
     normalizeGroups,
+    normalizeLogicalModel,
     normalizeLogicalModels,
     normalizeVendor,
     normalizeVendors,
     recordVendorFailure,
     recordVendorSuccess,
+    disableVendorIfNoUsableKeys,
     resetVendorRuntimeState,
     vendorEffectiveWeight,
 } from '../src/domain/vendor.js';
 import {
     candidateGroupUnits,
     groupUnitsForLogicalModel,
+    groupUnitKey,
     routeGroupOnce,
     summarizeGroupUnavailable,
     vendorRpmAvailable,
@@ -35,11 +38,29 @@ describe('domain/vendor normalization', () => {
     });
 
     it('normalizeLogicalModels and normalizeGroups normalize arrays', () => {
-        expect(normalizeLogicalModels([{ id: ' l1 ', name: '  Grok ' }])).toEqual([{ id: 'l1', name: 'Grok', matchPattern: '' }]);
+        expect(normalizeLogicalModels([{ id: ' l1 ', name: '  Grok ' }])).toEqual([{ id: 'l1', name: 'Grok', matchPattern: '', customIncludeBody: '', customExcludeBody: '', customIncludeHeaders: '' }]);
         const groups = normalizeGroups([{ id: 'g1', name: ' 主 ', currentLogicalModelId: 'l1', entries: [{ vendorId: 'v1', apiKey: ' k ', label: 'A' }] }]);
         expect(groups[0].name).toBe('主');
         expect(groups[0].entries[0].apiKey).toBe('k');
         expect(normalizeGroup(undefined).id.startsWith('group-')).toBe(true);
+    });
+
+    it('normalizeLogicalModel fills custom include/exclude body and headers defaults', () => {
+        const model = normalizeLogicalModel({ id: 'l1', name: 'Grok 系' });
+        expect(model.customIncludeBody).toBe('');
+        expect(model.customExcludeBody).toBe('');
+        expect(model.customIncludeHeaders).toBe('');
+        const filled = normalizeLogicalModel({ customIncludeBody: 'top_k: 20', customExcludeBody: 'stop', customIncludeHeaders: 'X-A: b' });
+        expect(filled.customIncludeBody).toBe('top_k: 20');
+        expect(filled.customExcludeBody).toBe('stop');
+        expect(filled.customIncludeHeaders).toBe('X-A: b');
+    });
+
+    it('normalizeGroupEntry persists secretId', () => {
+        const kept = normalizeGroup({ entries: [{ vendorId: 'v1', apiKey: 'k', secretId: 'sid-1' }] });
+        expect(kept.entries[0].secretId).toBe('sid-1');
+        const fresh = normalizeGroup({ entries: [{ vendorId: 'v1', apiKey: 'k' }] });
+        expect(fresh.entries[0].secretId).toBe('');
     });
 
     it('GroupEntry keeps its own fetchedModels and mappings (model data is per Key)', () => {
@@ -138,6 +159,69 @@ describe('domain/vendor health and success weight', () => {
         expect(vendor.failStreak).toBe(0);
         expect(vendor.successes).toBe(3);
         expect(vendor.failures).toBe(4);
+    });
+});
+
+describe('domain/vendor disableVendorIfNoUsableKeys', () => {
+    function vendor(id: string, enabled = true): Vendor {
+        return normalizeVendor({ id, name: id, enabled });
+    }
+
+    function group(entries: Array<{ id: string; vendorId: string; enabled?: boolean; apiKey?: string }>): Group {
+        return normalizeGroup({
+            id: 'g1',
+            entries: entries.map(entry => ({
+                id: entry.id,
+                vendorId: entry.vendorId,
+                apiKey: entry.apiKey ?? 'sk',
+                label: entry.id,
+                enabled: entry.enabled === undefined ? true : entry.enabled,
+            })),
+        });
+    }
+
+    it('全部 Key 禁用时自动禁用 Vendor', () => {
+        const v = vendor('v1');
+        const groups = [group([
+            { id: 'e1', vendorId: 'v1', enabled: false },
+            { id: 'e2', vendorId: 'v1', enabled: false },
+        ])];
+        expect(disableVendorIfNoUsableKeys(v, groups)).toBe(true);
+        expect(v.enabled).toBe(false);
+        expect(v.disabledReason).toContain('所有 Key');
+    });
+
+    it('仍有启用 Key 时不处理', () => {
+        const v = vendor('v1');
+        const groups = [group([
+            { id: 'e1', vendorId: 'v1', enabled: false },
+            { id: 'e2', vendorId: 'v1', enabled: true },
+        ])];
+        expect(disableVendorIfNoUsableKeys(v, groups)).toBe(false);
+        expect(v.enabled).toBe(true);
+    });
+
+    it('没有配置 Key 时不处理', () => {
+        const v = vendor('v1');
+        expect(disableVendorIfNoUsableKeys(v, [group([])])).toBe(false);
+        expect(v.enabled).toBe(true);
+    });
+
+    it('空 apiKey 的 Key 不计入，全部为空时不处理', () => {
+        const v = vendor('v1');
+        const groups = [group([
+            { id: 'e1', vendorId: 'v1', apiKey: '' },
+            { id: 'e2', vendorId: 'v1', apiKey: '' },
+        ])];
+        expect(disableVendorIfNoUsableKeys(v, groups)).toBe(false);
+        expect(v.enabled).toBe(true);
+    });
+
+    it('已禁用的 Vendor 不重复处理', () => {
+        const v = vendor('v1', false);
+        const groups = [group([{ id: 'e1', vendorId: 'v1', enabled: false }])];
+        expect(disableVendorIfNoUsableKeys(v, groups)).toBe(false);
+        expect(v.enabled).toBe(false);
     });
 });
 
@@ -278,5 +362,46 @@ describe('domain/group-routing', () => {
         expect(new Set(units.map(unit => unit.vendor.name))).toEqual(new Set(['X', 'Y']));
         expect(vendors[0].id).not.toBe(vendors[1].id);
         for (const unit of units) expect(unit.realModel).toBe('grok-4.5');
+    });
+
+    it('sticky reuses last picked unit for N uses', () => {
+        const vendors = [makeVendor('v1', 'A'), makeVendor('v2', 'B')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v2', label: 'B1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        const first = routeGroupOnce(vendors, group, 'l1', { stickyCount: 2 });
+        expect(first.nextLastPicked).not.toBeNull();
+        expect(first.nextLastPicked!.remaining).toBe(1);
+        // 第二次：提前消费剩余次数
+        const second = routeGroupOnce(vendors, group, 'l1', { stickyCount: 2, lastPicked: first.nextLastPicked });
+        expect(groupUnitKey(second.unit!)).toBe(groupUnitKey(first.unit!));
+        expect(second.nextLastPicked!.remaining).toBe(0);
+        // 第三次：remaining=0，不再复用
+        const third = routeGroupOnce(vendors, group, 'l1', { stickyCount: 2, lastPicked: second.nextLastPicked });
+        expect(third.nextLastPicked!.remaining).toBe(1); // 新随机一次
+    });
+
+    it('sticky 0 = 每次随机', () => {
+        const vendors = [makeVendor('v1', 'A'), makeVendor('v2', 'B')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v2', label: 'B1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        const result = routeGroupOnce(vendors, group, 'l1', { stickyCount: 0 });
+        expect(result.nextLastPicked).toBeNull();
+    });
+
+    it('sticky falls back to random when last picked unit becomes unavailable', () => {
+        const vendors = [makeVendor('v1', 'A'), makeVendor('v2', 'B')];
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v2', label: 'B1', mapping: { realModel: 'm', logicalModelId: 'l1' } },
+        ]);
+        const sticky = { unitKey: 'v1::e1', remaining: 1 };
+        vendors[0].enabled = false;
+        const result = routeGroupOnce(vendors, group, 'l1', { stickyCount: 2, lastPicked: sticky });
+        expect(result.unit).not.toBeNull();
+        expect(result.unit!.vendor.id).toBe('v2');
     });
 });

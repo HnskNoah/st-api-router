@@ -1,7 +1,7 @@
 // 模型列表导出：所有 Key 已拉取真实模型名的纯文本清单（每行一个，去重排序）。不含密钥。
 
 import { describe, expect, it } from 'vitest';
-import { buildModelListText } from '../src/domain/vendor.js';
+import { buildModelListText, normalizeGroup, sanitizeGroupForExport } from '../src/domain/vendor.js';
 import type { Group } from '../src/types.js';
 
 function makeGroup(overrides: Partial<Group> = {}): Group {
@@ -64,5 +64,26 @@ describe('domain/vendor > 模型列表导出（txt）', () => {
         expect(json.toLowerCase()).not.toContain('apikey');
         expect(json.toLowerCase()).not.toContain('secret');
         expect(json.toLowerCase()).not.toContain('authorization');
+    });
+});
+
+describe('domain/vendor > sanitizeGroupForExport 完整配置导出脱敏', () => {
+    it('剥离 entry.secretId，但保留 apiKey', () => {
+        const group = normalizeGroup({
+            id: 'g1',
+            entries: [{ id: 'e1', vendorId: 'v1', apiKey: 'sk', secretId: 'sid-1', label: 'A' }],
+        });
+        const sanitized = sanitizeGroupForExport(group);
+        expect(sanitized.entries[0].secretId).toBeUndefined();
+        expect(sanitized.entries[0].apiKey).toBe('sk');
+    });
+
+    it('不修改原对象', () => {
+        const group = normalizeGroup({
+            id: 'g1',
+            entries: [{ id: 'e1', vendorId: 'v1', apiKey: 'sk', secretId: 'sid-1' }],
+        });
+        sanitizeGroupForExport(group);
+        expect(group.entries[0].secretId).toBe('sid-1');
     });
 });

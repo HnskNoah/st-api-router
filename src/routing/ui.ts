@@ -15,7 +15,9 @@ import {
     buildLogicalModelsFromFetched,
     buildModelListText,
     deleteLogicalModel,
+    disableVendorIfNoUsableKeys,
     findUnmappedModels,
+    isRealModelUsable,
     isSpecialVariant,
     mappedRealModels,
     mergeImportedRoutingConfig,
@@ -26,10 +28,11 @@ import {
     pruneOrphanLogicalModels,
     reconcileEntryMappings,
     resetModelData,
+    sanitizeGroupForExport,
     sortedLogicalModels,
     unmapRealModel,
 } from '../domain/vendor.js';
-import { ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
+import { clearQuickApiSecrets, ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import { exportDebugLog } from '../debug.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
@@ -182,6 +185,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             /* 真实模型 pill：复用逻辑模型 chip 外观；点击展开下方操作行（下拉 + 🔗） */
             .st-router-real-pill-wrap { display: contents; }
             .st-router-real-pill { max-width: 100%; }
+            .st-router-real-pill--disabled { opacity: 0.45; cursor: default; }
+            .st-router-real-pill--disabled:hover { border-color: rgba(128, 128, 128, 0.35); }
             .st-router-real-pill .st-router-model-name { font-family: monospace; font-size: 12px; word-break: break-all; min-width: 0; }
             .st-router-real-ops {
                 display: flex; align-items: center; gap: 6px; flex-basis: 100%;
@@ -216,9 +221,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             <div class="st-router-section st-router-section--master">
                 <label class="checkbox_label st-router-master-toggle" for="st_router_enable"><input id="st_router_enable" type="checkbox" /> 启用路由</label>
                 <div class="st-router-master-row">
-                    <label for="st_router_sticky_seconds">保持同一 Vendor：</label>
-                    <input id="st_router_sticky_seconds" class="text_pole st-router-sticky-input" type="number" min="0" step="1" />
-                    <span>秒（0 = 每次生成都重新随机）</span>
+                    <label for="st_router_sticky_count">保持同一 Vendor：</label>
+                    <input id="st_router_sticky_count" class="text_pole st-router-sticky-input" type="number" min="0" step="1" />
+                    <span>次（0 = 每次生成都重新随机）</span>
                 </div>
                 <div class="st-router-master-hint">启用后，每次生成前按当前分组的逻辑模型，从可用 Vendor 中随机选一个改写 SillyTavern 连接（不发请求，只改连接字段）。</div>
             </div>
@@ -260,6 +265,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                                 <button id="st_router_export_models" class="quicker-api__menu-item" type="button"><i class="fa-solid fa-download"></i> 导出模型列表</button>
                                 <button id="st_router_export_log" class="quicker-api__menu-item" type="button"><i class="fa-solid fa-file-lines"></i> 导出日志</button>
                                 <button id="st_router_reset_models" class="quicker-api__menu-item" type="button" style="color:var(--quicker-api-danger)"><i class="fa-solid fa-broom"></i> 重置模型数据</button>
+                                <!-- 临时功能：一键清除插件写入的 ST secret，后续按需删除该按钮 -->
+                                <button id="st_router_clear_secrets" class="quicker-api__menu-item" type="button" style="color:var(--quicker-api-danger)"><i class="fa-solid fa-trash"></i> 一键清除 ST secret</button>
                             </div>
                         </div>
                     </div>
@@ -284,7 +291,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
     function renderRoutingControls(): void {
         const routing = deps.getRouting();
         panel.find('#st_router_enable').prop('checked', routing.enabled);
-        panel.find('#st_router_sticky_seconds').val(Number(routing.stickySeconds) || 0);
+        panel.find('#st_router_sticky_count').val(Number(routing.stickyCount) || 0);
     }
 
     function renderGroupSelect(): void {
@@ -430,10 +437,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         return names.size > 0 ? [...names].join('、') : '';
     }
 
-    function buildRealPill(realModel: string, currentLogicalId: string, subtitle: string): JQuery<HTMLElement> {
+    function buildRealPill(realModel: string, currentLogicalId: string, subtitle: string, disabled = false): JQuery<HTMLElement> {
         const wrap = $('<div class="st-router-real-pill-wrap"></div>')
             .attr('data-search', `${realModel} ${subtitle}`.toLowerCase());
-        const pill = $('<button class="st-router-model-chip st-router-real-pill" type="button"></button>');
+        const pill = $('<button class="st-router-model-chip st-router-real-pill" type="button"></button>')
+            .toggleClass('st-router-real-pill--disabled', disabled)
+            .prop('disabled', disabled);
         pill.append($('<span class="st-router-model-name">').text(realModel));
         pill.append($('<span class="st-router-model-providers">').text(subtitle));
         const ops = $('<div class="st-router-real-ops"></div>').hide();
@@ -469,6 +478,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             ops.append(select, applyBtn, unmapBtn);
         };
         pill.on('click', () => {
+            if (disabled) return;
             const rows = wrap.parent();
             rows.find('.st-router-real-ops').not(ops).hide();
             if (ops.is(':visible')) {
@@ -501,10 +511,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             for (const item of mapped) {
                 const logical = deps.getLogicalModels().find(model => model.id === item.logicalModelId);
                 const vendorText = vendorNamesForRealModel(item.realModel);
+                const usable = isRealModelUsable(deps.getVendors(), deps.getGroups(), item.realModel);
                 rows.append(buildRealPill(
                     item.realModel,
                     item.logicalModelId,
-                    `${logical ? `归属：${logical.name}` : '归属：未知'}${vendorText ? ` · Vendor：${vendorText}` : ''}`,
+                    `${logical ? `归属：${logical.name}` : '归属：未知'}${vendorText ? ` · Vendor：${vendorText}` : ''}${usable ? '' : ' · 已停用'}`,
+                    !usable,
                 ));
             }
         };
@@ -546,7 +558,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             for (const realModel of unmapped) {
                 const vendorText = vendorNamesForRealModel(realModel);
-                rows.append(buildRealPill(realModel, '', `未归类${vendorText ? ` · Vendor：${vendorText}` : ''}`));
+                const usable = isRealModelUsable(deps.getVendors(), deps.getGroups(), realModel);
+                rows.append(buildRealPill(realModel, '', `未归类${vendorText ? ` · Vendor：${vendorText}` : ''}${usable ? '' : ' · 已停用'}`, !usable));
             }
         };
         head.on('click', () => {
@@ -707,6 +720,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                             .val(entry.apiKey || '')
                             .on('input', function () {
                                 entry.apiKey = String($(this).val() ?? '').trim();
+                                entry.secretId = '';
                                 deps.save();
                                 // 实时更新未使用状态（Key 行 + 所属 Vendor 行）
                                 keyRow.toggleClass('st-router-key-row--unused', isKeyUnused(entry));
@@ -781,9 +795,11 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         try {
             const authoritative = await readAuthoritativeSecretState();
             previousActiveId = String((authoritative?.[secretKey] || []).find((item: any) => item.active)?.id || '');
-            let secretId: string | null = null;
-            if (key) {
+            let secretId: string | null = String(entry.secretId || '');
+            const existingIds = new Set((authoritative?.[secretKey] || []).map((item: any) => item.id));
+            if (key && (!secretId || !existingIds.has(secretId))) {
                 secretId = await writeSecret(secretKey, key, `quicker-api:${vendor.name}`);
+                if (secretId) entry.secretId = secretId;
             }
             const statusBody: Record<string, any> = {
                 chat_completion_source: isDeepseek ? 'deepseek' : 'custom',
@@ -824,8 +840,12 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             entry.enabled = false;
             entry.fetchedModels = [];
             entry.mappings = [];
+            const vendorDisabled = disableVendorIfNoUsableKeys(vendor, deps.getGroups());
             deps.save();
             toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）获取模型失败，已禁用该 Key：${message}。`);
+            if (vendorDisabled) {
+                toastr.warning(`Vendor「${vendor.name}」所有 Key 均已失效，已自动禁用。`, '', { timeOut: 8000 });
+            }
             return null;
         } finally {
             // 恢复拉取前活动密钥，避免临时 Key 残留占用 ST 密钥槽
@@ -930,7 +950,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 const enabled = $('<input type="checkbox">').prop('checked', entry.enabled);
                 vendorSelect.on('change', function () { entry.vendorId = String($(this).val() || ''); });
                 labelInput.on('input', function () { entry.label = String($(this).val() ?? '').trim() || 'Key'; });
-                keyInput.on('input', function () { entry.apiKey = String($(this).val() ?? '').trim(); });
+                keyInput.on('input', function () { entry.apiKey = String($(this).val() ?? '').trim(); entry.secretId = ''; });
                 enabled.on('change', function () { entry.enabled = $(this).prop('checked'); });
                 const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
                     .on('click', () => {
@@ -984,6 +1004,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         const content = $('<div class="st-router-editor"></div>');
         const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="逻辑模型名称，如：DeepSeek 系 / Grok 系">').val(draft.name);
         const patternInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="正则，如：deepseek|grok（留空 = 不自动归类）">').val(draft.matchPattern);
+        const includeBodyInput = $('<textarea class="text_pole" rows="4" maxlength="100000" placeholder="YAML，如：top_k: 20\nrepetition_penalty: 1.1"></textarea>').val(draft.customIncludeBody ?? '');
+        const excludeBodyInput = $('<textarea class="text_pole" rows="4" maxlength="100000" placeholder="YAML 数组，如：frequency_penalty\npresence_penalty"></textarea>').val(draft.customExcludeBody ?? '');
+        const includeHeadersInput = $('<textarea class="text_pole" rows="4" maxlength="100000" placeholder="YAML，如：X-Custom: abc\nAnother-Header: def"></textarea>').val(draft.customIncludeHeaders ?? '');
 
         const testRow = $('<div class="st-router-key-row"></div>');
         const testInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="输入一个真实模型名测试正则…">');
@@ -1083,6 +1106,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         content.append(
             field('名称', nameInput, '逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型'),
             field('自动归类正则', patternInput, '拉取模型时，真实模型名命中该正则会自动归入此逻辑模型（如 deepseek 会把 deepseek-chat/deepseek-reasoner 归进来）。留空则不参与自动归类'),
+            field('自定义 include body（YAML）', includeBodyInput, '路由到该逻辑模型时透传进请求体（仅 custom Vendor 生效）'),
+            field('自定义 exclude body（YAML）', excludeBodyInput, '从请求体排除这些参数（仅 custom Vendor 生效）'),
+            field('自定义请求头（YAML）', includeHeadersInput, '附加请求头（仅 custom Vendor 生效）'),
             $('<div class="quicker-api__field"></div>').append($('<label><span>测试正则</span></label>'), testRow),
             ...(isNew ? [] : [
                 $('<div class="quicker-api__field"></div>').append(
@@ -1119,6 +1145,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             }
             draft.name = name;
             draft.matchPattern = pattern;
+            draft.customIncludeBody = String(includeBodyInput.val() ?? '');
+            draft.customExcludeBody = String(excludeBodyInput.val() ?? '');
+            draft.customIncludeHeaders = String(includeHeadersInput.val() ?? '');
             const normalized = normalizeLogicalModel(draft);
             if (isNew) {
                 deps.getLogicalModels().push(normalized);
@@ -1141,9 +1170,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         deps.save();
         toastr.info(`路由已${routing.enabled ? '启用' : '停用'}。`);
     });
-    panel.find('#st_router_sticky_seconds').on('change', function () {
+    panel.find('#st_router_sticky_count').on('change', function () {
         const routing = deps.getRouting();
-        routing.stickySeconds = Math.max(0, Math.floor(Number($(this).val()) || 0));
+        routing.stickyCount = Math.max(0, Math.floor(Number($(this).val()) || 0));
         deps.save();
     });
     function applyModelSearch(): void {
@@ -1271,6 +1300,30 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             btn.prop('disabled', false);
         }
     });
+    // 临时功能：一键清除插件写入的 ST secret，同时清空各 entry 的 secretId 缓存
+    panel.find('#st_router_clear_secrets').on('click', async () => {
+        const confirmed = await Popup.show.confirm(
+            '清除 ST secret',
+            '将删除 CUSTOM 与 DEEPSEEK 下所有 label 以「quicker-api:」开头的 secret 条目，各留一个空 active，并清空插件缓存的 secretId。此操作不可撤销，确定继续？',
+        );
+        if (!confirmed) return;
+        const btn = panel.find('#st_router_clear_secrets');
+        btn.prop('disabled', true);
+        try {
+            const { deleted } = await clearQuickApiSecrets();
+            for (const group of deps.getGroups()) {
+                for (const entry of group.entries) entry.secretId = '';
+            }
+            deps.save();
+            renderProviderList();
+            toastr.success(`已清除 ${deleted} 个 quicker-api secret 条目。`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            toastr.error(`清除失败：${message}。`);
+        } finally {
+            btn.prop('disabled', false);
+        }
+    });
     panel.find('#st_router_build_logical').on('click', () => {
         const allModels: string[] = [];
         for (const group of deps.getGroups()) {
@@ -1318,7 +1371,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             exportedAt: new Date().toISOString(),
             vendors: deps.getVendors(),
             logicalModels: deps.getLogicalModels(),
-            groups: deps.getGroups(),
+            groups: deps.getGroups().map(sanitizeGroupForExport),
             activeGroupId: deps.getActiveGroupId(),
             routing: deps.getRouting(),
         };

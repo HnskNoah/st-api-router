@@ -23,6 +23,7 @@ export function initRouting(): void {
     const hooks = createRoutingHooks({
         getVendors: vendors,
         getGroups: groups,
+        getLogicalModels: logicalModels,
         getActiveGroupId: () => activeGroup()?.id ?? null,
         getRouting: routingSettings,
         beginGeneration: () => failureObserver.begin(),
