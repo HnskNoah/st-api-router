@@ -6,6 +6,7 @@ import { activeGroup, groups, logicalModels, routingSettings, settings, vendors 
 import { createFailureObserver } from './failure-observer.js';
 import { createRoutingHooks } from './hooks.js';
 import { initRoutingUI } from './ui.js';
+import { ensureManualRouteEntry, removeManualRouteEntry } from './manual-route-entry.js';
 import { debugLog } from '../debug.js';
 
 interface RoutingRegistration {
@@ -46,6 +47,7 @@ export function initRouting(): void {
         getRouting: routingSettings,
         save: () => saveSettingsDebounced(),
     });
+    ensureManualRouteEntry();
     registration = {
         teardown() {
             debugLog('routing teardown');
@@ -56,6 +58,7 @@ export function initRouting(): void {
                 eventSource.removeListener(event_types.CHAT_COMPLETION_SETTINGS_READY, hooks.onChatCompletionSettingsReady);
             }
             failureObserver.uninstall();
+            removeManualRouteEntry();
             $('#st_router_panel').remove();
         },
     };

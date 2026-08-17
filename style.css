@@ -378,7 +378,8 @@ dialog.popup:has(.quicker-api__model-manager) .popup-controls .menu_button:focus
 }
 
 #quicker_api_quick_left,
-#quicker_api_quick_right {
+#quicker_api_quick_right,
+#quicker_api_manual_route {
     flex: 0 0 var(--bottomFormBlockSize);
     width: var(--bottomFormBlockSize);
     height: var(--bottomFormBlockSize);
@@ -398,10 +399,16 @@ dialog.popup:has(.quicker-api__model-manager) .popup-controls .menu_button:focus
     order: 1;
 }
 
+#quicker_api_manual_route {
+    order: 2;
+}
+
 #quicker_api_quick_left:hover,
 #quicker_api_quick_left:focus-visible,
 #quicker_api_quick_right:hover,
-#quicker_api_quick_right:focus-visible {
+#quicker_api_quick_right:focus-visible,
+#quicker_api_manual_route:hover,
+#quicker_api_manual_route:focus-visible {
     opacity: 1;
     filter: none !important;
 }

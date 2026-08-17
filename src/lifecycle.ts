@@ -14,6 +14,7 @@ import { handleNativePresetChangeBefore, handleNativePresetChange, handlePresetR
 import { guardGenerationWhenBlocked } from './apply/guard.js';
 import { closeQuickActionMenu } from './quick-actions/menu-core.js';
 import { ensureQuickActionEntries, scheduleQuickActionEntries } from './quick-actions/menu.js';
+import { ensureManualRouteEntry } from './routing/manual-route-entry.js';
 import { normalizeQuickActionPlacement } from './domain/quick-action.js';
 import { profileMatchesNative } from './native/match.js';
 import { bindEvents } from './events.js';
@@ -79,6 +80,7 @@ export function watchForDomChanges(): void {
             node.matches?.('.qr--buttons, [data-quicker-api-qr-entry], #qr--bar, #qr--popout')
             || node.querySelector?.('.qr--buttons, [data-quicker-api-qr-entry], #qr--bar, #qr--popout'));
         if (entryMissing || qrChanged) scheduleQuickActionEntries();
+        if (!document.getElementById('quicker_api_manual_route')) ensureManualRouteEntry();
     });
     runtimeState.quickActionObserver.observe(document.body, { childList: true, subtree: true });
 }
