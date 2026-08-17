@@ -94,23 +94,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             debugLog('onGenerationStarted skip: no logical model', { activeGroupId: activeGroup.id });
             return;
         }
-        let unit: GroupRouteUnit | null = null;
-        const locked = state.manualLockedUnit;
-        if (locked) {
-            // 一次性锁定：消费即清除，下下次恢复随机
-            state.manualLockedUnit = null;
-            if (isManualLockApplicable(locked, activeGroup, logicalModelId)) {
-                recordGroupSelection(locked);
-                unit = locked;
-                debugLog('onGenerationStarted consumed manual lock', {
-                    vendorName: locked.vendor.name,
-                    entryLabel: locked.entry.label,
-                    realModel: locked.realModel,
-                });
-            } else {
-                debugLog('onGenerationStarted manual lock invalid, fallback to random');
-            }
-        }
+        let unit: GroupRouteUnit | null = consumeManualLock(activeGroup, logicalModelId);
         if (!unit) {
             const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId);
             if (!result.unit) {
@@ -189,19 +173,29 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
      * 约束：不弹 token 钳制确认窗——emit 是 await 的，弹窗会卡死独立流请求。
      */
     function routeFallbackIfNeeded(generateData: Record<string, any>): void {
-        const result = resolveFallbackRoute({
-            type: String(generateData?.type || 'normal'),
-            routingEnabled: deps.getRouting().enabled,
-            activeGroupId: deps.getActiveGroupId(),
-            groups: deps.getGroups(),
-            vendors: deps.getVendors(),
-        });
-        if (result.skipReason) {
-            debugLog('onChatCompletionSettingsReady fallback skip', { reason: result.skipReason });
-            return;
+        const type = String(generateData?.type || 'normal');
+        const activeGroup = deps.getGroups().find(group => group.id === deps.getActiveGroupId()) || deps.getGroups()[0] || null;
+        const logicalModelId = activeGroup?.currentLogicalModelId ?? '';
+        let unit: GroupRouteUnit | null = null;
+        if (type !== 'quiet' && type !== 'continue' && type !== 'impersonate') {
+            // 用户主动触发：优先消费手动锁定（对 MClite/独立流同样生效）
+            unit = consumeManualLock(activeGroup, logicalModelId);
         }
-        if (!result.unit) return;
-        const unit = result.unit;
+        if (!unit) {
+            const result = resolveFallbackRoute({
+                type,
+                routingEnabled: deps.getRouting().enabled,
+                activeGroupId: deps.getActiveGroupId(),
+                groups: deps.getGroups(),
+                vendors: deps.getVendors(),
+            });
+            if (result.skipReason) {
+                debugLog('onChatCompletionSettingsReady fallback skip', { reason: result.skipReason });
+                return;
+            }
+            if (!result.unit) return;
+            unit = result.unit;
+        }
         const clamps = computeVendorTokenClamps(unit.vendor, {
             maxContext: Number(oai_settings.openai_max_context) || 0,
             maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
@@ -213,6 +207,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         patchGenerateData(generateData, unit);
         setOnlineStatus('Valid');
+        toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
         debugLog('onChatCompletionSettingsReady fallback routed', {
             vendorName: unit.vendor.name,
             entryLabel: unit.entry.label,
@@ -266,6 +261,28 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                 toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录；连续失败将自动禁用。`);
             }
         }, USER_STOP_GRACE_MS);
+    }
+
+    /**
+     * 消费手动锁定（一次性）：若存在锁定且仍适用于当前分组/逻辑模型且可用，
+     * 记录 RPM 并返回锁定 unit；否则返回 null，调用方回退随机选路。
+     * 消费即清除，下下次恢复随机。
+     */
+    function consumeManualLock(activeGroup: Group | null, logicalModelId: string): GroupRouteUnit | null {
+        const locked = state.manualLockedUnit;
+        if (!locked) return null;
+        state.manualLockedUnit = null;
+        if (!isManualLockApplicable(locked, activeGroup, logicalModelId)) {
+            debugLog('manual lock invalid, fallback to random');
+            return null;
+        }
+        recordGroupSelection(locked);
+        debugLog('manual lock consumed', {
+            vendorName: locked.vendor.name,
+            entryLabel: locked.entry.label,
+            realModel: locked.realModel,
+        });
+        return locked;
     }
 
     function lockManualRoute(unit: GroupRouteUnit): void {

@@ -564,18 +564,9 @@ export function recordVendorFailure(vendor: Vendor, error: string, threshold: nu
     return false;
 }
 
-function ensureLogicalModelId(models: Map<string, LogicalModel>, name: string, id: string): string {
-    const existing = models.get(name);
-    if (existing) return existing.id;
-    const model: LogicalModel = { id: id || makeId('logical'), name, matchPattern: '' };
-    models.set(name, model);
-    return model.id;
-}
-
 /** 旧 Provider/Key 过渡实现 → Vendor / Group 迁移。
  *  只建立 Vendor 与 GroupEntry（Key）结构：apiKey/label/enabled 保留；旧模型数据（fetchedModels/mappings/逻辑模型）丢弃，等拉取重建。 */
 export function migrateProvidersToVendorModel(providers: Provider[] | undefined): VendorMigrationResult {
-    const logicalModels = new Map<string, LogicalModel>();
     const vendors: Vendor[] = [];
     const entries: GroupEntry[] = [];
 
@@ -601,19 +592,18 @@ export function migrateProvidersToVendorModel(providers: Provider[] | undefined)
         }
     }
 
-    const firstLogical = [...logicalModels.values()][0];
     const groups: Group[] = entries.length > 0
         ? [normalizeGroup({
             name: '默认分组',
             enabled: true,
-            currentLogicalModelId: firstLogical?.id || '',
+            currentLogicalModelId: '',
             entries,
         })]
         : [];
 
     return {
         vendors,
-        logicalModels: [...logicalModels.values()],
+        logicalModels: [],
         groups,
     };
 }
