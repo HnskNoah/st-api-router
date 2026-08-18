@@ -71,7 +71,9 @@ export function exportDebugLog(): void {
 declare global {
     interface Window {
         __quickerApiExportLog?: () => void;
+        __quickerApiLogBuffer?: () => string[];
     }
 }
 
 window.__quickerApiExportLog = exportDebugLog;
+window.__quickerApiLogBuffer = () => [...buffer];

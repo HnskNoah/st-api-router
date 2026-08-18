@@ -177,7 +177,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         });
         deps.beginGeneration?.();
         setOnlineStatus('Valid');
-        toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
         debugLog('onGenerationStarted done');
     }
 
@@ -192,12 +191,16 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         const active = state.active;
         if (active) {
             patchGenerateData(generateData, active.unit, customParamsForUnit(active.unit));
+            const source = generateData.chat_completion_source;
+            const endpoint = source === 'custom' ? generateData.custom_url : generateData.reverse_proxy;
+            const u = active.unit;
+            toastr.info(`Quicker Api：${u.vendor.name} / ${u.realModel}${source !== 'custom' ? '' : ' · 自定义源'}`, '已路由', { timeOut: 8000 });
             debugLog('onChatCompletionSettingsReady patch', {
-                vendorName: active.unit.vendor.name,
-                entryLabel: active.unit.entry.label,
-                realModel: active.unit.realModel,
-                source: generateData.chat_completion_source,
-                endpoint: generateData.custom_url ?? generateData.reverse_proxy,
+                vendorName: u.vendor.name,
+                entryLabel: u.entry.label,
+                realModel: u.realModel,
+                source,
+                endpoint,
                 model: generateData.model,
                 hasKey: Boolean(generateData.secret_id ?? generateData.proxy_password),
             });
@@ -270,11 +273,16 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     }
 
     function onGenerationStopped(): void {
+        const vendor = state.active?.unit?.vendor ?? null;
         debugLog('onGenerationStopped', {
             hadActive: Boolean(state.active),
             presetTransitionBlocked: runtimeState.presetTransitionBlocked,
-            activeVendor: state.active?.unit?.vendor?.name ?? null,
+            activeVendor: vendor?.name ?? null,
         });
+        if (vendor && vendor.window.length > 0) {
+            vendor.window.pop();
+            debugLog('onGenerationStopped RPM rolled back', { vendorName: vendor.name, windowSize: vendor.window.length });
+        }
         state.userStopPending = true;
         state.active = null;
         deps.endGeneration?.();

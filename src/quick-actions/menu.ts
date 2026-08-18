@@ -6,7 +6,26 @@ import { normalizeQuickActionPlacement, quickActionDisplayName } from '../domain
 import { queueQuickAction } from './runner.js';
 import { closeQuickActionMenu } from './menu-core.js';
 import { manageQuickActions } from './manager.js';
-import { debugLog } from '../debug.js';
+import { debugLog, exportDebugLog } from '../debug.js';
+import { Popup } from '@sillytavern/scripts/popup';
+import { POPUP_TYPE } from '@sillytavern/scripts/popup';
+
+function showLogViewer(): void {
+    const lines = (window as any).__quickerApiLogBuffer?.() ?? [];
+    const text = lines.length > 0 ? lines.slice(-200).join('\n') : '暂无日志。';
+    const content = $('<div>').append(
+        $('<pre>').css({ maxHeight: '60vh', overflow: 'auto', fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }).text(text),
+        $('<div style="margin-top:8px;display:flex;gap:8px">').append(
+            $('<button class="menu_button" type="button">导出日志</button>').on('click', exportDebugLog),
+            $('<button class="menu_button" type="button">复制日志</button>').on('click', () => {
+                void navigator.clipboard.writeText(text);
+                toastr.success('日志已复制到剪贴板。');
+            }),
+        ),
+    );
+    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { large: true, wider: true, okButton: false });
+    void popup.show();
+}
 
 export function openQuickActionMenu(anchor: HTMLElement, placement: string): void {
     if (runtimeState.quickActionMenu?.data('anchor') === anchor) return closeQuickActionMenu();
@@ -21,6 +40,13 @@ export function openQuickActionMenu(anchor: HTMLElement, placement: string): voi
         )
         .on('click', () => { closeQuickActionMenu(); void manageQuickActions(); });
     menu.append(settingsItem);
+    const logItem = $('<li class="list-group-item ctx-item" role="listitem" tabindex="0" data-quicker-api-actionable="true" title="查看路由日志">')
+        .append(
+            $('<div class="qr--button-icon fa-solid fa-file-lines">'),
+            $('<div class="qr--button-label">').text('查看日志'),
+        )
+        .on('click', () => { closeQuickActionMenu(); showLogViewer(); });
+    menu.append(logItem);
     if (!actions.length) menu.append($('<li class="list-group-item ctx-item quicker-api__quick-menu-empty" role="listitem" aria-disabled="true">').append(
         $('<div class="qr--button-icon fa-solid qr--hidden">'),
         $('<div class="qr--button-label">').text('暂无方案'),
