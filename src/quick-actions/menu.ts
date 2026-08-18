@@ -14,7 +14,7 @@ function showLogViewer(): void {
     const lines = (window as any).__quickerApiLogBuffer?.() ?? [];
     const text = lines.length > 0 ? lines.slice(-200).join('\n') : '暂无日志。';
     const content = $('<div>').append(
-        $('<pre>').css({ maxHeight: '60vh', overflow: 'auto', fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }).text(text),
+        $('<pre>').css({ maxHeight: '60vh', overflow: 'auto', fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }).text(text),
         $('<div style="margin-top:8px;display:flex;gap:8px">').append(
             $('<button class="menu_button" type="button">导出日志</button>').on('click', exportDebugLog),
             $('<button class="menu_button" type="button">复制日志</button>').on('click', () => {
@@ -23,7 +23,7 @@ function showLogViewer(): void {
             }),
         ),
     );
-    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { large: true, wider: true, okButton: false });
+    const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', { large: true, wider: true, leftAlign: true, okButton: false });
     void popup.show();
 }
 
