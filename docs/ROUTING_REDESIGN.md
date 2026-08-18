@@ -1,4 +1,3 @@
-# Quicker Api 路由重设计（Vendor / Model / Group）
 
 ## 背景与目标
 
