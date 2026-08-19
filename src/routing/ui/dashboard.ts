@@ -43,7 +43,7 @@ export function renderDashboard(
         const hasParams = Boolean(model.customIncludeBody || model.customExcludeBody || model.customIncludeHeaders);
         const paramsBtn = $('<button class="csl-model-params" type="button" role="button" tabindex="0"></button>')
             .attr('title', hasParams ? '编辑附加参数（已配置）' : '配置路由附加参数（include/exclude body / 请求头）')
-            .append($(`<i class="fa-solid ${hasParams ? 'fa-sliders' : 'fa-sliders'}" style="${hasParams ? 'color:#5b9bd5' : 'opacity:0.55'}"></i>`))
+            .append($(`<i class="fa-solid fa-sliders" style="${hasParams ? 'color:#5b9bd5' : 'opacity:0.55'}"></i>`))
             .on('click', e => { e.stopPropagation(); openLogicalParamsEditor(model.id, () => {}); })
             .on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogicalParamsEditor(model.id, () => {}); } });
         top.append(paramsBtn);
