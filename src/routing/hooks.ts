@@ -208,6 +208,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                 endpoint,
                 model: generateData.model,
                 hasKey: Boolean(generateData.secret_id ?? generateData.proxy_password),
+                stConnectionSynced: true,
             });
             return;
         }
@@ -276,6 +277,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             model: generateData.model,
             hasKey: Boolean(generateData.secret_id ?? generateData.proxy_password),
             tokenClampsSkipped: needsApply,
+            stConnectionSynced: true,
         });
     }
 
