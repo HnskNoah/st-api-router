@@ -7,12 +7,13 @@ SillyTavern 扩展：按逻辑模型在各 Vendor + Key 之间自动路由 API �
 | 文档 | 说明 |
 |------|------|
 | **[ROUTING_REDESIGN.md](docs/ROUTING_REDESIGN.md)** | 架构设计：概念模型、关系图、路由流程、实现状态 |
-| **[PER_MODEL_HEALTH_DESIGN.md](docs/PER_MODEL_HEALTH_DESIGN.md)** | 设计稿：Key × 模型级被动健康检测与熔断（**未实现**） |
+| **[PER_MODEL_HEALTH_DESIGN.md](docs/PER_MODEL_HEALTH_DESIGN.md)** | 设计稿：Key × 模型级被动健康检测与熔断（**已实现**，见 model-health.ts） |
 | **[CALL_CHAIN.md](docs/CALL_CHAIN.md)** | 调用链：MClite 发送消息到 AI 回复的完整流程，含路由触发对比 |
 | **[HANDOFF_GATEWAY_DESIGN_REVIEW.md](docs/HANDOFF_GATEWAY_DESIGN_REVIEW.md)** | 外部设计评审：聚合路由网关方案与本项目的对照，含下一步建议 |
-| **[AGENTS.md](../AGENTS.md)** | **AI agent 项目指南**：硬约束、架构概览、编码规范、设计决策（接手 agent 优先读） |
+| **[AGENTS.md](../AGENTS.md)** | **AI agent 冷启动指南**：架构图、核心机制、目录、硬约束、编码规范（接手 agent 优先读） |
 | **[DEAD_CODE_AND_TESTS.md](docs/DEAD_CODE_AND_TESTS.md)** | 过度设计与无用测试排查记录：死导出清单、已删/保留测试、待处理项 |
-| **[UI_REDESIGN.md](docs/UI_REDESIGN.md)** | UI 重设计方案与模块拆分记录（桌面三栏 / 手机底部面板） |
+| **[UI_REDESIGN.md](docs/UI_REDESIGN.md)** | UI 重设计：桌面三栏 / 手机底部面板 / 已完成项记录 |
+| **[CONNECTION_STATE_PLAN.md](docs/CONNECTION_STATE_PLAN.md)** | 连接状态方案：空占位纯拦截、为何不 trigger source change、避免 /v1/models |
 
 ## 安装
 
@@ -36,18 +37,17 @@ SillyTavern 扩展：按逻辑模型在各 Vendor + Key 之间自动路由 API �
 | 手动路由锁定 | ✅ 已实现 | 锁定到下一次生成，之后恢复随机 |
 | 手动路由按钮 | ✅ 已实现 | 发送栏旁快捷按钮 |
 | Vendor 级 RPM 限流 | ✅ 已实现 | 同一 Vendor 全局限流 |
-| Vendor 级失败自动禁用 | ✅ 已实现 | 连续失败达阈值禁用整个 Vendor |
-| Key × 模型级熔断 | ✅ 已实现 | 按 GroupEntry(Key) × realModel 粒度，指数退避冷却，半开用真实流量验证 |
+| 模型级（Key × 模型）熔断 | ✅ 已实现 | 按 GroupEntry(Key) × realModel 粒度，指数退避冷却，半开用真实流量验证；不自动禁用整个 Vendor |
 | maxContext 钳制 | ✅ 已实现 | 路由时弹窗确认钳制 token 上限 |
 | 逻辑模型附加参数 | ✅ 已实现 | 自定义请求头/体（custom source） |
 | Vendor / Group 管理面板 | ✅ 已实现 | 拉取模型、映射、编辑、删除 |
 | 便捷按钮（Quick Actions） | ✅ 已实现 | 发送栏/QR 按钮栏一键切换预设+模型 |
-| 路由控制台（三栏面板） | ✅ 已实现 | 浮层式三栏面板：左仪表盘 + 中路由详情 + 右管理 tab |
-| 密钥管理 | ✅ 已实现 | 自动写入 secret、一键清除、健康检查 |
+| 路由控制台 | ✅ 已实现 | 浮层：左仪表盘 + 中路由详情 + 右管理（设置/Vendor） |
+| 手机端底部面板 | ✅ 已实现 | ≤720px 自动切底部 Sheet（模型列表+管理） |
+| 密钥管理 | ✅ 已实现 | 自动写入 secret、一键清除、Key 增删 |
 | 批量创建逻辑模型 | ✅ 已实现 | 核心名匹配自动映射 |
 | 逻辑模型归并 | ✅ 已实现 | 一键合并两个逻辑模型 |
 | 导入导出 | ✅ 已实现 | JSON 全量导出（含 Key）、txt 模型列表导出 |
-| 预设/Profile 兼容 | ✅ 已实现 | 旧 Profile 折叠保留兼容入口 |
 
 ## 开发
 
