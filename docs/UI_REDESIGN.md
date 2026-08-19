@@ -319,40 +319,56 @@ ST 侧栏空间金贵，路由配置的复杂度不该挤在里面。改为**点
 
 ## 8. 当前 UI 待办 / 缺口（2026-08 讨论记录）
 
-> 控制台（三栏浮层）已落地，以下是待补的设计缺口，按优先级排。
+> 控制台（三栏浮层）已落地，以下是待补的设计缺口与已落地项，按优先级排。
 
-### 8.1 Vendor 卡片重设计（用户：「pill 被挤成竖排」）
+### 8.1 Vendor 卡片重设计（已完成）
 
-现状问题：Vendor 头部一行把「名称 + 格式 + 成功率 + 状态徽标 + 编辑/拉取」挤在一起，名称无法横排、信息密度过高。
+- 头部重新布局：名称横排主行（flex:1），格式/成功率抽到 `.csl-vendor-subrow` 副行 ✅
+- 健康**正常模型聚合折叠**：正常收进「🔽 N 个正常」折叠，异常(冷却/不可恢复)直接显示 ✅
+- 冷却模型**手动恢复改弹窗确认**（`Popup.show.confirm`）✅
 
-方向：
-- 头部重新布局，让 `名称` 横排显眼，格式/状态/成功率弱化为辅助行
-- 健康**正常模型聚合折叠**：默认只露冷却/异常的明细，正常收进「全部/正常 N 个」折叠，减少铺开
-- 冷却模型**手动恢复改为：点 pill → 弹窗确认**（现行内 ↻ 保留但仅异常时显示）
+### 8.2 Vendor Key 管理（已完成）
 
-### 8.2 Vendor 无法添加/删除 Key（缺口）
+- 展开区底部「＋ 添加 Key」按钮（`normalizeGroupEntry` 追加到当前分组该 Vendor）✅
+- （删除 Key 未加：保留在展开区改 key 值即可，可后续补）
 
-现状：`right-vendor.ts` 展开区只遍历现有 Key（enable ☐ / label / key 输入框 / 健康 pill），**没有「添加 Key」「删除 Key」入口**。
+### 8.3 禁用 Vendor / Key 排列表底部（已完成）
 
-要补：
-- 展开区底部「＋ 添加 Key」按钮（追加 GroupEntry）
-- 每个 Key 行加「🗑 删除」按钮（删对应 GroupEntry）
+Vendor 列表与 Key 列表按「启用在前、禁用在后」（各自名称/label 序）排序。✅
 
-### 8.3 禁用 Vendor / Key 排列表底部
-
-已定：Vendor 列表与 Key 列表按「启用在前、禁用在后」（各自名称序）排序。
-
-### 8.4 仪表盘当前逻辑模型置顶（已实现）
+### 8.4 仪表盘当前逻辑模型置顶（已完成）
 
 dashboard 排序：当前分组选中的逻辑模型置顶 + `is-current` 高亮。✅
 
-### 8.5 右栏聚合（已部分实现）
+### 8.5 右栏聚合（已完成）
 
 - 「刷新全部模型」移到 Vendor tab 顶部（消除 route/vendor 重复）✅
-- 逻辑模型操作（创建/归类/附加参数）仍分散在 route/mapping → 待统一规划
+- **映射 tab 并入设置 tab**：右栏 4→3 tab（设置/Vendor/路由），设置 = 路由参数 + 映射规则/忽略 ✅
+- **逻辑模型附加参数编辑入口移到左栏**：dashboard 每行 ⚙ 按钮（`logical-params-editor.ts` 共享）✅
 
-### 8.6 优先级（用户指定）
+### 8.6 控件复用（已完成）
 
-1. **控件级复用**（抽 `routing/ui/controls.ts`：field/下拉/select2/Popup 封装，方案管理 + 控制台共用）—— **先做**
-2. 记录本缺口计划 → 更新文档（本文档）
-3. Vendor 卡片重设计 / Key 添加删除 / 禁用排序 / pill 交互
+- `routing/ui/controls.ts` 的 `showEditorDialog`：统一编辑弹窗（标题/保存/取消/extraActions），6 个弹窗迁移 ✅
+- quick-actions（方案管理）保持独立视觉体系，不强行接入（用户决定）
+
+### 8.7 连接状态：启动置空地址占位（已完成，2026-08）
+
+**问题**：拦截模式不写 `oai_settings`，导致 ST「自动连接上次服务器」可能连到上次路由/手动配置的 vendor。
+
+**方案**：`initQuickerApi` 调 `ensureEmptyConnectionPlaceholder()`：把连接置为 **custom + 空 URL + 空 model** + `saveSettingsDebounced()`，并 `setOnlineStatus('Valid')`。
+- 持久化空地址 → 下次启动 `isValidUrl('')` false，RA_autoconnect 无 target 可连（治本）
+- source=custom 同时切断 RA_autoconnect 的 deepseek 分支
+- 只改 oai_settings + 下拉显示，**不 trigger('change')**（避免 reconnect / /v1/models）
+- 真实连接由拦截模式（`patchGenerateData`）生成时接管
+
+### 8.8 优先级（用户指定）
+
+1. 控件级复用（已完成）
+2. 文档更新（本文档）
+3. Vendor 卡片 / Key 增删 / 禁用排序 / pill 交互（已完成）
+4. 启动空占位（已完成）
+
+### 8.9 待办（下一步）
+
+- **手机端底部面板**（UI_REDESIGN §3 蓝图，未实现）
+
