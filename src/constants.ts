@@ -3,7 +3,7 @@ import type { FormatConfig, FormatName, QuickerApiSettings, QuickActionPlacement
 
 export const MODULE_NAME = 'quickerApi';
 export const LEGACY_MODULE_NAME = 'customOpenAIProfiles';
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 export const EMPTY_SECRET_LABEL = 'Quicker Api · No key';
 
 export const SUPPORTED_SOURCES = new Set([
@@ -73,4 +73,6 @@ export const DEFAULT_SETTINGS: QuickerApiSettings = Object.freeze({
     blockedSecretKeys: {},
     quickActions: [],
     quickActionPlacement: 'leftSendForm',
+    mappingRules: [],
+    ignoredModels: [],
 });

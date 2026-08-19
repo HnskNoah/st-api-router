@@ -15,6 +15,7 @@ import {
     migrateProvidersToVendorModel,
     normalizeGroups,
     normalizeLogicalModels,
+    normalizeMappingRules,
     normalizeVendors,
     resetGroupRuntimeState,
     resetVendorRuntimeState,
@@ -109,6 +110,10 @@ export function initializeSettings(): boolean {
         ? value.quickActions.map(normalizeQuickAction).filter(action => action.preset || action.model)
         : [];
     value.quickActions.sort((a, b) => a.sequence - b.sequence).forEach((action, index) => { action.sequence = index; });
+    value.mappingRules = normalizeMappingRules(value.mappingRules);
+    value.ignoredModels = Array.isArray(value.ignoredModels)
+        ? value.ignoredModels.map(item => String(item || '').trim()).filter(Boolean)
+        : [];
     for (const key of Object.keys(value.blockedSecretKeys)) {
         if (!Object.values(FORMATS).some(config => config.secretKey === key)) delete value.blockedSecretKeys[key];
     }

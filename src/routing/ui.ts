@@ -34,8 +34,9 @@ import {
 } from '../domain/vendor.js';
 import { clearQuickApiSecrets, ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import { isModelInCooldown, modelCooldownRemainingMs, recordModelSuccess } from '../domain/model-health.js';
+import { initMappingTools } from './ui/mapping-tools.js';
 import { exportDebugLog } from '../debug.js';
-import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
+import type { Group, GroupEntry, LogicalModel, MappingRule, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
 export interface RoutingUIDeps {
     getVendors(): Vendor[];
@@ -44,6 +45,8 @@ export interface RoutingUIDeps {
     getActiveGroupId(): string | null;
     setActiveGroupId(id: string | null): void;
     getRouting(): RoutingSettings;
+    getMappingRules(): MappingRule[];
+    getIgnoredModels(): string[];
     save(): void;
 }
 
@@ -228,6 +231,30 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
             /* ── 编辑弹窗 ── */
             .st-router-editor { max-height: 70vh; overflow-y: auto; padding-right: 4px; }
+
+            /* ── 映射规则与忽略区 ── */
+            .st-router-rules { display: flex; flex-direction: column; gap: 6px; }
+            .st-router-rule-row {
+                display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+                border: 1px solid rgba(128,128,128,0.22); border-radius: 6px;
+                padding: 6px 10px; background: rgba(0,0,0,0.08);
+            }
+            .st-router-rule-row > code {
+                font-family: monospace; font-size: 12px; word-break: break-all;
+                background: rgba(255,255,255,0.06); border-radius: 4px; padding: 1px 6px;
+            }
+            .st-router-rule-target { font-size: 12px; color: #9cf; flex: none; }
+            .st-router-rule-actions { margin-left: auto; display: flex; gap: 4px; flex: none; }
+            .st-router-ignored { display: flex; flex-wrap: wrap; gap: 5px; }
+            .st-router-ignore-pill {
+                display: inline-flex; align-items: center; gap: 5px;
+                font-size: 11px; padding: 2px 8px; border-radius: 10px;
+                border: 1px solid rgba(128,128,128,0.3); background: rgba(0,0,0,0.08);
+            }
+            .st-router-ignore-pill .unignore-btn { cursor: pointer; opacity: 0.6; }
+            .st-router-ignore-pill .unignore-btn:hover { opacity: 1; color: #fff; }
+            .st-router-ignore-pill--auto { border-style: dashed; color: #999; }
+            .st-router-empty--muted { font-size: 12px; color: #999; padding: 6px 2px; }
         `).appendTo(document.head);
     }
     const panel = $(`
@@ -299,6 +326,23 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
                 <div id="st_router_logical" class="st-router-real-fold"></div>
                 <div id="st_router_mapped" class="st-router-real-fold"></div>
                 <div id="st_router_unmapped" class="st-router-real-fold"></div>
+            </div>
+
+            <div class="st-router-section">
+                <div class="st-router-section-head">
+                    <span class="st-router-step-badge">4</span><span class="st-router-section-title">映射规则与忽略</span>
+                    <div class="st-router-section-tools">
+                        <button id="st_router_map_oneclick" class="menu_button" type="button" title="按核心名一键归类所有未映射真实模型，跳过特殊变体（embedding/reranker/search 等）"><i class="fa-solid fa-wand-magic-sparkles"></i><span>一键归类全部</span></button>
+                        <button id="st_router_add_rule" class="menu_button" type="button" title="添加手动批量映射规则"><i class="fa-solid fa-plus"></i><span>添加规则</span></button>
+                    </div>
+                </div>
+                <div id="st_router_rule_list" class="st-router-rules"></div>
+                <div id="st_router_autonew_hint" class="st-router-empty"></div>
+                <div class="st-router-section-head" style="margin-top:10px;">
+                    <span style="flex:auto;font-size:12px;color:#999;">自动忽略（特殊变体）与手动忽略清单</span>
+                    <button id="st_router_toggle_ignored" class="menu_button" type="button" style="flex:none"><span>显示忽略清单</span></button>
+                </div>
+                <div id="st_router_ignored" class="st-router-ignored"></div>
             </div>
         </section>
     `);
@@ -1577,6 +1621,16 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         if (!$(e.target).closest('#st_router_more, #st_router_more_menu').length) {
             panel.find('#st_router_more_menu').hide();
         }
+    });
+
+    // 映射工具（规则 / 忽略 / 一键归类）：独立模块，避免继续膨胀 ui.ts
+    initMappingTools(panel, {
+        getGroups: deps.getGroups,
+        getLogicalModels: deps.getLogicalModels,
+        getMappingRules: deps.getMappingRules,
+        getIgnoredModels: deps.getIgnoredModels,
+        save: deps.save,
+        refresh: () => { renderModelList(); renderGroupSummary(); },
     });
 
     return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderModelList(); } };

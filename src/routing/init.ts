@@ -2,7 +2,7 @@
 // initRouting 由 lifecycle 在 Profile 面板渲染后调用；teardownRouting 在 teardown 时清理。
 
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
-import { activeGroup, groups, logicalModels, routingSettings, settings, vendors } from '../settings/access.js';
+import { activeGroup, groups, ignoredModels, logicalModels, mappingRules, routingSettings, settings, vendors } from '../settings/access.js';
 import { createFailureObserver } from './failure-observer.js';
 import { createRoutingHooks } from './hooks.js';
 import { initRoutingUI } from './ui.js';
@@ -46,6 +46,8 @@ export function initRouting(): void {
             saveSettingsDebounced();
         },
         getRouting: routingSettings,
+        getMappingRules: mappingRules,
+        getIgnoredModels: ignoredModels,
         save: () => saveSettingsDebounced(),
     });
     setManualRouteLocker(unit => hooks.lockManualRoute(unit));

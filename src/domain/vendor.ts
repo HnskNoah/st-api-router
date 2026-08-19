@@ -9,6 +9,7 @@ import type {
     Group,
     GroupEntry,
     LogicalModel,
+    MappingRule,
     ModelFailureKind,
     Provider,
     Vendor,
@@ -345,6 +346,116 @@ export function unmapRealModel(groups: Group[], realModel: string): number {
         removed += before - entry.mappings.length;
     }
     return removed;
+}
+
+// ── 手动批量映射规则（持久化）──
+
+export function normalizeMappingRule(raw: Record<string, any> | undefined): MappingRule {
+    return {
+        id: normalizeText(raw?.id) || makeId('mapping-rule'),
+        pattern: String(raw?.pattern ?? '').trim().slice(0, 500),
+        logicalModelId: normalizeText(raw?.logicalModelId).slice(0, 200),
+    };
+}
+
+export function normalizeMappingRules(raw: unknown): MappingRule[] {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    return raw.map(item => normalizeMappingRule(item)).filter(rule => {
+        if (!rule.pattern) return false;
+        if (seen.has(rule.id)) return false;
+        seen.add(rule.id);
+        return true;
+    });
+}
+
+/** 编译规则正则；非法正则返回 null。 */
+function compileRuleRegex(pattern: string): RegExp | null {
+    try {
+        const re = new RegExp(String(pattern || ''), 'i');
+        // 匹配空串空正则
+        if (!String(pattern || '').trim()) return null;
+        return re;
+    } catch {
+        return null;
+    }
+}
+
+/** 预览：命中该正则的真实模型名（跨所有 Key 去重），只读不改。返回 { names, count }。 */
+export function previewMappingRule(groups: Group[], pattern: string): { names: string[]; count: number } {
+    const re = compileRuleRegex(pattern);
+    if (!re) return { names: [], count: 0 };
+    const matched = new Set<string>();
+    for (const entry of allGroupEntries(groups)) {
+        for (const raw of entry.fetchedModels) {
+            const name = String(raw || '').trim();
+            if (name && re.test(name)) matched.add(name);
+        }
+    }
+    const names = [...matched].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    return { names, count: names.length };
+}
+
+/**
+ * 应用批量映射规则：对所有 Key 中「已拉取且命中正则」的真实模型，映射到目标 logicalModelId（已有映射则改归属）。
+ * 返回受影响条目数。命中但 current logicalModelId 相同的条目不计入。
+ */
+export function applyMappingRule(groups: Group[], rule: MappingRule): number {
+    const re = compileRuleRegex(rule?.pattern);
+    if (!re || !rule?.logicalModelId) return 0;
+    let touched = 0;
+    for (const entry of allGroupEntries(groups)) {
+        for (const raw of entry.fetchedModels) {
+            const name = String(raw || '').trim();
+            if (!name || !re.test(name)) continue;
+            const existing = entry.mappings.find(mapping => mapping.realModel === name);
+            if (existing) {
+                if (existing.logicalModelId !== rule.logicalModelId) {
+                    existing.logicalModelId = rule.logicalModelId;
+                    touched++;
+                }
+            } else {
+                entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: rule.logicalModelId! });
+                touched++;
+            }
+        }
+    }
+    return touched;
+}
+
+// ── 忽略清单 ──
+
+/** 计算跨所有 Key 已拉取的真实模型中「特殊变体」（embedding/reranker/search/thinking/image/cache）。 */
+export function specialVariantModels(groups: Group[]): string[] {
+    const names = new Set<string>();
+    for (const entry of allGroupEntries(groups)) {
+        for (const raw of entry.fetchedModels) {
+            const name = String(raw || '').trim();
+            if (name && isSpecialVariant(name)) names.add(name);
+        }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+/** 是否被忽略：用户手动忽略清单 或 特殊变体。 */
+export function isIgnoreModel(ignoredModels: string[], name: string): boolean {
+    const n = String(name || '').trim().toLowerCase();
+    if (!n) return true;
+    if (isSpecialVariant(name)) return true;
+    return (ignoredModels || []).some(item => String(item).trim().toLowerCase() === n);
+}
+
+export function addIgnoreModel(ignoredModels: string[], name: string): string[] {
+    const n = String(name || '').trim();
+    if (!n) return ignoredModels;
+    const result = [...(ignoredModels || [])];
+    if (!result.some(item => String(item).trim().toLowerCase() === n.toLowerCase())) result.push(n);
+    return result;
+}
+
+export function removeIgnoreModel(ignoredModels: string[], name: string): string[] {
+    const n = String(name || '').trim().toLowerCase();
+    return (ignoredModels || []).filter(item => String(item).trim().toLowerCase() !== n);
 }
 
 /** 合并逻辑模型：把源逻辑模型名下的全部真实模型映射到目标逻辑模型，删除源逻辑模型，并修正分组当前模型指针。

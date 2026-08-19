@@ -110,6 +110,15 @@ export interface VendorModelMapping {
     logicalModelId: string;
 }
 
+/** 手动批量映射规则：对命中的真实模型名批量映射到目标逻辑模型。持久化，手动建立。 */
+export interface MappingRule {
+    id: string;
+    /** 匹配真实模型名的正则（大小写不敏感）。 */
+    pattern: string;
+    /** 目标逻辑模型 id。 */
+    logicalModelId: string;
+}
+
 /** Vendor（模型商）：全局限流、健康状态、RPM/上下文限制都挂在 Vendor 级；模型数据按 Key 挂在 GroupEntry。 */
 export interface Vendor {
     id: string;
@@ -209,6 +218,10 @@ export interface QuickerApiSettings {
     blockedSecretKeys: Record<string, string>;
     quickActions: QuickAction[];
     quickActionPlacement: QuickActionPlacement;
+    /** 手动批量映射规则（持久化）。 */
+    mappingRules: MappingRule[];
+    /** 全局忽略的真实模型名清单（含手动忽略；特殊变体自动忽略，不持久化进此数组）。 */
+    ignoredModels: string[];
 }
 
 export interface NativeSnapshot {
