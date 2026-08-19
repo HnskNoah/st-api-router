@@ -69,33 +69,37 @@ export function restoreConnection(snapshot: Record<string, string>): void {
     }
 }
 
+/** 同步 source 下拉显示但不触发 change（避免 ST 的 reconnectOpenAi → /v1/models）。 */
+function setSourceSelect(source: string): void {
+    const el = $('#chat_completion_source');
+    if (el.length && String(el.val() ?? '') !== source) {
+        el.val(source);
+    }
+}
+
 function applyConnectionFields(format: string, endpoint: string, apiKey: string, model: string): void {
     if (format === 'deepseek') {
-        const wasDeepseek = String(oai_settings.chat_completion_source) === chat_completion_sources.DEEPSEEK;
         oai_settings.chat_completion_source = chat_completion_sources.DEEPSEEK;
         oai_settings.reverse_proxy = endpoint;
         oai_settings.deepseek_model = model;
         if (apiKey && secret_state) secret_state[SECRET_KEYS.DEEPSEEK] = apiKey;
-        if (!wasDeepseek) syncInput('#chat_completion_source', chat_completion_sources.DEEPSEEK, 'change');
+        setSourceSelect(chat_completion_sources.DEEPSEEK);
         syncInput('#openai_reverse_proxy', endpoint);
         syncInput('#model_deepseek_select', model, 'change');
         if (apiKey) syncInput('#api_key_deepseek', apiKey);
         return;
     }
 
-    const wasCustom = String(oai_settings.chat_completion_source) === chat_completion_sources.CUSTOM;
     oai_settings.chat_completion_source = chat_completion_sources.CUSTOM;
     oai_settings.custom_url = endpoint;
     oai_settings.custom_model = model;
     oai_settings.custom_api_format = CUSTOM_API_FORMAT_VALUES[format] ?? 'openai_compat';
     if (apiKey && secret_state) secret_state[SECRET_KEYS.CUSTOM] = apiKey;
 
+    setSourceSelect(chat_completion_sources.CUSTOM);
     syncInput('#custom_api_url_text', endpoint);
     syncInput('#custom_model_id', model);
     if (apiKey) syncInput('#api_key_custom', apiKey);
-    if (!wasCustom) {
-        syncInput('#chat_completion_source', chat_completion_sources.CUSTOM, 'change');
-    }
 }
 
 /** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名。token 钳制由调用方按确认结果决定。 */
