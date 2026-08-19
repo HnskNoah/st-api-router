@@ -217,6 +217,16 @@ export function ensureConsolePanelStyles(): void {
         .csl-health-pill-state { font-weight: 600; }
         .csl-health-reset { cursor: pointer; opacity: 0.6; font-size: 10px; }
         .csl-health-reset:hover { opacity: 1; color: #fff; }
+        .csl-health-normal { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+        .csl-health-normal-toggle {
+            cursor: pointer; font-size: 10px; color: #888;
+            border: 1px solid rgba(128,128,128,0.3); border-radius: 8px;
+            padding: 1px 6px; user-select: none;
+            transition: color 0.12s, border-color 0.12s;
+        }
+        .csl-health-normal-toggle:hover { color: #ccc; border-color: rgba(128,128,128,0.5); }
+        .csl-health-normal-pool { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+        .csl-vendor-health { display: flex; flex-wrap: wrap; gap: 4px; flex-basis: 100%; padding: 2px 0; align-items: center; }
 
         /* ── 编辑弹窗内 ── */
         .csl-editor { max-height: 65vh; overflow-y: auto; padding-right: 4px; }

@@ -15,6 +15,7 @@ import {
     sortedLogicalModels,
 } from '../../domain/vendor.js';
 import { normalizeRoutingSettings } from '../../constants.js';
+import { showEditorDialog } from './controls.js';
 import { exportDebugLog } from '../../debug.js';
 import { clearQuickApiSecrets } from '../../secrets/api.js';
 import { escapeHtml } from '../../utils/text.js';
@@ -108,30 +109,26 @@ export function renderRightRoute(
         });
     const addLogicalBtn = $('<button class="menu_button" type="button" title="手动添加逻辑模型"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>')
         .on('click', () => {
-            const content = $('<div></div>');
+            const content = $('<div class="csl-editor"></div>');
             const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="逻辑模型名称，如：DeepSeek 系">');
             content.append(
                 $('<div class="csl-empty">').text('逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型。'),
                 cslField('名称', nameInput),
             );
-            const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>添加</span></button>');
-            const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-            const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
-            content.append(actions);
-            const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
-            saveBtn.on('click', async () => {
-                const name = String(nameInput.val() ?? '').trim().slice(0, 120);
-                if (!name) return toastr.warning('请填写逻辑模型名称。');
-                const normalized = normalizeLogicalModel({ name });
-                logicalModels().push(normalized);
-                saveSettingsNow();
-                onRefreshDashboard();
-                onRefreshVendor();
-                await popup.completeCancelled();
-                toastr.success(`逻辑模型「${name}」已添加。`);
+            showEditorDialog({
+                title: '添加逻辑模型',
+                content,
+                onSave: () => {
+                    const name = String(nameInput.val() ?? '').trim().slice(0, 120);
+                    if (!name) { toastr.warning('请填写逻辑模型名称。'); return false; }
+                    const normalized = normalizeLogicalModel({ name });
+                    logicalModels().push(normalized);
+                    saveSettingsNow();
+                    onRefreshDashboard();
+                    onRefreshVendor();
+                },
+                successMessage: `逻辑模型「${nameInput.val()}」已添加。`,
             });
-            cancelBtn.on('click', () => void popup.completeCancelled());
-            void popup.show();
         });
     modelRow.append(buildLogicalBtn, addLogicalBtn);
     rows.append(modelRow);
@@ -324,22 +321,19 @@ function openGroupEditor(group: Group, onRefreshDashboard: () => void, onRefresh
         cslField('Vendor + Key 条目', $('<div></div>').append(entryList, addEntryBtn), '每个条目 = 一个可用 Key；选 Vendor、填 Key；同一 Vendor 可多条（多条会一起参与随机，且共享该 Vendor 的 RPM 限制）'),
     );
 
-    const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-    const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
-    content.append(actions);
-    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
-    saveBtn.on('click', async () => {
-        draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || '分组';
-        draft.enabled = enabledCheck.prop('checked');
-        draft.currentLogicalModelId = String(logicalSelect.val() || '');
-        Object.assign(group, normalizeGroup(draft));
-        saveSettingsNow();
-        onRefreshVendor();
-        onRefreshDashboard();
-        await popup.completeCancelled();
-        toastr.success(`分组「${draft.name}」已保存。`);
+    showEditorDialog({
+        title: `编辑分组「${draft.name}」`,
+        content,
+        large: true,
+        onSave: () => {
+            draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || '分组';
+            draft.enabled = enabledCheck.prop('checked');
+            draft.currentLogicalModelId = String(logicalSelect.val() || '');
+            Object.assign(group, normalizeGroup(draft));
+            saveSettingsNow();
+            onRefreshVendor();
+            onRefreshDashboard();
+        },
+        successMessage: `分组「${draft.name}」已保存。`,
     });
-    cancelBtn.on('click', () => void popup.completeCancelled());
-    void popup.show();
 }

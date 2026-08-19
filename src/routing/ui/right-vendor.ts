@@ -195,11 +195,13 @@ export function renderRightVendor(
                     });
                 keyRow.append(keyInput);
 
-                // 模型健康胶囊：正常淡化，冷却/异常高亮并显示状态
+                // 模型健康胶囊：异常(冷却/不可恢复)直接显示；正常聚合进「N 个正常」折叠
                 const now = Date.now();
                 const realModels = [...new Set(entry.mappings.map(mapping => mapping.realModel))];
                 if (realModels.length > 0) {
-                    const healthPills = $('<span class="csl-vendor-health"></span>');
+                    const healthPills = $('<div class="csl-vendor-health"></div>');
+                    const abnormalPills: JQuery<HTMLElement>[] = [];
+                    const normalPills: JQuery<HTMLElement>[] = [];
                     for (const realModel of realModels) {
                         const isCooling = isModelInCooldown(entry, realModel, now);
                         const remainingMs = entry.circuitsByModel?.[realModel] ? entry.circuitsByModel[realModel] - now : 0;
@@ -220,7 +222,9 @@ export function renderRightVendor(
                         pill.prop('title', `${realModel}${label ? `：${label}` : '（正常）'}`);
                         if (isCooling) {
                             const resetBtn = $('<span class="csl-health-reset" title="手动恢复"><i class="fa-solid fa-rotate-left"></i></span>')
-                                .on('click', () => {
+                                .on('click', async () => {
+                                    const confirmed = await Popup.show.confirm('手动恢复', `确定手动恢复「${realModel}」的冷却？`);
+                                    if (!confirmed) return;
                                     recordModelSuccess(entry, realModel);
                                     saveSettingsNow();
                                     renderRightVendor(rightEl, onRefreshDashboard);
@@ -229,7 +233,21 @@ export function renderRightVendor(
                                 });
                             pill.append(resetBtn);
                         }
-                        healthPills.append(pill);
+                        (label ? abnormalPills : normalPills).push(pill);
+                    }
+                    // 异常直接显示
+                    healthPills.append(...abnormalPills);
+                    // 正常聚合折叠
+                    if (normalPills.length > 0) {
+                        const normalWrap = $('<span class="csl-health-normal"></span>');
+                        const toggle = $('<span class="csl-health-normal-toggle" role="button" tabindex="0">').text(`🔽 ${normalPills.length} 个正常`);
+                        let normalOpen = false;
+                        const renderToggle = () => toggle.text(normalOpen ? `🔼 ${normalPills.length} 个正常` : `🔽 ${normalPills.length} 个正常`);
+                        toggle.on('click', () => { normalOpen = !normalOpen; renderToggle(); normalPool.toggle(normalOpen); });
+                        toggle.on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle.trigger('click'); } });
+                        const normalPool = $('<span class="csl-health-normal-pool" style="display:none"></span>').append(...normalPills);
+                        normalWrap.append(toggle, normalPool);
+                        healthPills.append(normalWrap);
                     }
                     keyRow.append(healthPills);
                 }
