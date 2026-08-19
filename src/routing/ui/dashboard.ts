@@ -17,11 +17,19 @@ export function renderDashboard(
         dashboardEl.append($('<div class="csl-empty">').text('还没有分组，先到路由面板配置。'));
         return;
     }
-    const models = [...logicalModels()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const currentId = group?.currentLogicalModelId ?? null;
+    const models = [...logicalModels()].sort((a, b) => {
+        // 当前分组选中的逻辑模型置顶
+        const aPin = a.id === currentId ? 0 : 1;
+        const bPin = b.id === currentId ? 0 : 1;
+        if (aPin !== bPin) return aPin - bPin;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
     for (const model of models) {
         const status = modelStatus(model.id);
         const row = $('<div class="csl-model-row" role="button" tabindex="0"></div>')
             .toggleClass('is-selected', selectedLogicalId === model.id)
+            .toggleClass('is-current', model.id === currentId)
             .attr('data-search', model.name.toLowerCase());
         const name = $('<span class="csl-model-name"></span>');
         name.html(`${levelDot(status.level)} <span>${model.name}</span>`);

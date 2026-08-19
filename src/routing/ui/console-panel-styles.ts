@@ -72,6 +72,14 @@ export function ensureConsolePanelStyles(): void {
             background: rgba(91, 155, 213, 0.12);
             border-left-color: #5b9bd5;
         }
+        .csl-model-row.is-current .csl-model-name {
+            color: #5b9bd5;
+        }
+        .csl-model-row.is-current .csl-model-meta::after {
+            content: '当前';
+            margin-left: 4px; font-size: 10px; color: #5b9bd5;
+            border: 1px solid rgba(91,155,213,.5); border-radius: 8px; padding: 0 4px;
+        }
         .csl-model-top { display: flex; align-items: center; gap: 6px; }
         .csl-model-name { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; }
         .csl-model-name > span { vertical-align: middle; }
