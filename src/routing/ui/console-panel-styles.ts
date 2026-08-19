@@ -84,6 +84,12 @@ export function ensureConsolePanelStyles(): void {
         .csl-model-name { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; }
         .csl-model-name > span { vertical-align: middle; }
         .csl-model-meta { font-size: 11px; color: #999; flex: none; white-space: nowrap; }
+        .csl-model-top > .csl-model-params {
+            flex: none; cursor: pointer; font-size: 11px; padding: 0 2px;
+            background: transparent; border: none; color: #aaa;
+            transition: color 0.12s, transform 0.12s;
+        }
+        .csl-model-top > .csl-model-params:hover { color: #fff; transform: scale(1.1); }
         .csl-model-sub { font-size: 11px; color: #777; padding-left: 2px; }
         .csl-model-sub--empty { font-style: italic; }
         .csl-model-flag { font-size: 11px; color: #e0c07e; padding: 2px 12px 6px; }
