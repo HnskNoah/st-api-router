@@ -150,7 +150,8 @@ ST 侧栏空间金贵，路由配置的复杂度不该挤在里面。改为**点
 
 ## 3. 手机端：底部弹出面板（Bottom Sheet）
 
-> ⏳ 暂未实现，本节为设计蓝图。
+> ✅ 初版已实现（`console-panel-mobile.ts`）：底部 Sheet（点击上滑手柄收起），模型 tab 复用 `dashboard.ts`/`route-detail.ts`，管理 tab 复用 `right-*`。`console-panel.openConsolePanel` 在 `isMobileViewport()`（≤720px）时路由到 mobile。
+> 本节为完整设计蓝图；初版做了核心（模型切换 + 路由详情 + 管理），拖拽手势、分组隐藏等未做。
 
 手机侧栏不可行。改用**底部弹出面板** + 手势操作。
 
@@ -370,5 +371,6 @@ dashboard 排序：当前分组选中的逻辑模型置顶 + `is-current` 高亮
 
 ### 8.9 待办（下一步）
 
-- **手机端底部面板**（UI_REDESIGN §3 蓝图，未实现）
+- **手机端底部面板**：初版已实现（`console-panel-mobile.ts`）；待做：拖拽手势、分组隐藏、Vendor 大表单改弹窗
+- **日志增强**：已实现 debug 时 `installFetchLogging`（记 /secrets/status/generate/models 请求）
 
