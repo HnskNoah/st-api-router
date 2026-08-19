@@ -1,6 +1,7 @@
 // 生命周期：初始化、冲突检测、DOM 观察、teardown
 
-import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
+import { eventSource, event_types, saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
+import { oai_settings, chat_completion_sources } from '@sillytavern/scripts/openai';
 import { runtimeState, ownedPopups, activeFetchControllers, beginPresetTransition, endPresetTransition } from './state.js';
 import { settings } from './settings/access.js';
 import { initializeSettings } from './settings/initialize.js';
@@ -17,6 +18,20 @@ export function detectConflict(): boolean {
     if (!document.getElementById('apihub_container')) return false;
     toastr.warning('Quicker Api 与 API Hub 都会管理连接；Quicker Api 已停止注入以避免冲突。');
     return true;
+}
+
+/** 启动时把 ST 连接置为空地址占位：custom 空 URL，避免 "自动连接上次服务器" 连到上次路由/手动配置的 vendor。 */
+function ensureEmptyConnectionPlaceholder(): void {
+    oai_settings.chat_completion_source = chat_completion_sources.CUSTOM;
+    oai_settings.custom_url = '';
+    oai_settings.custom_model = '';
+    oai_settings.custom_api_format = 'openai_compat';
+    // 只改下拉显示，不 trigger('change')——避免触发 ST reconnect / /v1/models
+    const sourceEl = $('#chat_completion_source');
+    if (sourceEl.length && String(sourceEl.val() ?? '') !== chat_completion_sources.CUSTOM) sourceEl.val(chat_completion_sources.CUSTOM);
+    saveSettingsDebounced();
+    setOnlineStatus('Valid');
+    debugLog('empty connection placeholder applied');
 }
 
 export function watchForDomChanges(): void {
@@ -98,6 +113,8 @@ export function initQuickerApi(): void {
         debugLog('initQuickerApi aborted: #openai_api missing');
         return;
     }
+    // 启动置空地址占位：挡住 auto_connect 连上次 vendor（拦截模式接管真实连接）
+    ensureEmptyConnectionPlaceholder();
     initRouting();
     ensureQuickActionEntries();
     watchForDomChanges();
