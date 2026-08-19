@@ -434,6 +434,7 @@ Another-Header: def"></textarea>`).val(o.customIncludeHeaders??"");i.append($('<
         }
         .qam-close { flex: none; cursor: pointer; font-size: 16px; color: #999; padding: 4px; }
         .qam-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+        .qam-manage-pane { padding: 4px 10px 12px; }
         .qam-tabs { flex: none; display: flex; border-top: 1px solid rgba(128,128,128,0.15); }
         .qam-tab {
             flex: 1; text-align: center; padding: 8px 2px; font-size: 12px;
