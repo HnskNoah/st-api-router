@@ -127,4 +127,40 @@ describe('domain/vendor > mergeImportedRoutingConfig 导入配置合并', () => 
         const merged = mergeImportedRoutingConfig({ vendors: [], logicalModels: [], groups: current }, { vendors: [], logicalModels: [], groups: imported });
         expect(merged.groups[0].entries[0].secretId).toBe('');
     });
+
+    it('导入不信任健康字段：已有 entry 丢弃导入的健康状态，保留本机', () => {
+        const current = [makeGroup('g1', [{
+            id: 'e1', vendorId: 'v1', apiKey: 'local', label: 'L', enabled: true, fetchedModels: [], mappings: [],
+            circuitsByModel: { m: 111 },
+        }])];
+        const imported = [makeGroup('g1', [{
+            id: 'e1', vendorId: 'v1', apiKey: 'foreign', label: 'F', enabled: true, fetchedModels: [], mappings: [],
+            circuitsByModel: { m: 222 },
+            lastErrorByRealModel: { m: 'foreign err' },
+            cooldownMultiplierByModel: { m: 8 },
+        }])];
+        const merged = mergeImportedRoutingConfig({ vendors: [], logicalModels: [], groups: current }, { vendors: [], logicalModels: [], groups: imported });
+        const entry = merged.groups[0].entries[0];
+        // 导入的健康字段被丢弃：本机冷却保留、导入值不覆盖
+        expect(entry.circuitsByModel).toEqual({ m: 111 });
+        expect(entry.cooldownMultiplierByModel).not.toHaveProperty('m');
+        expect(entry.lastErrorByRealModel).not.toHaveProperty('m');
+        // 业务字段仍合并
+        expect(entry.apiKey).toBe('foreign');
+        expect(entry.label).toBe('F');
+    });
+
+    it('导入不信任健康字段：新增 entry 的健康字段一律丢弃', () => {
+        const current = [makeGroup('g1')];
+        const imported = [makeGroup('g1', [{
+            id: 'e2', vendorId: 'v2', apiKey: 'k2', label: 'K2', enabled: true, fetchedModels: [], mappings: [],
+            circuitsByModel: { m: 222 },
+            failStreakByModel: { m: 3 },
+        }])];
+        const merged = mergeImportedRoutingConfig({ vendors: [], logicalModels: [], groups: current }, { vendors: [], logicalModels: [], groups: imported });
+        const entry = merged.groups[0].entries[0];
+        expect(entry.id).toBe('e2');
+        expect(entry.circuitsByModel).toBeUndefined();
+        expect(entry.failStreakByModel).toBeUndefined();
+    });
 });

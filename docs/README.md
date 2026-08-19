@@ -2,6 +2,17 @@
 
 SillyTavern 扩展：按逻辑模型在各 Vendor + Key 之间自动路由 API 请求。
 
+## 文档索引
+
+| 文档 | 说明 |
+|------|------|
+| **[ROUTING_REDESIGN.md](docs/ROUTING_REDESIGN.md)** | 架构设计：概念模型、关系图、路由流程、实现状态 |
+| **[PER_MODEL_HEALTH_DESIGN.md](docs/PER_MODEL_HEALTH_DESIGN.md)** | 设计稿：Key × 模型级被动健康检测与熔断（**未实现**） |
+| **[CALL_CHAIN.md](docs/CALL_CHAIN.md)** | 调用链：MClite 发送消息到 AI 回复的完整流程，含路由触发对比 |
+| **[HANDOFF_GATEWAY_DESIGN_REVIEW.md](docs/HANDOFF_GATEWAY_DESIGN_REVIEW.md)** | 外部设计评审：聚合路由网关方案与本项目的对照，含下一步建议 |
+| **[agent.md](docs/agent.md)** | **AI agent 项目指南**：硬约束、架构概览、编码规范、设计决策（接手 agent 优先读） |
+| **[DEAD_CODE_AND_TESTS.md](docs/DEAD_CODE_AND_TESTS.md)** | 过度设计与无用测试排查记录：死导出清单、已删/保留测试、待处理项 |
+
 ## 安装
 
 1. 在 SillyTavern 的 `public/scripts/extensions`（或第三方扩展目录）中放置本扩展目录
@@ -15,13 +26,26 @@ SillyTavern 扩展：按逻辑模型在各 Vendor + Key 之间自动路由 API �
 - **Logical Model（逻辑模型）**：你定义的模型抽象名（如 `deepseek-v4-flash`、`Gemini 系`）。真实模型按核心名归并到逻辑模型。
 - **Group（分组）**：使用环境，持有当前逻辑模型与一组 Vendor + Key 条目；路由按分组选择。
 
-## 功能
+## 当前功能
 
-- **生成前自动路由**：启用路由后，生成前按当前分组的逻辑模型，从可用 Vendor + Key 中随机选一个改写 SillyTavern 连接（带 RPM 限流、失败自动禁用 Vendor）。
-- **模型管理**：按 Vendor/Key 拉取模型，构建逻辑模型与真实模型映射；已归类 / 未归类真实模型折叠展示，可搜索。
-- **批量创建与归并**：从已拉取模型批量创建逻辑模型并自动映射（核心名匹配、统一小写）；可一键把某个逻辑模型合并到另一个。
-- **便捷按钮**：在发送栏 / Quick Reply 添加一个入口，展开后一键切换 preset + 逻辑模型。
-- **导入导出**：导出 / 导入完整路由配置 JSON（含 Key，注意保管）。
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 生成前自动路由 | ✅ 已实现 | 按 Group 逻辑模型选路，改写 ST 连接 |
+| 兜底路由（独立流） | ✅ 已实现 | MClite/JS-Slash-Runner 等独立流自动接管 |
+| 手动路由锁定 | ✅ 已实现 | 锁定到下一次生成，之后恢复随机 |
+| 手动路由按钮 | ✅ 已实现 | 发送栏旁快捷按钮 |
+| Vendor 级 RPM 限流 | ✅ 已实现 | 同一 Vendor 全局限流 |
+| Vendor 级失败自动禁用 | ✅ 已实现 | 连续失败达阈值禁用整个 Vendor |
+| Key × 模型级熔断 | ⚠️ 设计稿未实现 | `docs/PER_MODEL_HEALTH_DESIGN.md`，待落地 |
+| maxContext 钳制 | ✅ 已实现 | 路由时弹窗确认钳制 token 上限 |
+| 逻辑模型附加参数 | ✅ 已实现 | 自定义请求头/体（custom source） |
+| Vendor / Group 管理面板 | ✅ 已实现 | 拉取模型、映射、编辑、删除 |
+| 便捷按钮（Quick Actions） | ✅ 已实现 | 发送栏/QR 按钮栏一键切换预设+模型 |
+| 密钥管理 | ✅ 已实现 | 自动写入 secret、一键清除、健康检查 |
+| 批量创建逻辑模型 | ✅ 已实现 | 核心名匹配自动映射 |
+| 逻辑模型归并 | ✅ 已实现 | 一键合并两个逻辑模型 |
+| 导入导出 | ✅ 已实现 | JSON 全量导出（含 Key）、txt 模型列表导出 |
+| 预设/Profile 兼容 | ✅ 已实现 | 旧 Profile 折叠保留兼容入口 |
 
 ## 开发
 

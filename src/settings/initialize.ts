@@ -16,6 +16,7 @@ import {
     normalizeGroups,
     normalizeLogicalModels,
     normalizeVendors,
+    resetGroupRuntimeState,
     resetVendorRuntimeState,
 } from '../domain/vendor.js';
 import { normalizeRoutingSettings } from '../domain/routing.js';
@@ -67,6 +68,7 @@ export function initializeSettings(): boolean {
     value.logicalModels = normalizeLogicalModels(value.logicalModels);
     value.groups = normalizeGroups(value.groups);
     resetVendorRuntimeState(value.vendors);
+    resetGroupRuntimeState(value.groups);
     if (storedVersion < 12 && value.vendors.length === 0 && value.providers.length > 0) {
         const migrated = migrateProvidersToVendorModel(value.providers);
         value.vendors = migrated.vendors;

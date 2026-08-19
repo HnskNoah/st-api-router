@@ -385,8 +385,28 @@ MClite 每轮发送给 AI 的 `user_input` 格式：
 
 | 文件 | 作用 |
 |------|------|
-| `src/routing/hooks.ts` | `onGenerationStarted` / `onChatCompletionSettingsReady` / `onGenerationEnded` |
+| `src/routing/hooks.ts` | `onGenerationStarted` / `onChatCompletionSettingsReady` / `onGenerationEnded` / `onGenerationStopped` |
 | `src/routing/patch-generate-data.ts` | `patchGenerateData()` — 拦截模式核心纯函数 |
 | `src/routing/fallback.ts` | `resolveFallbackRoute()` — 兜底路由决策纯函数 |
+| `src/routing/manual-route.ts` | `resolveManualLock()` / `isManualLockApplicable()` — 手动路由锁定 |
+| `src/routing/manual-route-entry.ts` | 手动路由按钮 UI 入口 |
+| `src/routing/apply-provider.ts` | `applyVendorConnection()` / `applyVendorTokenClamps()` — 改写连接字段与钳制 token |
+| `src/routing/guard.ts` | `isGenerationBlockedByGuard` — 预设切换/密钥阻断安全哨兵 |
 | `src/domain/group-routing.ts` | `routeGroupOnce()` — 路由选路引擎 |
+| `src/domain/vendor.ts` | `recordVendorFailure` / `recordVendorSuccess` / `vendorEffectiveWeight` |
+| `src/domain/context.ts` | `computeVendorTokenClamps` / `clampContextLimit` — token 钳制纯函数 |
 | `src/routing/failure-observer.ts` | 失败观察：检测 toastr.error 判定失败 |
+| `src/secrets/api.ts` | `ensureSecretId` / `writeSecretVerified` — 密钥管理 |
+| `src/settings/initialize.ts` | 设置加载、schema 迁移（v12：providers → vendors/groups） |
+| `src/quick-actions/runner.ts` | 便捷方案执行：切换预设 + 模型 |
+| `src/quick-actions/manager.ts` | 便捷方案管理界面 |
+| `src/routing/ui.ts` | 路由面板 UI（Vendor/Group/逻辑模型管理） |
+| `src/routing/hooks.ts` | 路由事件钩子 |
+
+### 更多文档
+
+| 文档 | 说明 |
+|------|------|
+| `docs/ROUTING_REDESIGN.md` | 路由架构设计：概念、关系图、实现状态 |
+| `docs/PER_MODEL_HEALTH_DESIGN.md` | 设计稿：Key × 模型级被动健康检测（未实现） |
+| `docs/README.md` | 项目概述、安装、功能清单 |

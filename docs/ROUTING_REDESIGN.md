@@ -126,17 +126,76 @@ Vendor --提供(多对多)--> RealModel --多对一--> LogicalModel --属于(多
 5. 事件接线：`GENERATION_STARTED / ENDED / STOPPED` 与失败观察。
 6. 测试：覆盖映射、候选过滤、Vendor 限流、失败禁用、加权随机、Group 路由。
 
-## 实现状态（2025 快照）
+## 实现状态（当前）
 
-- 数据结构与迁移：已完成（`src/domain/vendor.ts`，`schemaVersion` 12，旧 `providers[]` 一次性迁移到 `vendors[]/logicalModels[]/groups[]`，默认 Group「默认分组」）。
-- 纯函数路由引擎：已完成（`src/domain/group-routing.ts`：Vendor 级 RPM 窗口、成功率加权选路、候选过滤、失败原因汇总）。
-- Vendor 健康：连续失败自动禁用整个 Vendor（`recordVendorFailure`），手动启用才恢复；`successes/failures` 跨会话保留，`window/failStreak/lastError` 载入时重置。
-- maxContext 钳制：`src/domain/context.ts` 纯函数 `clampContextLimit`，路由时钳制 ST `openai_max_context`。
-- ST 原生接线：`src/routing/apply-provider.ts`（`applyVendorConnection` 改写 source/url/model/key 并钳制上下文）、`src/routing/hooks.ts`（GENERATION_STARTED/ENDED/STOPPED）。
-- UI：路由面板升级为 Vendor / Group 管理（拉取模型自动映射、编辑、删除），旧 Profile 区折叠保留兼容入口（`src/routing/ui.ts`）。
-- Quick Actions（便捷方案，快速切换模型）：按钮保留 preset/Profile 组合；模型字段支持逻辑模型——点击后只切换当前 Group 的 `currentLogicalModelId`（保存设置、刷新路由面板高亮，不立即写 ST 连接，下次生成由路由钩子选 Vendor/Key）。模型解析优先按逻辑模型 id/name（`src/domain/quick-action.ts` 的 `resolveLogicalModelForAction`），非逻辑模型时回退旧行为（路由真实模型写 custom_model，其余原生格式推断）。模型判定同时认旧 Provider 聚合模型、新 Vendor 映射 realModel、逻辑模型 id/name（`src/domain/model-catalog.ts` 的 `isRoutedModel`），编辑候选列表含逻辑模型名。
-- 与文档的已知差异：
-  - 实现用 `mappings` 字段（非 `modelMappings`/`modelRules`），逻辑模型选中存 `currentLogicalModelId`。
-  - Vendor 成功率权重存 `weight`（基础权重），实际选路权重 = `weight * (0.5 + successRate)`（`vendorEffectiveWeight`）。
-  - Group 条目为 `{ id, vendorId, apiKey, label, enabled }`。
-  - 模型获取只通过路由面板的"拉取模型"按钮按 Vendor 拉取，未挂钩 ST 原生"获取模型"按钮（与文档第 14 行初衷一致：不做插件轮询）。
+> 最后更新：2026-08。以下描述基于代码实际状态，按模块逐一列出。
+
+### 数据结构与迁移
+
+- **已完成**（`src/domain/vendor.ts`，`schemaVersion` 12，旧 `providers[]` 一次性迁移到 `vendors[]/logicalModels[]/groups[]`，默认 Group「默认分组」）。
+- 迁移入口：`src/settings/initialize.ts`，`schemaVersion <= 11` 时触发 `migrateProvidersToVendorModel`（`vendor.ts`），`normalizeGroupEntry` / `normalizeVendor` 提供默认值安全。
+- `SCHEMA_VERSION` 在 `src/constants.ts` 定义，未来增量迁移只需 `storedVersion < SCHEMA_VERSION` 逐版本跳转。
+
+### 纯函数路由引擎
+
+- **已完成**（`src/domain/group-routing.ts`）：Vendor 级 RPM 窗口（`rpmWindow` / `vendorRpmAvailable`）、成功率加权选路（`vendorEffectiveWeight`）、候选过滤（`groupUnitUnavailabilityReason` 检查 `vendor.enabled` / `entry.enabled` / RPM）、失败原因汇总（`summarizeGroupUnavailable`）。支持 **sticky 按次复用**（`stickyCount` + `lastPicked`/`nextLastPicked`）。
+
+### 路由旁路决策
+
+- **兜底路由**（`src/routing/fallback.ts`）：独立请求流（MClite / JS-Slash-Runner 走 `generate()` 不触发 `GENERATION_STARTED`）时，`onChatCompletionSettingsReady` 无 active 路由，由 `resolveFallbackRoute` 按当前 Group 逻辑模型选路接管连接字段。不弹 token 钳制确认窗，避免卡死独立流。
+- **手动路由锁定**（`src/routing/manual-route.ts` + `hooks.ts` `consumeManualLock`）：用户点击手动路由按钮后，锁定选中的 `Vendor + Key + realModel` 到下一次生成；下一次生成消费锁定并记录 RPM，之后恢复随机。分组切换或逻辑模型变化后旧锁定失效。手动锁定对兜底路由同样生效。
+
+### Vendor 健康（Vendor 级熔断 — 当前实际行为）
+
+- **Vendor 级**：`recordVendorFailure`（`src/domain/vendor.ts`）累加 `failStreak`，达到 `failThreshold` 后 `vendor.enabled = false`，需手动启用恢复。`successes/failures` 跨会话保留，`window/failStreak/lastError` 载入时重置。
+- **⚠️ 已知退化**：旧 Provider 层（`src/domain/provider.ts` + `routing.ts`）本来有 `key × model` 级熔断（`ProviderKey.circuits[model]`、`failStreakByModel[model]`），迁移到 Vendor/Group 层时退化到 Vendor 级。完整设计稿见 `docs/PER_MODEL_HEALTH_DESIGN.md`，但**尚未实现**。
+
+### maxContext 钳制
+
+- **已完成**（`src/domain/context.ts`、`src/routing/apply-provider.ts`）：`computeVendorTokenClamps` 同时钳制 `openai_max_context` 和 `openai_max_tokens`，路由时弹窗确认后应用（`GENERATION_STARTED` 路径）；兜底路由路径跳过弹窗但不钳制。
+
+### ST 原生接线
+
+- **已完成**（`src/routing/hooks.ts` + `apply-provider.ts` + `patch-generate-data.ts`）：
+  - `GENERATION_STARTED` → `runGenerationRouting` → 选路 + token 钳制弹窗 + 设 `state.active`。
+  - `CHAT_COMPLETION_SETTINGS_READY` → 有 `active` → `patchGenerateData`（拦截模式改写 `chat_completion_source`/`reverse_proxy`/`proxy_password`/`model` 等字段）；无 `active` → `resolveFallbackRoute`（兜底路由）。
+  - `GENERATION_ENDED` → `onGenerationEnded` → `recordVendorFailure`/`recordVendorSuccess` + toastr 提示。
+  - `GENERATION_STOPPED` → `onGenerationStopped` → RPM 回滚 + 标记 `userStopPending`（排除用户主动停止的误判）。
+  - 跳过非用户触发生成（`quiet`/`continue`/`impersonate`）；`guard` 安全阻断（预设切换/密钥阻断）时跳过路由覆盖。
+  - 对 `custom` format Vendor 自动 `ensureEntrySecret`（`src/secrets/api.ts`），确保 ST 自定义源能读到 key。
+
+### 逻辑模型附加参数
+
+- **已完成**（`hooks.ts` `customParamsForUnit`）：逻辑模型支持 `customIncludeBody`、`customExcludeBody`、`customIncludeHeaders`，在 `patchGenerateData` 时一并写入 `generateData`。适用于 Vendor 切换为 `custom` 源时附加自定义请求头/体。
+
+### UI
+
+- **路由面板**（`src/routing/ui.ts`）：Vendor / Group 管理面板，支持拉取模型自动映射、编辑、删除、一键清除 secret。Key 条目收进 Vendor 展开区，未使用 Group 的 Vendor 高亮提示。旧 Profile 区折叠保留兼容入口。
+- **便捷按钮管理**（`src/quick-actions/manager.ts`）：管理界面（新增/编辑/删除/排序/复制），支持选择预设、模型（逻辑模型/聚合模型混合候选），配置入口位置（发送栏左/右侧、Quick Reply 按钮栏、禁用）。
+- **快捷入口**（`src/quick-actions/runner.ts` + `menu.ts` + `menu-core.ts`）：发送栏左侧/右侧或 QR 按钮栏显示快捷按钮，点击后切换 preset + 模型（逻辑模型切换当前 Group 的 `currentLogicalModelId`，非逻辑模型回退写 `custom_model`）。
+- **工具栏按钮**（`src/ui/toolbar.ts`）：扩展工具栏手动路由按钮、日志弹窗（左对齐，避免居中显示）。
+- **Profile 密钥健康检查**（`src/profiles/health.ts` + `key-editor.ts`）：检查密钥是否有效，一键清理无效 secret。
+
+### 模型管理
+
+- **模型拉取**（`src/models/manage.ts` + `fetch.ts`）：通过路由面板"拉取模型"按钮按 Vendor 拉取，结果存入 `vendor.fetchedModels`。
+- **批量创建逻辑模型**（`src/import/native.ts`）：从已拉取模型批量创建逻辑模型并自动映射（核心名匹配、统一小写）。
+- **归并**（`src/domain/model-catalog.ts`）：一键把某个逻辑模型合并到另一个。
+- **模型判定**（`isRoutedModel`）：同时认旧 Provider 聚合模型、新 Vendor 映射 realModel、逻辑模型 id/name。
+
+### 便捷方案（Quick Actions）
+
+- **已完成**（`src/quick-actions/` + `src/domain/quick-action.ts`）：支持预设 + 模型组合；模型字段支持逻辑模型名/真实模型名/旧 Provider 聚合模型。解析优先按逻辑模型 id/name（`resolveLogicalModelForAction`），非逻辑模型回退旧行为（路由真实模型写 `custom_model`，其余原生格式推断）。编辑候选列表含逻辑模型名。
+
+### 导入导出
+
+- **导出**：`src/import/native.ts` 导出完整路由配置 JSON（含 Key，需妥善保管）。
+- **模型列表导出**：txt 格式，不含密钥。
+
+### 与最初设计文档的已知差异
+
+- 实现用 `mappings` 字段（非 `modelMappings`/`modelRules`），逻辑模型选中存 `currentLogicalModelId`。
+- Vendor 成功率权重存 `weight`（基础权重），实际选路权重 = `weight * (0.5 + successRate)`（`vendorEffectiveWeight`，`src/domain/vendor.ts`）。
+- Group 条目为 `{ id, vendorId, apiKey, label, enabled, ... }`（含运行时健康字段，但目前只支持 Vendor 级熔断）。
+- 模型获取只通过路由面板的"拉取模型"按钮按 Vendor 拉取，未挂钩 ST 原生"获取模型"按钮（与初衷一致：不做插件轮询）。
+- 未实现**模型级熔断**（Key × realModel 粒度），设计稿见 `docs/PER_MODEL_HEALTH_DESIGN.md`，待实现。

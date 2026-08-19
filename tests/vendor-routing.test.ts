@@ -8,7 +8,6 @@ import {
     normalizeLogicalModels,
     normalizeVendor,
     normalizeVendors,
-    recordVendorFailure,
     recordVendorSuccess,
     disableVendorIfNoUsableKeys,
     resetVendorRuntimeState,
@@ -130,19 +129,13 @@ describe('domain/vendor migration', () => {
 });
 
 describe('domain/vendor health and success weight', () => {
-    it('success clears failStreak, failure auto disables at threshold', () => {
-        const vendor = normalizeVendor({});
-        expect(recordVendorFailure(vendor, 'err', 3)).toBe(false);
-        expect(recordVendorFailure(vendor, 'err', 3)).toBe(false);
-        expect(vendor.failStreak).toBe(2);
-        expect(vendor.enabled).toBe(true);
-        expect(recordVendorFailure(vendor, 'err', 3)).toBe(true);
-        expect(vendor.enabled).toBe(false);
-        expect(vendor.disabledReason).toContain('自动禁用');
+    it('recordVendorSuccess clears failStreak and lastError, increments successes', () => {
+        const vendor = normalizeVendor({ failStreak: 2, lastError: 'some error', successes: 5 });
         recordVendorSuccess(vendor);
         expect(vendor.failStreak).toBe(0);
-        expect(vendor.successes).toBe(1);
-        expect(vendor.failures).toBe(3);
+        expect(vendor.lastError).toBe('');
+        expect(vendor.successes).toBe(6);
+        expect(vendor.failures).toBe(0);
     });
 
     it('effective weight favors successful vendors', () => {

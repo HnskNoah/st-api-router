@@ -9,6 +9,7 @@ import type {
     Group,
     GroupEntry,
     LogicalModel,
+    ModelFailureKind,
     Provider,
     Vendor,
     VendorFormat,
@@ -244,6 +245,14 @@ export function mergeImportedRoutingConfig(
     }
 
     const groupById = new Map(groups.map(group => [group.id, group]));
+    /** 跨机导入：健康运行时字段（熔断/冷却/诊断）是本机状态，导入的版本无意义 → 一律丢弃；secretId 另有处理。 */
+    const dropImportedHealth = (entry: GroupEntry): void => {
+        delete entry.failStreakByModel;
+        delete entry.circuitsByModel;
+        delete entry.lastErrorKindByModel;
+        delete entry.cooldownMultiplierByModel;
+        delete entry.lastErrorByRealModel;
+    };
     for (const rawGroup of imported.groups || []) {
         const group = normalizeGroup(structuredClone(rawGroup));
         if (!group.id) continue;
@@ -252,6 +261,8 @@ export function mergeImportedRoutingConfig(
             const entryById = new Map(existing.entries.map(entry => [entry.id, entry]));
             for (const entry of group.entries) {
                 const currentEntry = entryById.get(entry.id);
+                // 导入的健康字段一律丢弃，避免覆盖本机熔断状态
+                dropImportedHealth(entry);
                 // secretId 是本机 secrets 指针，跨机导入无效：保留本机已有值，新条目置空等待重建
                 entry.secretId = currentEntry?.secretId ?? '';
                 if (currentEntry) Object.assign(currentEntry, entry);
@@ -264,6 +275,11 @@ export function mergeImportedRoutingConfig(
             existing.enabled = group.enabled;
             existing.currentLogicalModelId = group.currentLogicalModelId;
         } else {
+            // 新 group：所有条目都来自导入，secretId/健康字段一律置空
+            for (const entry of group.entries) {
+                entry.secretId = '';
+                dropImportedHealth(entry);
+            }
             groupById.set(group.id, group);
             groups.push(group);
         }
@@ -390,7 +406,15 @@ export function deleteLogicalModel(
 /** 完整配置导出前脱敏：剥离 GroupEntry.secretId（本机 secrets 指针，不可移植）；apiKey 仍保留。 */
 export function sanitizeGroupForExport(group: Group): Group {
     const copy = normalizeGroup(structuredClone(group));
-    for (const entry of copy.entries) delete entry.secretId;
+    for (const entry of copy.entries) {
+        delete entry.secretId;
+        // 健康运行时状态是本机诊断/熔断数据，跨机导入无意义：导出时清空
+        delete entry.failStreakByModel;
+        delete entry.circuitsByModel;
+        delete entry.lastErrorKindByModel;
+        delete entry.cooldownMultiplierByModel;
+        delete entry.lastErrorByRealModel;
+    }
     return copy;
 }
 
@@ -523,6 +547,39 @@ export function sortedLogicalModels(logicalModels: LogicalModel[]): LogicalModel
     return [...(logicalModels || [])].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
 }
 
+/** 安全归一化 Record<string, number> 映射（过滤非法值）。 */
+function normalizeStringNumberMap(raw: unknown): Record<string, number> {
+    if (!raw || typeof raw !== 'object') return {};
+    const result: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        const n = Number(value);
+        if (Number.isFinite(n) && n >= 0) result[String(key)] = n;
+    }
+    return result;
+}
+
+/** 安全归一化 Record<string, string> 映射（截断过长值）。 */
+function normalizeStringStringMap(raw: unknown, maxLen = 500): Record<string, string> {
+    if (!raw || typeof raw !== 'object') return {};
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        result[String(key)] = String(value ?? '').slice(0, maxLen);
+    }
+    return result;
+}
+
+/** 安全归一化 Record<string, ModelFailureKind> 映射。 */
+function normalizeErrorKindMap(raw: unknown): Record<string, ModelFailureKind> {
+    if (!raw || typeof raw !== 'object') return {};
+    const valid: ModelFailureKind[] = ['fatal', 'rate_limited', 'temp', 'bad_request', 'unknown'];
+    const result: Record<string, ModelFailureKind> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        const s = String(value ?? '') as ModelFailureKind;
+        if (valid.includes(s)) result[String(key)] = s;
+    }
+    return result;
+}
+
 export function normalizeGroupEntry(raw: Record<string, any> | undefined): GroupEntry {
     return {
         id: normalizeText(raw?.id) || makeId('group-entry'),
@@ -533,6 +590,11 @@ export function normalizeGroupEntry(raw: Record<string, any> | undefined): Group
         enabled: raw?.enabled === undefined ? true : Boolean(raw.enabled),
         fetchedModels: normalizeModelList(raw?.fetchedModels),
         mappings: normalizeMappings(raw?.mappings),
+        failStreakByModel: normalizeStringNumberMap(raw?.failStreakByModel),
+        circuitsByModel: normalizeStringNumberMap(raw?.circuitsByModel),
+        lastErrorKindByModel: normalizeErrorKindMap(raw?.lastErrorKindByModel),
+        cooldownMultiplierByModel: normalizeStringNumberMap(raw?.cooldownMultiplierByModel),
+        lastErrorByRealModel: normalizeStringStringMap(raw?.lastErrorByRealModel),
     };
 }
 
@@ -571,6 +633,13 @@ export function resetVendorRuntimeState(vendors: Vendor[]): void {
     }
 }
 
+/** 载入时重置 GroupEntry 纯运行时状态：连续失败计数清零；冷却/分类/退避倍数/失败消息保留（跨会话诊断），「已过期的冷却」由路由层按可恢复处理。 */
+export function resetGroupRuntimeState(groups: Group[]): void {
+    for (const entry of allGroupEntries(groups)) {
+        entry.failStreakByModel = {};
+    }
+}
+
 /** 成功率加权：无历史时用基础权重；全成功提升 50%，全失败保留 50%。 */
 export function vendorEffectiveWeight(vendor: Vendor): number {
     const weight = Number(vendor?.weight) > 0 ? Number(vendor.weight) : VENDOR_WEIGHT_DEFAULT;
@@ -585,20 +654,6 @@ export function recordVendorSuccess(vendor: Vendor): void {
     vendor.successes = (Number(vendor.successes) || 0) + 1;
     vendor.failStreak = 0;
     vendor.lastError = '';
-}
-
-/** 记录 Vendor 级失败；达到阈值自动禁用整个 Vendor，返回是否刚被禁用。 */
-export function recordVendorFailure(vendor: Vendor, error: string, threshold: number): boolean {
-    if (!vendor) return false;
-    vendor.failures = (Number(vendor.failures) || 0) + 1;
-    vendor.failStreak = (Number(vendor.failStreak) || 0) + 1;
-    vendor.lastError = String(error ?? '').slice(0, 500);
-    if (vendor.failStreak >= Math.max(1, Math.floor(Number(threshold) || 1))) {
-        vendor.enabled = false;
-        vendor.disabledReason = `连续失败 ${vendor.failStreak} 次已自动禁用`;
-        return true;
-    }
-    return false;
 }
 
 /** 旧 Provider/Key 过渡实现 → Vendor / Group 迁移。

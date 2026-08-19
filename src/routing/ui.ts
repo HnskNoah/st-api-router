@@ -33,6 +33,7 @@ import {
     unmapRealModel,
 } from '../domain/vendor.js';
 import { clearQuickApiSecrets, ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
+import { isModelInCooldown, modelCooldownRemainingMs, recordModelSuccess } from '../domain/model-health.js';
 import { exportDebugLog } from '../debug.js';
 import type { Group, GroupEntry, LogicalModel, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
@@ -134,6 +135,26 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             .st-router-badge--ok { color: #7ecf8a; border-color: rgba(126, 207, 138, 0.5); }
             .st-router-badge--disabled { color: #e08a8a; border-color: rgba(224, 138, 138, 0.5); }
             .st-router-badge--rpm { color: #e0c07e; border-color: rgba(224, 192, 126, 0.5); }
+
+            /* ── 模型健康状态胶囊 ── */
+            .st-router-model-health { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 6px 0; }
+            .st-router-model-health-label {
+                font-size: 11px; color: #999; flex-basis: 100%; margin-bottom: 2px;
+            }
+            .st-router-model-health-pill {
+                display: inline-flex; align-items: center; gap: 4px;
+                font-size: 11px; padding: 1px 8px; border-radius: 10px;
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                background: rgba(0, 0, 0, 0.08);
+            }
+            .st-router-model-health-pill--healthy { border-color: rgba(126, 207, 138, 0.5); color: #7ecf8a; }
+            .st-router-model-health-pill--cooldown { border-color: rgba(224, 192, 126, 0.5); color: #e0c07e; }
+            .st-router-model-health-pill--fatal { border-color: rgba(224, 138, 138, 0.5); color: #e08a8a; }
+            .st-router-model-health-pill .reset-btn {
+                cursor: pointer; font-size: 10px; padding: 0 2px; opacity: 0.6;
+                display: inline-flex; align-items: center;
+            }
+            .st-router-model-health-pill .reset-btn:hover { opacity: 1; color: #fff; }
 
             /* ── 逻辑模型 chips ── */
             .st-router-model-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 12px; }
@@ -756,6 +777,8 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
                         keyRow.append(enabled, labelInput, keyInput, fetchBtn, modelCount, removeBtn);
                         keySection.append(keyRow);
+                        // 模型健康状态
+                        keySection.append(renderModelHealthForEntry(entry));
                     }
                 }
 
@@ -773,6 +796,62 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
 
             providerList.append(container);
         }
+    }
+
+    /** 渲染单个 Key 下每个真实模型的健康状态胶囊：正常 / 冷却中(剩余) / 不可恢复(6h)，冷却/不可恢复附带手动恢复按钮。 */
+    function renderModelHealthForEntry(entry: GroupEntry): JQuery<HTMLElement> {
+        const now = Date.now();
+        const realModels = [...new Set(entry.mappings.map(mapping => mapping.realModel))];
+        const wrap = $('<div class="st-router-model-health"></div>');
+        if (realModels.length === 0) return wrap;
+
+        wrap.append($('<span class="st-router-model-health-label">').text('模型健康'));
+        for (const realModel of realModels) {
+            const pill = $('<span class="st-router-model-health-pill"></span>');
+            const remainingMs = modelCooldownRemainingMs(entry, realModel, now);
+            const remaining = Math.ceil(remainingMs / 1000);
+            const kind = entry.lastErrorKindByModel?.[realModel];
+            const isCooling = isModelInCooldown(entry, realModel, now);
+            const name = $('<span>').text(realModel);
+
+            let statusText = '正常';
+            let statusClass = 'healthy';
+            if (kind === 'fatal' && isCooling) {
+                statusText = `不可恢复（${formatCooldownMs(remaining)}）`;
+                statusClass = 'fatal';
+            } else if (isCooling) {
+                statusText = `冷却中 ${formatCooldownMs(remaining)}`;
+                statusClass = 'cooldown';
+            }
+            pill.addClass(`st-router-model-health-pill--${statusClass}`).append(name, $('<span>').text(`· ${statusText}`));
+
+            // 冷却 / 不可恢复 → 手动恢复按钮
+            if (isCooling) {
+                const resetBtn = $('<span class="reset-btn" role="button" tabindex="0" title="手动恢复该模型（清除冷却）"><i class="fa-solid fa-rotate-left"></i></span>');
+                resetBtn.on('click', event => {
+                    event.stopPropagation();
+                    recordModelSuccess(entry, realModel);
+                    deps.save();
+                    renderProviderList();
+                    toastr.success(`已手动恢复「${realModel}」的冷却。`);
+                });
+                pill.append(resetBtn);
+            }
+            wrap.append(pill);
+        }
+        return wrap;
+    }
+
+    /** 把毫秒格式化为人类可读时长（如 5m 20s / 1h 30m / 6h）。 */
+    function formatCooldownMs(ms: number): string {
+        const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+        if (total < 60) return `${total}s`;
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+        const h = Math.floor(m / 60);
+        const rm = m % 60;
+        return h > 0 ? (rm > 0 ? `${h}h ${rm}m` : `${h}h`) : `${rm}m`;
     }
 
     function successRateText(vendor: Vendor): string {

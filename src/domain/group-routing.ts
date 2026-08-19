@@ -1,7 +1,8 @@
-// Group 路由引擎：逻辑模型 → 承载 Vendor/Key 条目 → Vendor 级可用性过滤 → 成功率加权随机。
-// RPM 与失败禁用均为 Vendor 级；一个逻辑模型可以同时被多个 Group、多个 Vendor 承载。
+// Group 路由引擎：逻辑模型 → 承载 Vendor/Key 条目 → Vendor 级可用性过滤 → 模型级冷却过滤 → 成功率加权随机。
+// RPM 与失败禁用均为 Vendor 级；模型级冷却在「Key × realModel」粒度独立，同 Key 不同模型互不影响。
 
 import type { Group, GroupEntry, Vendor, VendorModelMapping } from '../types.js';
+import { isModelInCooldown } from './model-health.js';
 import { vendorEffectiveWeight } from './vendor.js';
 
 export const GROUP_RPM_WINDOW_MS = 60 * 1000;
@@ -42,6 +43,15 @@ export function groupUnitUnavailabilityReason(unit: GroupRouteUnit, now: number)
     if (unit.vendor.enabled === false) return 'disabled';
     if (unit.entry.enabled === false) return 'disabled';
     if (!vendorRpmAvailable(unit.vendor, now)) return 'rpm';
+    const modelReason = modelUnitUnavailabilityReason(unit, now);
+    if (modelReason) return modelReason;
+    return null;
+}
+
+/** 模型级冷却检查：该 Key 上该 realModel 是否处于冷却中。同 Key 不同模型互不影响。 */
+export function modelUnitUnavailabilityReason(unit: GroupRouteUnit, now: number): string | null {
+    if (!unit?.entry || !unit?.realModel) return null;
+    if (isModelInCooldown(unit.entry, unit.realModel, now)) return 'cooldown';
     return null;
 }
 

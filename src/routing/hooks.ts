@@ -1,6 +1,6 @@
 // Vendor/Group 路由钩子：生成前按当前 Group 的逻辑模型选路；
 // 生成数据就绪后直接改 generateData（拦截模式，不碰 ST 原生 DOM/连接字段）；
-// 结束后按失败观察结果记录 Vendor 成功/失败，连续失败自动禁用整个 Vendor。
+// 结束后按失败观察结果记录 Key × realModel 成功/失败（模型级熔断），不再自动禁用整个 Vendor。
 
 import { saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
 import { oai_settings } from '@sillytavern/scripts/openai';
@@ -8,7 +8,8 @@ import { SECRET_KEYS } from '@sillytavern/scripts/secrets';
 import { Popup } from '@sillytavern/scripts/popup';
 import { ensureSecretId } from '../secrets/api.js';
 import { routeGroupOnce, recordGroupSelection, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
-import { computeVendorTokenClamps, recordVendorFailure, recordVendorSuccess } from '../domain/vendor.js';
+import { recordModelFailure, recordModelSuccess } from '../domain/model-health.js';
+import { computeVendorTokenClamps, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
 import { resolveFallbackRoute } from './fallback.js';
@@ -16,6 +17,7 @@ import { isManualLockApplicable } from './manual-route.js';
 import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
+import type { FailureProbe } from './failure-observer.js';
 import type { Group, LogicalModel, RoutingSettings, Vendor } from '../types.js';
 
 const USER_STOP_GRACE_MS = 50;
@@ -27,7 +29,8 @@ export interface RoutingHooksDeps {
     getActiveGroupId(): string | null;
     getRouting(): RoutingSettings;
     beginGeneration?(): void;
-    endGeneration?(): boolean;
+    /** 返回本次生成的失败探针（含分类与消息），null 表示成功。 */
+    endGeneration?(): FailureProbe | null;
 }
 
 export interface RoutingHooks {
@@ -300,10 +303,10 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             return;
         }
         state.active = null;
-        const failed = deps.endGeneration?.() ?? false;
+        const probe = deps.endGeneration?.() ?? null;
         const { vendor, entry, realModel } = active.unit;
         const displayName = `${vendor.name} / ${entry.label} / ${realModel}`;
-        debugLog('onGenerationEnded active route', { displayName, failed });
+        debugLog('onGenerationEnded active route', { displayName, failed: Boolean(probe) });
         setTimeout(() => {
             if (state.userStopPending) {
                 state.userStopPending = false;
@@ -311,19 +314,33 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                 return;
             }
             const routing = deps.getRouting();
-            if (!failed) {
+            // 不论成功失败，都记录 Vendor 成功率（用于 UI 展示和路由加权）
+            if (!probe) {
                 recordVendorSuccess(vendor);
+                recordModelSuccess(entry, realModel);
                 saveSettingsDebounced();
-                debugLog('onGenerationEnded recorded success', { vendorName: vendor.name });
+                debugLog('onGenerationEnded recorded success', { vendorName: vendor.name, realModel });
                 return;
             }
-            const disabled = recordVendorFailure(vendor, `generation failed: ${realModel}`, routing.failThreshold);
+            // 失败：模型级记账（Key × realModel 粒度），不自动禁用整个 Vendor
+            const cooling = recordModelFailure(entry, realModel, probe.kind, probe.message, {
+                threshold: routing.failThreshold,
+                baseCooldownMs: routing.cooldownSeconds * 1000,
+            });
+            // 保持 Vendor 失败计数（用于 UI 展示和路由加权），但不触发 Vendor 级禁用
+            vendor.failures = (Number(vendor.failures) || 0) + 1;
             saveSettingsDebounced();
-            debugLog('onGenerationEnded recorded failure', { vendorName: vendor.name, disabled });
-            if (disabled) {
-                toastr.error(`Quicker Api：${displayName} 连续失败已自动禁用，请手动重新启用。`);
+            debugLog('onGenerationEnded recorded model failure', {
+                vendorName: vendor.name,
+                entryLabel: entry.label,
+                realModel,
+                kind: probe.kind,
+                cooling,
+            });
+            if (cooling) {
+                toastr.warning(`Quicker Api：${displayName} 失败已达阈值，已临时冷却（模型级，不影响其他模型）。`);
             } else {
-                toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录；连续失败将自动禁用。`);
+                toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录（模型级熔断）。`);
             }
         }, USER_STOP_GRACE_MS);
     }

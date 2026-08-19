@@ -86,4 +86,27 @@ describe('domain/vendor > sanitizeGroupForExport 完整配置导出脱敏', () =
         sanitizeGroupForExport(group);
         expect(group.entries[0].secretId).toBe('sid-1');
     });
+
+    it('导出剥离本机健康运行时字段（熔断/冷却/诊断）', () => {
+        const group = normalizeGroup({
+            id: 'g1',
+            entries: [{
+                id: 'e1', vendorId: 'v1', apiKey: 'sk',
+                failStreakByModel: { m: 2 },
+                circuitsByModel: { m: 9999999999999 },
+                lastErrorKindByModel: { m: 'temp' },
+                cooldownMultiplierByModel: { m: 4 },
+                lastErrorByRealModel: { m: 'some error' },
+            }],
+        });
+        const sanitized = sanitizeGroupForExport(group);
+        const entry = sanitized.entries[0];
+        expect(entry.failStreakByModel).toBeUndefined();
+        expect(entry.circuitsByModel).toBeUndefined();
+        expect(entry.lastErrorKindByModel).toBeUndefined();
+        expect(entry.cooldownMultiplierByModel).toBeUndefined();
+        expect(entry.lastErrorByRealModel).toBeUndefined();
+        // apiKey 仍在，健康字段清理不影响业务数据
+        expect(sanitized.entries[0].apiKey).toBe('sk');
+    });
 });

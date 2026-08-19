@@ -3,7 +3,7 @@ import type { FormatConfig, FormatName, QuickerApiSettings, QuickActionPlacement
 
 export const MODULE_NAME = 'quickerApi';
 export const LEGACY_MODULE_NAME = 'customOpenAIProfiles';
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 export const EMPTY_SECRET_LABEL = 'Quicker Api · No key';
 
 export const SUPPORTED_SOURCES = new Set([
@@ -53,7 +53,7 @@ export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
     enabled: false,
     stickyCount: 0,
     failThreshold: 3,
-    cooldownSeconds: 60,
+    cooldownSeconds: 300,
 });
 
 export const DEFAULT_SETTINGS: QuickerApiSettings = Object.freeze({
