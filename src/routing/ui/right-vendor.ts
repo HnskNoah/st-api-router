@@ -76,7 +76,12 @@ export function renderRightVendor(
         return;
     }
     const group = activeGroup();
-    for (const vendor of vendorList) {
+    // 启用的 Vendor 排在前面，禁用的排在后面（各自按名称序）
+    const sortedVendors = [...vendorList].sort((a, b) => {
+        if (!!a.enabled !== !!b.enabled) return a.enabled ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    for (const vendor of sortedVendors) {
         const container = $('<div class="csl-vendor-row"></div>');
         const groupEntries = group?.entries.filter(e => e.vendorId === vendor.id) ?? [];
         const unused = isVendorUnused(vendor, vendor.id, groupEntries);
@@ -156,10 +161,14 @@ export function renderRightVendor(
         headRow.append(actions);
         container.append(headRow);
 
-        // 展开区：Key 列表 + 模型健康
+        // 展开区：Key 列表 + 模型健康（启用在前、禁用在后）
         if (isExpanded) {
             const keyList = $('<div class="csl-vendor-keys"></div>');
-            for (const entry of groupEntries) {
+            const sortedEntries = [...groupEntries].sort((a, b) => {
+                if (!!a.enabled !== !!b.enabled) return a.enabled ? -1 : 1;
+                return String(a.label ?? '').localeCompare(String(b.label ?? ''), undefined, { sensitivity: 'base' });
+            });
+            for (const entry of sortedEntries) {
                 const keyRow = $('<div class="csl-vendor-key-row"></div>');
                 const keyUnused = isKeyUnused(entry);
                 if (keyUnused) keyRow.addClass('csl-vendor-key-row--unused');
