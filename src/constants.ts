@@ -2,15 +2,8 @@
 import type { FormatConfig, FormatName, QuickActionPlacement, RoutingSettings } from './types.js';
 
 export const MODULE_NAME = 'quickerApi';
-export const LEGACY_MODULE_NAME = 'customOpenAIProfiles';
 export const SCHEMA_VERSION = 14;
 export const EMPTY_SECRET_LABEL = 'Quicker Api · No key';
-
-export const SUPPORTED_SOURCES = new Set([
-    'custom',
-    'claude',
-    'makersuite',
-]);
 
 export const FORMATS: Record<FormatName, FormatConfig> = Object.freeze({
     openai: Object.freeze({
@@ -45,8 +38,6 @@ export const FORMATS: Record<FormatName, FormatConfig> = Object.freeze({
     }),
 });
 
-export const FORMAT_NAMES: FormatName[] = ['openai', 'anthropic', 'gemini'];
-
 export const QUICK_ACTION_PLACEMENTS: QuickActionPlacement[] = ['leftSendForm', 'rightSendForm', 'qrButtons', 'disabled'];
 
 export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
@@ -54,6 +45,16 @@ export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
     stickyCount: 0,
     failThreshold: 3,
     cooldownSeconds: 300,
+});
+
+/** 启动空占位连接（custom + 空 URL）：持久化后 isValidUrl('') 为 false，
+ *  避免 ST「自动连接上次服务器」（RA_autoconnect）连到上次路由/手动配置的 vendor。
+ *  真实连接由拦截模式（patchGenerateData）在生成时接管。 */
+export const EMPTY_CUSTOM_CONNECTION = Object.freeze({
+    chat_completion_source: 'custom' as const,
+    custom_url: '',
+    custom_model: '',
+    custom_api_format: 'openai_compat',
 });
 
 /** 规范化路由设置（载入时迁移用，与 DEFAULT_ROUTING_SETTINGS 语义一致）。

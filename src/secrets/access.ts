@@ -7,10 +7,3 @@ export function getSecretEntries(key: string): SecretEntry[] {
     return Array.isArray(secret_state[key]) ? secret_state[key] : [];
 }
 
-export function getSecretEntry(key: string, id: string): SecretEntry | null {
-    return getSecretEntries(key).find(entry => entry.id === id) || null;
-}
-
-export function getActiveSecret(key: string): SecretEntry | null {
-    return getSecretEntries(key).find(entry => entry.active) || null;
-}

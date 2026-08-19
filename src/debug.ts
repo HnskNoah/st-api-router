@@ -14,10 +14,6 @@ export function isDebugLogEnabled(): boolean {
     return enabled;
 }
 
-export function setDebugLogEnabled(value: boolean): void {
-    enabled = value;
-}
-
 export function initDebugLog(): void {
     enabled = typeof localStorage !== 'undefined' && localStorage.getItem(DEBUG_KEY) === '1';
     if (enabled) console.log('[ST Api Router] debug log enabled');

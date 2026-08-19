@@ -30,34 +30,6 @@ export const nativePresetCaptureHandlers: Record<string, (() => void) | undefine
 export const ownedPopups = new Set<{ completeCancelled: () => Promise<void> }>();
 export const activeFetchControllers = new Set<AbortController>();
 
-export function resetRuntimeState() {
-    runtimeState.operationQueue = Promise.resolve();
-    runtimeState.connectionMutationQueue = Promise.resolve();
-    runtimeState.profileSelectionGeneration = 0;
-    runtimeState.extensionDisabled = false;
-    runtimeState.teardownPending = false;
-    runtimeState.presetEventDedupe = null;
-    runtimeState.presetTransitionBlocked = false;
-    runtimeState.presetConnectWasDisabled = false;
-    runtimeState.nativePresetSaveIntent = null;
-    runtimeState.originalFetch = null;
-    runtimeState.presetObservedFetch = null;
-    runtimeState.editorModelBaseline = '';
-    runtimeState.quickActionQueue = Promise.resolve();
-    runtimeState.quickActionTransaction = 0;
-    runtimeState.quickActionBlockingToken = 0;
-    runtimeState.quickPresetWaitCancel = null;
-    runtimeState.quickActionMenu = null;
-    runtimeState.quickActionPopper = null;
-    runtimeState.quickActionPlacementPopup = null;
-    runtimeState.quickActionObserver = null;
-    runtimeState.quickActionRenderPending = false;
-    runtimeState.generationRoutingInFlight = false;
-    for (const key of Object.keys(nativePresetCaptureHandlers)) delete nativePresetCaptureHandlers[key];
-    ownedPopups.clear();
-    activeFetchControllers.clear();
-}
-
 /** 预设切换/QA 方案执行期间阻断连接按钮，防止凭据错配。 */
 export function beginPresetTransition(): void {
     if (!runtimeState.presetTransitionBlocked) runtimeState.presetConnectWasDisabled = Boolean($('#api_button_openai').prop('disabled'));

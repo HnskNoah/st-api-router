@@ -109,20 +109,6 @@ export async function findMatchingSecret(key: string, value: string): Promise<{ 
     return { entry: null, exposureAvailable: readable };
 }
 
-export async function ensureSecret(key: string, value: string, label: string): Promise<{ id: string; reused: boolean; exposureAvailable: boolean }> {
-    const normalized = normalizeText(value);
-    if (!normalized) return { id: '', reused: false, exposureAvailable: true };
-    const match = await findMatchingSecret(key, normalized);
-    if (match.entry) {
-        const activated = await rotateSecretVerified(key, match.entry.id);
-        return { id: activated ? match.entry.id : '', reused: true, exposureAvailable: true };
-    }
-    const id = await writeSecretVerified(key, normalized, label);
-    const state = id ? await readAuthoritativeSecretState() : null;
-    const verified = Boolean(id && state?.[key]?.some(entry => entry.id === id && entry.active));
-    return { id: verified ? id : '', reused: false, exposureAvailable: match.exposureAvailable };
-}
-
 /** 只为拿到一个可用的 secret id：已有同值 secret 就复用其 id（不切换 active），没有才写一条新的。 */
 export async function ensureSecretId(key: string, value: string, label: string): Promise<string> {
     const normalized = normalizeText(value);

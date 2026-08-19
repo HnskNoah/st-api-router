@@ -148,15 +148,3 @@ export interface SecretEntry {
     [key: string]: unknown;
 }
 
-/** UI 依赖注入契约：路由面板与子模块共用。 */
-export interface RoutingUIDeps {
-    getVendors(): Vendor[];
-    getGroups(): Group[];
-    getLogicalModels(): LogicalModel[];
-    getActiveGroupId(): string | null;
-    setActiveGroupId(id: string | null): void;
-    getRouting(): RoutingSettings;
-    getMappingRules(): MappingRule[];
-    getIgnoredModels(): string[];
-    save(): void;
-}

@@ -1,7 +1,8 @@
 // 生命周期：初始化、冲突检测、DOM 观察、teardown
 
 import { eventSource, event_types, saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
-import { oai_settings, chat_completion_sources } from '@sillytavern/scripts/openai';
+import { oai_settings } from '@sillytavern/scripts/openai';
+import { EMPTY_CUSTOM_CONNECTION } from './constants.js';
 import { runtimeState, ownedPopups, activeFetchControllers, beginPresetTransition, endPresetTransition } from './state.js';
 import { settings } from './settings/access.js';
 import { initializeSettings } from './settings/initialize.js';
@@ -22,13 +23,12 @@ export function detectConflict(): boolean {
 
 /** 启动时把 ST 连接置为空地址占位：custom 空 URL，避免 "自动连接上次服务器" 连到上次路由/手动配置的 vendor。 */
 function ensureEmptyConnectionPlaceholder(): void {
-    oai_settings.chat_completion_source = chat_completion_sources.CUSTOM;
-    oai_settings.custom_url = '';
-    oai_settings.custom_model = '';
-    oai_settings.custom_api_format = 'openai_compat';
+    Object.assign(oai_settings, EMPTY_CUSTOM_CONNECTION);
     // 只改下拉显示，不 trigger('change')——避免触发 ST reconnect / /v1/models
     const sourceEl = $('#chat_completion_source');
-    if (sourceEl.length && String(sourceEl.val() ?? '') !== chat_completion_sources.CUSTOM) sourceEl.val(chat_completion_sources.CUSTOM);
+    if (sourceEl.length && String(sourceEl.val() ?? '') !== EMPTY_CUSTOM_CONNECTION.chat_completion_source) {
+        sourceEl.val(EMPTY_CUSTOM_CONNECTION.chat_completion_source);
+    }
     saveSettingsDebounced();
     setOnlineStatus('Valid');
     debugLog('empty connection placeholder applied');
