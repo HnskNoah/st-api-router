@@ -188,7 +188,9 @@ export function closeConsolePanel(): void {
     debugLog('closeConsolePanel');
     if (!isOpen) return;
     isOpen = false;
-    overlayEl?.removeClass('csl-overlay--open');
+    // 关闭时从 DOM 移除 overlay，避免透明全屏层继续拦截鼠标事件
+    overlayEl?.remove();
+    overlayEl = null;
     document.body.style.overflow = '';
     $(document).off('keydown.quickerApiConsole');
     debugLog('console panel closed');
