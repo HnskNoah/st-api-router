@@ -148,19 +148,20 @@ function renderModels(body: JQuery<HTMLElement>): void {
         });
         return;
     }
-    // 搜索框（过滤 data-search）
+    // 搜索框（过滤 data-search；模型列表放独立容器，避免 renderDashboard.empty 清掉搜索框）
     const searchWrap = $('<div class="qam-search"></div>');
     const search = $('<input class="text_pole" type="search" maxlength="200" placeholder="搜索模型…">')
         .on('input', () => {
             const q = String(search.val() ?? '').trim().toLowerCase();
-            body.find('.csl-model-row').each(function () {
+            listEl.find('.csl-model-row').each(function () {
                 const matches = !q || String($(this).attr('data-search') || '').includes(q);
                 $(this).toggle(matches);
             });
         });
     searchWrap.append(search);
-    body.append(searchWrap);
-    renderDashboard(body, null, (id) => {
+    const listEl = $('<div class="qam-model-list"></div>');
+    body.append(searchWrap, listEl);
+    renderDashboard(listEl, null, (id) => {
         selectedLogicalId = id;
         body.empty();
         renderModels(body);
