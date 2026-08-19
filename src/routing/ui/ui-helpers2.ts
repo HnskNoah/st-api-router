@@ -3,13 +3,6 @@
 
 import type { Vendor } from '../../types.js';
 
-export const FORMAT_LABELS: Record<string, string> = { 'custom': 'OpenAI 兼容', 'deepseek': 'DeepSeek' };
-
-export function statusBadge(reason: string | null): string {
-    const label: Record<string, string> = { disabled: '禁用', rpm: '限流' };
-    return `<span class="st-router-badge st-router-badge--${reason ?? 'ok'}">${reason ? (label[reason] ?? reason) : '可用'}</span>`;
-}
-
 export function vendorStatus(vendor: Vendor, now = Date.now()): string | null {
     if (!vendor || vendor.enabled === false) return 'disabled';
     const { window } = windowForVendor(vendor, now);
@@ -18,7 +11,7 @@ export function vendorStatus(vendor: Vendor, now = Date.now()): string | null {
     return null;
 }
 
-export function windowForVendor(vendor: Vendor, now: number): { window: number[]; count: number } {
+function windowForVendor(vendor: Vendor, now: number): { window: number[]; count: number } {
     const cutoff = now - 60 * 1000;
     const window = (vendor?.window || []).filter(ts => typeof ts === 'number' && ts > cutoff);
     return { window, count: window.length };
@@ -40,10 +33,4 @@ export function formatCooldownMs(ms: number): string {
     const h = Math.floor(m / 60);
     const rm = m % 60;
     return h > 0 ? (rm > 0 ? `${h}h ${rm}m` : `${h}h`) : `${rm}m`;
-}
-
-export function field(labelText: string, control: JQuery<HTMLElement>, hint = ''): JQuery<HTMLElement> {
-    const label = $('<label></label>').append($('<span>').text(labelText));
-    if (hint) label.append($('<span class="quicker-api__field-hint" title=""></span>').attr('title', hint).text('?'));
-    return $('<div class="quicker-api__field"></div>').append(label, control);
 }

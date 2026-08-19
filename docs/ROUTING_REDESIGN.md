@@ -145,10 +145,13 @@ Vendor --提供(多对多)--> RealModel --多对一--> LogicalModel --属于(多
 - **兜底路由**（`src/routing/fallback.ts`）：独立请求流（MClite / JS-Slash-Runner 走 `generate()` 不触发 `GENERATION_STARTED`）时，`onChatCompletionSettingsReady` 无 active 路由，由 `resolveFallbackRoute` 按当前 Group 逻辑模型选路接管连接字段。不弹 token 钳制确认窗，避免卡死独立流。
 - **手动路由锁定**（`src/routing/manual-route.ts` + `hooks.ts` `consumeManualLock`）：用户点击手动路由按钮后，锁定选中的 `Vendor + Key + realModel` 到下一次生成；下一次生成消费锁定并记录 RPM，之后恢复随机。分组切换或逻辑模型变化后旧锁定失效。手动锁定对兜底路由同样生效。
 
-### Vendor 健康（Vendor 级熔断 — 当前实际行为）
+### 模型健康（Key × realModel 级熔断 — 当前实际行为）
 
-- **Vendor 级**：`recordVendorFailure`（`src/domain/vendor.ts`）累加 `failStreak`，达到 `failThreshold` 后 `vendor.enabled = false`，需手动启用恢复。`successes/failures` 跨会话保留，`window/failStreak/lastError` 载入时重置。
-- **⚠️ 已知退化**：旧 Provider 层（`src/domain/provider.ts` + `routing.ts`）本来有 `key × model` 级熔断（`ProviderKey.circuits[model]`、`failStreakByModel[model]`），迁移到 Vendor/Group 层时退化到 Vendor 级。完整设计稿见 `docs/PER_MODEL_HEALTH_DESIGN.md`，但**尚未实现**。
+- **Key × realModel 级**（`src/domain/model-health.ts`）：`recordModelFailure` 按 `GroupEntry(Key) × realModel` 粒度记账，区分 `fatal`（不可恢复→长冷却 6h）、`rate_limited`（限流→短冷却 30s 不累计）、`temp/unknown`（临时→累计连续失败达阈值冷却+指数退避 1→2→4→…→32）。`recordModelSuccess` 清除冷却，恢复健康。
+- **路由过滤**（`src/domain/group-routing.ts` `modelUnitUnavailabilityReason`）：冷却中模型自动排除，同 Key 的其他模型不受影响。
+- **Vendor 级统计**（`src/domain/vendor.ts`）：`successes/failures` 跨会话保留，仅用于 UI 展示和路由加权（`vendorEffectiveWeight`），不再触发 Vendor 级禁用。
+- **失败观察**（`src/routing/failure-observer.ts`）：`end()` 返回 `FailureProbe { kind, message }`，供模型级记账使用。
+- **接线**（`src/routing/hooks.ts` `onGenerationEnded`）：成功→`recordModelSuccess`，失败→`recordModelFailure`；Vendor 失败计数仅作统计用。
 
 ### maxContext 钳制
 
@@ -159,7 +162,7 @@ Vendor --提供(多对多)--> RealModel --多对一--> LogicalModel --属于(多
 - **已完成**（`src/routing/hooks.ts` + `apply-provider.ts` + `patch-generate-data.ts`）：
   - `GENERATION_STARTED` → `runGenerationRouting` → 选路 + token 钳制弹窗 + 设 `state.active`。
   - `CHAT_COMPLETION_SETTINGS_READY` → 有 `active` → `patchGenerateData`（拦截模式改写 `chat_completion_source`/`reverse_proxy`/`proxy_password`/`model` 等字段）；无 `active` → `resolveFallbackRoute`（兜底路由）。
-  - `GENERATION_ENDED` → `onGenerationEnded` → `recordVendorFailure`/`recordVendorSuccess` + toastr 提示。
+  - `GENERATION_ENDED` → `onGenerationEnded` → `recordModelFailure`/`recordVendorSuccess` + toastr 提示。
   - `GENERATION_STOPPED` → `onGenerationStopped` → RPM 回滚 + 标记 `userStopPending`（排除用户主动停止的误判）。
   - 跳过非用户触发生成（`quiet`/`continue`/`impersonate`）；`guard` 安全阻断（预设切换/密钥阻断）时跳过路由覆盖。
   - 对 `custom` format Vendor 自动 `ensureEntrySecret`（`src/secrets/api.ts`），确保 ST 自定义源能读到 key。
@@ -170,32 +173,31 @@ Vendor --提供(多对多)--> RealModel --多对一--> LogicalModel --属于(多
 
 ### UI
 
-- **路由面板**（`src/routing/ui.ts`）：Vendor / Group 管理面板，支持拉取模型自动映射、编辑、删除、一键清除 secret。Key 条目收进 Vendor 展开区，未使用 Group 的 Vendor 高亮提示。旧 Profile 区折叠保留兼容入口。
+- **路由控制台**（`src/routing/ui/console-panel.ts` + `src/routing/ui/console-panel-styles.ts` + `dashboard.ts` + `route-detail.ts` + `right-*.ts`）：新版三栏浮层面板，入口在 Quick Actions 菜单顶部（`openConsolePanel`）。左栏逻辑模型仪表盘（健康状态一览）、中栏路由详情（选中模型的所有可用路由及冷却状态）、右栏四 tab（设置 / Vendor 管理 / 路由 / 映射）。CSS 独立于 `console-panel-styles.ts`，各栏渲染独立于各 `render-*.ts`。
 - **便捷按钮管理**（`src/quick-actions/manager.ts`）：管理界面（新增/编辑/删除/排序/复制），支持选择预设、模型（逻辑模型/聚合模型混合候选），配置入口位置（发送栏左/右侧、Quick Reply 按钮栏、禁用）。
 - **快捷入口**（`src/quick-actions/runner.ts` + `menu.ts` + `menu-core.ts`）：发送栏左侧/右侧或 QR 按钮栏显示快捷按钮，点击后切换 preset + 模型（逻辑模型切换当前 Group 的 `currentLogicalModelId`，非逻辑模型回退写 `custom_model`）。
-- **工具栏按钮**（`src/ui/toolbar.ts`）：扩展工具栏手动路由按钮、日志弹窗（左对齐，避免居中显示）。
-- **Profile 密钥健康检查**（`src/profiles/health.ts` + `key-editor.ts`）：检查密钥是否有效，一键清理无效 secret。
+- **手动路由按钮**（`src/routing/manual-route-entry.ts`）：发送栏 `[🎲]`，锁定下一次生成路由到指定 Vendor/Key/Model。
 
 ### 模型管理
 
-- **模型拉取**（`src/models/manage.ts` + `fetch.ts`）：通过路由面板"拉取模型"按钮按 Vendor 拉取，结果存入 `vendor.fetchedModels`。
-- **批量创建逻辑模型**（`src/import/native.ts`）：从已拉取模型批量创建逻辑模型并自动映射（核心名匹配、统一小写）。
-- **归并**（`src/domain/model-catalog.ts`）：一键把某个逻辑模型合并到另一个。
-- **模型判定**（`isRoutedModel`）：同时认旧 Provider 聚合模型、新 Vendor 映射 realModel、逻辑模型 id/name。
+- **模型拉取**（`src/routing/ui/right-vendor.ts` + `right-route.ts`）：通过控制台"刷新模型"按钮按 Vendor 拉取，结果存入 `entry.fetchedModels`。
+- **批量创建逻辑模型**（`src/domain/vendor.ts` `buildLogicalModelsFromFetched`）：从已拉取模型批量创建逻辑模型并自动映射（核心名匹配、统一小写）。
+- **归并**（`src/routing/ui/right-route.ts`）：一键把某个逻辑模型合并到另一个。
+- **模型判定**（`isRoutedModel`，`src/domain/vendor.ts`）：同时认新 Vendor 映射 realModel、逻辑模型 id/name。
 
 ### 便捷方案（Quick Actions）
 
-- **已完成**（`src/quick-actions/` + `src/domain/quick-action.ts`）：支持预设 + 模型组合；模型字段支持逻辑模型名/真实模型名/旧 Provider 聚合模型。解析优先按逻辑模型 id/name（`resolveLogicalModelForAction`），非逻辑模型回退旧行为（路由真实模型写 `custom_model`，其余原生格式推断）。编辑候选列表含逻辑模型名。
+- **已完成**（`src/quick-actions/` + `src/domain/quick-action.ts`）：支持预设 + 模型组合；模型字段支持逻辑模型/真实模型名。解析优先按逻辑模型 id/name（`resolveLogicalModelForAction`），非逻辑模型回退写 `custom_model`。编辑候选列表含逻辑模型名。
 
 ### 导入导出
 
-- **导出**：`src/import/native.ts` 导出完整路由配置 JSON（含 Key，需妥善保管）。
+- **导出**：控制台"路由"tab（`src/routing/ui/right-route.ts`）导出完整路由配置 JSON（含 Key，需妥善保管）。
 - **模型列表导出**：txt 格式，不含密钥。
 
 ### 与最初设计文档的已知差异
 
 - 实现用 `mappings` 字段（非 `modelMappings`/`modelRules`），逻辑模型选中存 `currentLogicalModelId`。
 - Vendor 成功率权重存 `weight`（基础权重），实际选路权重 = `weight * (0.5 + successRate)`（`vendorEffectiveWeight`，`src/domain/vendor.ts`）。
-- Group 条目为 `{ id, vendorId, apiKey, label, enabled, ... }`（含运行时健康字段，但目前只支持 Vendor 级熔断）。
+- Group 条目为 `{ id, vendorId, apiKey, label, enabled, ... }`，含运行时健康字段（`failStreakByModel`、`circuitsByModel` 等），支持 **Key × realModel 级熔断**。
 - 模型获取只通过路由面板的"拉取模型"按钮按 Vendor 拉取，未挂钩 ST 原生"获取模型"按钮（与初衷一致：不做插件轮询）。
-- 未实现**模型级熔断**（Key × realModel 粒度），设计稿见 `docs/PER_MODEL_HEALTH_DESIGN.md`，待实现。
+- 模型级熔断已实现（`src/domain/model-health.ts`），冷却采用指数退避，半开用真实流量验证。

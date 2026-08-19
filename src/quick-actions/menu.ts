@@ -6,6 +6,7 @@ import { normalizeQuickActionPlacement, quickActionDisplayName } from '../domain
 import { queueQuickAction } from './runner.js';
 import { closeQuickActionMenu } from './menu-core.js';
 import { manageQuickActions } from './manager.js';
+import { openConsolePanel } from '../routing/ui/console-panel.js';
 import { debugLog, exportDebugLog } from '../debug.js';
 import { Popup } from '@sillytavern/scripts/popup';
 import { POPUP_TYPE } from '@sillytavern/scripts/popup';
@@ -33,6 +34,13 @@ export function openQuickActionMenu(anchor: HTMLElement, placement: string): voi
     const actions = [...settings().quickActions].sort((a, b) => a.sequence - b.sequence);
     const menu = $('<ul class="list-group ctx-menu quicker-api__quick-menu" role="list" tabindex="-1">').data('anchor', anchor).appendTo(document.body);
     runtimeState.quickActionMenu = menu;
+    const consoleItem = $('<li class="list-group-item ctx-header" role="listitem" tabindex="0" data-quicker-api-actionable="true" title="路由控制台（三栏管理面板）">')
+        .append(
+            $('<div class="qr--button-icon fa-solid fa-table-columns">'),
+            $('<div class="qr--button-label">').text('路由控制台'),
+        )
+        .on('click', () => { closeQuickActionMenu(); openConsolePanel(); });
+    menu.append(consoleItem);
     const settingsItem = $('<li class="list-group-item ctx-header quicker-api__quick-manage" role="listitem" tabindex="0" data-quicker-api-actionable="true" title="便捷按钮管理">')
         .append(
             $('<div class="qr--button-icon fa-solid fa-gear">'),

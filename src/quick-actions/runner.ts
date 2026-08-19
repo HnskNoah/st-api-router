@@ -1,21 +1,18 @@
-// 便捷方案执行器（预设 → 模型 顺序安全切换）
+// 便捷方案执行器（预设 → 逻辑模型 顺序安全切换）
 
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
 import { FORMATS } from '../constants.js';
-import { runtimeState } from '../state.js';
-import { settings, profiles, providers, routingSettings, selectedProfile, currentPresetName, vendors, logicalModels, groups } from '../settings/access.js';
+import { runtimeState, beginPresetTransition, endPresetTransition } from '../state.js';
+import { settings, groups, logicalModels, routingSettings, currentPresetName } from '../settings/access.js';
 import { normalizeText } from '../utils/text.js';
-import { isRoutedModel } from '../domain/model-catalog.js';
+import { isRoutedModel } from '../domain/vendor.js';
 import { resolveLogicalModelForAction } from '../domain/quick-action.js';
 import { enqueueOperation, waitForStableOperationQueue } from '../operation-queue.js';
-import { applyProfile } from '../apply/profile.js';
-import { beginPresetTransition, endPresetTransition } from '../presets/transition.js';
-import { renderModelControl, renderProfiles } from '../ui/render.js';
 import { closeQuickActionMenu } from './menu-core.js';
 import { quickActionDisplayName } from '../domain/quick-action.js';
 import { debugLog } from '../debug.js';
-import type { LogicalModel, Profile, QuickAction } from '../types.js';
+import type { LogicalModel, QuickAction } from '../types.js';
 
 export function findFormatForCurrentSource(): string {
     return Object.entries(FORMATS).find(([, config]) => config.source === oai_settings.chat_completion_source)?.[0] || '';
@@ -81,30 +78,12 @@ export function waitForPresetAfter(expectedName: string, token: number): Promise
     });
 }
 
-export async function selectPresetForQuickAction(name: string, token: number): Promise<boolean> {
+export function selectPresetForQuickAction(name: string, token: number): Promise<boolean> {
     const option = $('#settings_preset_openai option').filter((_, item) => normalizeText(item.textContent) === name).first();
-    if (!option.length || token !== runtimeState.quickActionTransaction) return false;
+    if (!option.length || token !== runtimeState.quickActionTransaction) return Promise.resolve(false);
     const after = waitForPresetAfter(name, token);
     $('#settings_preset_openai').val(String(option.val() ?? '')).trigger('change');
-    return await after;
-}
-
-export async function applyProfileById(profileId: string, token: number = runtimeState.quickActionTransaction, { applyModel = true, manageTransition = true } = {}): Promise<boolean | undefined> {
-    const profile = profiles().find(item => item.id === profileId);
-    if (!profile || token !== runtimeState.quickActionTransaction) return false;
-    const generation = ++runtimeState.profileSelectionGeneration;
-    settings().selectedProfileId = profile.id;
-    saveSettingsDebounced();
-    renderProfiles(profile.id);
-    if (manageTransition) beginPresetTransition();
-    try {
-        return await enqueueOperation(async () => {
-            if (token !== runtimeState.quickActionTransaction || generation !== runtimeState.profileSelectionGeneration) return false;
-            return await applyProfile(profile, generation, true, applyModel);
-        });
-    } finally {
-        if (manageTransition) endPresetTransition();
-    }
+    return after;
 }
 
 export async function runQuickAction(action: QuickAction, token: number): Promise<void> {
@@ -142,7 +121,7 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
                 debugLog('runQuickAction switched logical model', { logicalModelId: logical.id, logicalModelName: logical.name });
             } else {
                 // 路由命中的真实模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
-                const routedModel = routingSettings().enabled && isRoutedModel(providers(), groups(), logicalModels(), action.model);
+                const routedModel = routingSettings().enabled && isRoutedModel(groups(), logicalModels(), action.model);
                 const applied = routedModel
                     ? setRoutedModel(action.model)
                     : applyExplicitModel(action.model);
@@ -158,8 +137,6 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
             debugLog('runQuickAction abort: stale token after model', { token });
             return;
         }
-        renderProfiles(settings().selectedProfileId);
-        if (action.model) renderModelControl(selectedProfile(), action.model);
         if (switchedLogicalModel) {
             saveSettingsDebounced();
             $(document).trigger('quickerApi:logical-model-changed');
@@ -187,7 +164,6 @@ export function queueQuickAction(action: QuickAction): Promise<unknown> {
             return;
         }
         const token = ++runtimeState.quickActionTransaction;
-        runtimeState.profileSelectionGeneration++;
         return await runQuickAction(snapshot, token);
     };
     runtimeState.quickActionQueue = runtimeState.quickActionQueue.then(run, run);

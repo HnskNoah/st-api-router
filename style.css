@@ -399,8 +399,18 @@ dialog.popup:has(.quicker-api__model-manager) .popup-controls .menu_button:focus
     order: 1;
 }
 
-#quicker_api_manual_route {
-    order: 2;
+#quicker_api_manual_route,
+#quicker_api_console_entry {
+    order: 3;
+    flex: 0 0 var(--bottomFormBlockSize);
+    width: var(--bottomFormBlockSize);
+    height: var(--bottomFormBlockSize);
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.7;
 }
 
 #quicker_api_quick_left:hover,
@@ -408,6 +418,8 @@ dialog.popup:has(.quicker-api__model-manager) .popup-controls .menu_button:focus
 #quicker_api_quick_right:hover,
 #quicker_api_quick_right:focus-visible,
 #quicker_api_manual_route:hover,
+#quicker_api_console_entry:hover,
+#quicker_api_console_entry:focus-visible,
 #quicker_api_manual_route:focus-visible {
     opacity: 1;
     filter: none !important;

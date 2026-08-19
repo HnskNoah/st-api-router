@@ -9,7 +9,7 @@ import { setOnlineStatus } from '@sillytavern/script';
 import { SECRET_KEYS, secret_state } from '@sillytavern/scripts/secrets';
 import { clampContextLimit } from '../domain/context.js';
 import { computeVendorTokenClamps } from '../domain/vendor.js';
-import type { Provider, ProviderKey, Vendor } from '../types.js';
+import type { Vendor } from '../types.js';
 
 const CUSTOM_API_FORMAT_VALUES: Record<string, string> = {
     'custom': 'openai_compat',
@@ -96,15 +96,6 @@ function applyConnectionFields(format: string, endpoint: string, apiKey: string,
     if (!wasCustom) {
         syncInput('#chat_completion_source', chat_completion_sources.CUSTOM, 'change');
     }
-}
-
-/** 把路由单元（provider + key）写入 ST 连接字段。不触碰任何请求内容字段（include/exclude）。 */
-export function applyProviderConnection(provider: Provider, key: ProviderKey, model: string): void {
-    const format = String(provider?.format || 'custom');
-    const endpoint = String(provider?.endpoint || '').trim();
-    const apiKey = String(key?.apiKey || '');
-    applyConnectionFields(format, endpoint, apiKey, model);
-    setOnlineStatus('Valid');
 }
 
 /** 新 Vendor/Group 路由连接：Vendor + 条目 Key + 真实模型名。token 钳制由调用方按确认结果决定。 */

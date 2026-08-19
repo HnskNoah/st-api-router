@@ -1,5 +1,5 @@
 // 常量定义（来自 index.js 顶部的 FORMATS / DEFAULT_SETTINGS 等）
-import type { FormatConfig, FormatName, QuickerApiSettings, QuickActionPlacement, RoutingSettings } from './types.js';
+import type { FormatConfig, FormatName, QuickActionPlacement, RoutingSettings } from './types.js';
 
 export const MODULE_NAME = 'quickerApi';
 export const LEGACY_MODULE_NAME = 'customOpenAIProfiles';
@@ -56,23 +56,23 @@ export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
     cooldownSeconds: 300,
 });
 
-export const DEFAULT_SETTINGS: QuickerApiSettings = Object.freeze({
-    schemaVersion: SCHEMA_VERSION,
-    profiles: [],
-    providers: [],
-    vendors: [],
-    logicalModels: [],
-    groups: [],
-    routing: DEFAULT_ROUTING_SETTINGS,
-    selectedProfileId: null,
-    activeProfileId: null,
-    activeGroupId: null,
-    emptySecretIds: {},
-    presetBindings: {},
-    migratedFromCustomOpenAIProfiles: false,
-    blockedSecretKeys: {},
-    quickActions: [],
-    quickActionPlacement: 'leftSendForm',
-    mappingRules: [],
-    ignoredModels: [],
-});
+/** 规范化路由设置（载入时迁移用，与 DEFAULT_ROUTING_SETTINGS 语义一致）。
+ *  兼容旧版 stickySeconds：若存在且 >0 则迁移为 stickyCount=1。 */
+export function normalizeRoutingSettings(raw: unknown): RoutingSettings {
+    const routing = (raw && typeof raw === 'object' ? raw : {}) as Record<string, any>;
+    if (routing.stickyCount === undefined && routing.stickySeconds !== undefined) {
+        routing.stickyCount = Number(routing.stickySeconds) > 0 ? 1 : 0;
+    }
+    return {
+        enabled: Boolean(routing.enabled),
+        stickyCount: Number.isFinite(Number(routing.stickyCount)) && Number(routing.stickyCount) >= 0
+            ? Math.floor(Number(routing.stickyCount))
+            : DEFAULT_ROUTING_SETTINGS.stickyCount,
+        failThreshold: Number.isFinite(Number(routing.failThreshold)) && Number(routing.failThreshold) > 0
+            ? Math.floor(Number(routing.failThreshold))
+            : DEFAULT_ROUTING_SETTINGS.failThreshold,
+        cooldownSeconds: Number.isFinite(Number(routing.cooldownSeconds)) && Number(routing.cooldownSeconds) > 0
+            ? Math.floor(Number(routing.cooldownSeconds))
+            : DEFAULT_ROUTING_SETTINGS.cooldownSeconds,
+    };
+}

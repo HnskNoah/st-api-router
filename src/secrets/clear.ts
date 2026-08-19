@@ -1,5 +1,4 @@
-// secret 清理纯逻辑：判断哪些条目是插件临时写入、可安全清除的。
-// 与 ST 网络无关，便于单元测试。
+// Secret 标签清理纯函数（无宿主依赖，可独立测试）。
 
 export const QUICK_API_SECRET_LABEL_PREFIX = 'quicker-api:';
 

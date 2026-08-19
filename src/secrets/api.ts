@@ -6,9 +6,11 @@ import { EMPTY_SECRET_LABEL, FORMATS } from '../constants.js';
 import { runtimeState } from '../state.js';
 import { normalizeText } from '../utils/text.js';
 import { settings } from '../settings/access.js';
-import { clearableQuickApiSecretIds } from '../domain/secrets.js';
 import { getSecretEntries } from './access.js';
 import { fetchJsonWithTimeout, fetchWithTimeout } from '../fetch.js';
+import { QUICK_API_SECRET_LABEL_PREFIX, clearableQuickApiSecretIds } from './clear.js';
+
+export { QUICK_API_SECRET_LABEL_PREFIX, clearableQuickApiSecretIds };
 
 export async function readAuthoritativeSecretState(): Promise<Record<string, any> | null> {
     try {

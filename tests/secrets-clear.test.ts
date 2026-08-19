@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { clearableQuickApiSecretIds, QUICK_API_SECRET_LABEL_PREFIX } from '../src/domain/secrets.js';
+import { clearableQuickApiSecretIds, QUICK_API_SECRET_LABEL_PREFIX } from '../src/secrets/clear.js';
 
-describe('domain/secrets > clearableQuickApiSecretIds', () => {
+describe('secrets > clearableQuickApiSecretIds', () => {
     it('只返回 quicker-api: 前缀的条目 id', () => {
         const ids = clearableQuickApiSecretIds([
             { id: 'a', label: 'quicker-api:硅基流动' },

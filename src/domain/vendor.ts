@@ -4,22 +4,26 @@
 import { normalizeModelList } from '../utils/model-list.js';
 import { normalizeText, sanitizeName } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
-import { normalizeProviderFormat } from './provider.js';
 import type {
     Group,
     GroupEntry,
     LogicalModel,
     MappingRule,
     ModelFailureKind,
-    Provider,
     Vendor,
     VendorFormat,
-    VendorMigrationResult,
     VendorModelMapping,
 } from '../types.js';
 
 export const VENDOR_RPM_DEFAULT = 3;
 export const VENDOR_WEIGHT_DEFAULT = 1;
+
+export const PROVIDER_FORMATS: VendorFormat[] = ['custom', 'deepseek'];
+
+export function normalizeProviderFormat(value: unknown): VendorFormat {
+    const v = String(value ?? '').trim();
+    return (PROVIDER_FORMATS as string[]).includes(v) ? (v as VendorFormat) : 'custom';
+}
 
 export function normalizeVendorModelMapping(raw: Record<string, any> | undefined): VendorModelMapping {
     return {
@@ -658,6 +662,38 @@ export function sortedLogicalModels(logicalModels: LogicalModel[]): LogicalModel
     return [...(logicalModels || [])].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
 }
 
+/** 聚合模型清单：所有 Key 已拉取的真实模型名（去重）。 */
+export function aggregateModels(groups: Group[]): string[] {
+    const names = new Set<string>();
+    for (const entry of allGroupEntries(groups)) {
+        for (const model of entry.fetchedModels) {
+            if (model) names.add(model);
+        }
+    }
+    return [...names];
+}
+
+/** 模型名是否参与路由：命中 Key 映射的真实模型名、或逻辑模型 id/name。 */
+export function isRoutedModel(
+    groups: Group[],
+    logicalModels: LogicalModel[],
+    model: string,
+): boolean {
+    const value = String(model || '').trim();
+    if (!value) return false;
+    for (const group of groups || []) {
+        for (const entry of group?.entries || []) {
+            for (const mapping of entry?.mappings || []) {
+                if (mapping.realModel === value) return true;
+            }
+        }
+    }
+    for (const logical of logicalModels || []) {
+        if (logical.id === value || logical.name === value) return true;
+    }
+    return false;
+}
+
 /** 安全归一化 Record<string, number> 映射（过滤非法值）。 */
 function normalizeStringNumberMap(raw: unknown): Record<string, number> {
     if (!raw || typeof raw !== 'object') return {};
@@ -761,52 +797,7 @@ export function vendorEffectiveWeight(vendor: Vendor): number {
 }
 
 export function recordVendorSuccess(vendor: Vendor): void {
-    if (!vendor) return;
     vendor.successes = (Number(vendor.successes) || 0) + 1;
     vendor.failStreak = 0;
     vendor.lastError = '';
-}
-
-/** 旧 Provider/Key 过渡实现 → Vendor / Group 迁移。
- *  只建立 Vendor 与 GroupEntry（Key）结构：apiKey/label/enabled 保留；旧模型数据（fetchedModels/mappings/逻辑模型）丢弃，等拉取重建。 */
-export function migrateProvidersToVendorModel(providers: Provider[] | undefined): VendorMigrationResult {
-    const vendors: Vendor[] = [];
-    const entries: GroupEntry[] = [];
-
-    for (const provider of providers || []) {
-        const firstKey = provider?.keys?.[0];
-        vendors.push(normalizeVendor({
-            id: provider.id,
-            name: provider.name,
-            format: provider.format,
-            endpoint: provider.endpoint,
-            enabled: provider.enabled,
-            rpm: firstKey?.rpm ?? VENDOR_RPM_DEFAULT,
-            weight: firstKey?.weight ?? VENDOR_WEIGHT_DEFAULT,
-            updatedAt: provider.updatedAt,
-        }));
-        for (const key of provider?.keys || []) {
-            entries.push(normalizeGroupEntry({
-                vendorId: provider.id,
-                apiKey: key.apiKey,
-                label: key.label || 'Key',
-                enabled: key.enabled,
-            }));
-        }
-    }
-
-    const groups: Group[] = entries.length > 0
-        ? [normalizeGroup({
-            name: '默认分组',
-            enabled: true,
-            currentLogicalModelId: '',
-            entries,
-        })]
-        : [];
-
-    return {
-        vendors,
-        logicalModels: [],
-        groups,
-    };
 }

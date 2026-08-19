@@ -57,3 +57,17 @@ export function resetRuntimeState() {
     ownedPopups.clear();
     activeFetchControllers.clear();
 }
+
+/** 预设切换/QA 方案执行期间阻断连接按钮，防止凭据错配。 */
+export function beginPresetTransition(): void {
+    if (!runtimeState.presetTransitionBlocked) runtimeState.presetConnectWasDisabled = Boolean($('#api_button_openai').prop('disabled'));
+    runtimeState.presetTransitionBlocked = true;
+    $('#api_button_openai').prop('disabled', true);
+}
+
+export function endPresetTransition({ force = false }: { force?: boolean } = {}): void {
+    if (runtimeState.teardownPending && !force) return;
+    if (!runtimeState.presetTransitionBlocked) return;
+    runtimeState.presetTransitionBlocked = false;
+    $('#api_button_openai').prop('disabled', runtimeState.presetConnectWasDisabled);
+}

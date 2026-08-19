@@ -1,9 +1,13 @@
 // 操作队列（串行化所有敏感的连接/密钥操作）
 
 import { runtimeState } from './state.js';
-import { renderProfiles, setOperationControlsDisabled } from './ui/render.js';
-import { settings } from './settings/access.js';
 import { debugLog } from './debug.js';
+
+const CONTROLS_SELECTOR = '#quicker_api select, #quicker_api button';
+
+function setControlsDisabled(disabled: boolean): void {
+    $(CONTROLS_SELECTOR).prop('disabled', disabled);
+}
 
 export function enqueueOperation<T>(operation: () => Promise<T> | T): Promise<T | undefined> {
     const run = async () => {
@@ -13,7 +17,7 @@ export function enqueueOperation<T>(operation: () => Promise<T> | T): Promise<T 
         });
         if (runtimeState.extensionDisabled || runtimeState.teardownPending) return undefined;
         const presetWasDisabled = Boolean($('#settings_preset_openai').prop('disabled'));
-        setOperationControlsDisabled(true);
+        setControlsDisabled(true);
         $('#settings_preset_openai').prop('disabled', true);
         try {
             const result = await operation();
@@ -23,11 +27,9 @@ export function enqueueOperation<T>(operation: () => Promise<T> | T): Promise<T 
             console.error('[QuickerApi] Operation failed:', error);
             debugLog('operation failed', error);
             toastr.error('Quicker Api 操作失败；未确认的连接不会被启用。');
-            renderProfiles(settings().selectedProfileId);
             return undefined;
         } finally {
-            if (!runtimeState.extensionDisabled) setOperationControlsDisabled(false);
-            $('#settings_preset_openai').prop('disabled', presetWasDisabled);
+            if (!runtimeState.extensionDisabled) setControlsDisabled(false);
             debugLog('operation finally', { presetWasDisabled });
         }
     };

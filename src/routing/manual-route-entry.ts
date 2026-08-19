@@ -1,5 +1,6 @@
-// 手动路由按钮：注入发送按钮旁边，点击后按当前分组逻辑模型只读选一个 Vendor/Key，
-// 锁定到下一次生成（不记 RPM、不写 secrets、不发消息）。下一次生成消费锁定并清除。
+// 手动路由按钮：注入发送按钮旁边。
+// 点击手动路由按钮按当前分组逻辑模型只读选一个 Vendor/Key，锁定到下一次生成。
+// 路由控制台入口已移到 Quick Actions 菜单顶部（src/quick-actions/menu.ts）。
 
 import { activeGroup, groups, routingSettings, vendors } from '../settings/access.js';
 import { runtimeState } from '../state.js';
@@ -49,12 +50,19 @@ export function makeManualRouteEntry(): JQuery<HTMLElement> {
 
 export function ensureManualRouteEntry(): void {
     if (runtimeState.extensionDisabled || runtimeState.teardownPending) return;
-    if (document.getElementById('quicker_api_manual_route')) return;
     const sendButton = document.getElementById('send_but');
-    const entry = makeManualRouteEntry()[0];
-    sendButton?.parentElement?.insertBefore(entry, sendButton);
+    if (!sendButton?.parentElement) return;
+
+    // 手动路由按钮
+    if (!document.getElementById('quicker_api_manual_route')) {
+        const entry = makeManualRouteEntry()[0];
+        sendButton.parentElement.insertBefore(entry, sendButton);
+    }
+
+    // 路由控制台入口已迁移到 Quick Actions 菜单顶部，清理残留按钮
+    $('#quicker_api_console_entry').remove();
 }
 
 export function removeManualRouteEntry(): void {
-    $('#quicker_api_manual_route').remove();
+    $('#quicker_api_manual_route, #quicker_api_console_entry').remove();
 }

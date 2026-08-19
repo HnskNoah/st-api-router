@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeProviders } from '../src/domain/provider.js';
 import {
-    migrateProvidersToVendorModel,
     normalizeGroup,
     normalizeGroups,
     normalizeLogicalModel,
@@ -75,56 +73,6 @@ describe('domain/vendor normalization', () => {
         }]);
         expect(groups[0].entries[0].fetchedModels).toEqual(['[1]claude-opus-4-8', 'gemini-3.1-pro-preview']);
         expect(groups[0].entries[0].mappings).toEqual([{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'l1' }]);
-    });
-});
-
-describe('domain/vendor migration', () => {
-    it('migrates old Provider/Key into Vendor + Group structure, old model data is discarded', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [
-                    { label: 'A1', fetchedModels: ['grok', 'gemini'] },
-                    { label: 'A2', fetchedModels: ['grok'] },
-                ],
-            },
-        ]));
-        expect(migrated.vendors).toHaveLength(1);
-        expect(migrated.vendors[0]).not.toHaveProperty('fetchedModels');
-        expect(migrated.logicalModels).toEqual([]);
-        expect(migrated.groups).toHaveLength(1);
-        expect(migrated.groups[0].entries).toHaveLength(2);
-        expect(migrated.groups[0].entries[0].fetchedModels).toEqual([]);
-        expect(migrated.groups[0].entries[0].mappings).toEqual([]);
-        expect(migrated.groups[0].entries[1].fetchedModels).toEqual([]);
-        expect(migrated.groups[0].entries[1].mappings).toEqual([]);
-        expect(migrated.groups[0].currentLogicalModelId).toBe('');
-    });
-
-    it('does not create empty group when no keys', () => {
-        const migrated = migrateProvidersToVendorModel([]);
-        expect(migrated.vendors).toEqual([]);
-        expect(migrated.groups).toEqual([]);
-    });
-
-    it('keeps key structure (apiKey/label/enabled) when migrating', () => {
-        const migrated = migrateProvidersToVendorModel(normalizeProviders([
-            {
-                name: 'A',
-                endpoint: 'https://a/v1',
-                keys: [
-                    { label: 'A1', apiKey: 'k1', enabled: true, fetchedModels: ['[1]claude-opus-4-8'] },
-                    { label: 'A2', apiKey: 'k2', enabled: false, fetchedModels: ['gemini-3.1-pro-preview-thinking'] },
-                ],
-            },
-        ]));
-        expect(migrated.vendors[0].name).toBe('A');
-        expect(migrated.groups[0].entries.map(entry => ({ apiKey: entry.apiKey, label: entry.label, enabled: entry.enabled }))).toEqual([
-            { apiKey: 'k1', label: 'A1', enabled: true },
-            { apiKey: 'k2', label: 'A2', enabled: false },
-        ]);
-        expect(migrated.groups[0].entries.every(entry => entry.mappings.length === 0)).toBe(true);
     });
 });
 

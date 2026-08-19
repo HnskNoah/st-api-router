@@ -3,9 +3,9 @@
 import { saveSettingsDebounced } from '@sillytavern/script';
 import { Popup, POPUP_TYPE } from '@sillytavern/scripts/popup';
 import { runtimeState, ownedPopups } from '../state.js';
-import { settings, providers, logicalModels } from '../settings/access.js';
+import { settings, groups, logicalModels } from '../settings/access.js';
 import { normalizeQuickAction, normalizeQuickActionPlacement, normalizeQuickActionsForPersist, quickActionDisplayName } from '../domain/quick-action.js';
-import { aggregateModels } from '../domain/model-catalog.js';
+import { aggregateModels } from '../domain/vendor.js';
 import { normalizeText, sanitizeName } from '../utils/text.js';
 import { normalizeModelList } from '../utils/model-list.js';
 import { makeId } from '../utils/id.js';
@@ -231,7 +231,7 @@ export function manageQuickActions(): void {
         const refreshModels = () => {
             // 聚合模型（供应商路由）与逻辑模型合并候选；select2 提供 ST 原生搜索下拉
             const logicalNames = logicalModels().map(model => model.name);
-            const models = normalizeModelList([...aggregateModels(providers()), ...logicalNames, draft.model])
+            const models = normalizeModelList([...aggregateModels(groups()), ...logicalNames, draft.model])
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
             modelSelect.empty().append($('<option value="">— 不切换模型 —</option>'));
             models.forEach(model => modelSelect.append($('<option>').val(model).text(model)));

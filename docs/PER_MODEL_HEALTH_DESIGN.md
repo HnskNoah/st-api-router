@@ -1,12 +1,18 @@
 # 设计稿：渠道（GroupEntry）× 真实模型 级被动健康检测与熔断
 
-> **⚠️ 状态：设计稿，尚未在代码中实现**
+> **✅ 状态：已按本设计稿实现**
 >
-> 本文件是本项目的设计稿，不是当前代码的行为描述。当前代码实际行为是 **Vendor 级熔断**（见 `docs/ROUTING_REDESIGN.md`「实现状态」→ Vendor 健康）。
+> 本文件是本项目的历史设计稿。完整实现见：
+> - `src/domain/model-health.ts` — 错误分类、失败/成功记账、指数退避
+> - `src/domain/group-routing.ts` `modelUnitUnavailabilityReason` — 模型冷却过滤
+> - `src/routing/failure-observer.ts` — `end()` 返回 `FailureProbe`
+> - `src/routing/hooks.ts` `onGenerationEnded` — 模型级记账（`recordModelFailure/recordModelSuccess`）
+> - `src/types.ts` — `ModelFailureKind` + `GroupEntry` 健康字段
+> - `SCHEMA_VERSION` 已达到 14
 >
-> 旧 Provider 层（`src/domain/provider.ts` + `routing.ts`）已实现 `key × model` 级熔断（`ProviderKey.circuits[model]`），但新 Vendor/Group 层在迁移时丢失了这一能力。本设计稿旨在把旧层的成熟模式搬进新层，并补上错误分类、指数退避、半开用真实流量验证。
+> 当前代码行为：**GroupEntry(Key) × realModel 级熔断**，冷却采用指数退避（1→2→4→…→32），不可恢复错误（fatal）长冷却 6h，限流短冷却 30s 不累计。冷却到期即恢复可路由，下一次真实请求自然验证。
 >
-> 如需落地，请按本设计稿 §9 实施顺序执行，或参考 `docs/HANDOFF_GATEWAY_DESIGN_REVIEW.md` 的 P0 检查清单。
+> 本设计稿保留为实施参考和文档索引。
 
 > 目标：把可用性状态的粒度从 **Vendor 级** 下沉到 **GroupEntry(Key) × realModel 级**，
 > 纯被动（不主动测 vendor、不调 `/models`），完全在现有扩展架构内落地，

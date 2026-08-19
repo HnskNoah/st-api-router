@@ -1,55 +1,17 @@
-// 生命周期：初始化、初始选中恢复、teardown、冲突检测、DOM 观察
+// 生命周期：初始化、冲突检测、DOM 观察、teardown
 
 import { eventSource, event_types, saveSettingsDebounced } from '@sillytavern/script';
-import { runtimeState, ownedPopups, activeFetchControllers, nativePresetCaptureHandlers } from './state.js';
-import { settings, profiles, currentPresetName } from './settings/access.js';
+import { runtimeState, ownedPopups, activeFetchControllers, beginPresetTransition, endPresetTransition } from './state.js';
+import { settings } from './settings/access.js';
 import { initializeSettings } from './settings/initialize.js';
-import { clearKeyEditor, renderProfiles, renderStatus, setOperationControlsDisabled } from './ui/render.js';
-import { cancelOwnedPopups } from './popups.js';
 import { enqueueOperation } from './operation-queue.js';
 import { readAuthoritativeSecretState } from './secrets/api.js';
-import { applyProfile } from './apply/profile.js';
-import { beginPresetTransition, endPresetTransition } from './presets/transition.js';
-import { handleNativePresetChangeBefore, handleNativePresetChange, handlePresetRenamed, handlePresetDeleted } from './presets/hooks.js';
-import { guardGenerationWhenBlocked } from './apply/guard.js';
 import { closeQuickActionMenu } from './quick-actions/menu-core.js';
 import { ensureQuickActionEntries, scheduleQuickActionEntries } from './quick-actions/menu.js';
 import { ensureManualRouteEntry } from './routing/manual-route-entry.js';
 import { normalizeQuickActionPlacement } from './domain/quick-action.js';
-import { profileMatchesNative } from './native/match.js';
-import { bindEvents } from './events.js';
-import { toolbarHtml } from './ui/toolbar.js';
-import { updatePanelVisibility } from './ui/render.js';
 import { initRouting, teardownRouting } from './routing/init.js';
 import { initDebugLog, debugLog } from './debug.js';
-
-function findInitialProfile() {
-    const currentPreset = currentPresetName();
-    const boundId = currentPreset ? settings().presetBindings[currentPreset] : '';
-    let target = profiles().find(profile => profile.id === settings().selectedProfileId) || null;
-    if (!target) target = profiles().find(profile => profile.id === boundId) || null;
-    if (!target) target = profiles().find(profile => profile.id === settings().activeProfileId) || null;
-    if (!target) target = profiles().find(profile => profileMatchesNative(profile)) || null;
-    if (!target && profiles().length === 1) target = profiles()[0];
-    return target;
-}
-
-export async function restoreInitialProfileSelection(): Promise<void> {
-    const target = findInitialProfile();
-    settings().selectedProfileId = target?.id || null;
-    settings().activeProfileId = null;
-    saveSettingsDebounced();
-    renderProfiles(target?.id || null);
-    if (!target) return;
-    const generation = ++runtimeState.profileSelectionGeneration;
-    beginPresetTransition();
-    try {
-        const applied = await applyProfile(target, generation, true);
-        if (!applied) renderStatus('所选 Profile 未应用。');
-    } finally {
-        endPresetTransition();
-    }
-}
 
 export function detectConflict(): boolean {
     if (!document.getElementById('apihub_container')) return false;
@@ -90,7 +52,6 @@ export async function teardownQuickerApi(): Promise<boolean> {
     if (runtimeState.teardownPending || runtimeState.extensionDisabled) return false;
     runtimeState.teardownPending = true;
     beginPresetTransition();
-    setOperationControlsDisabled(true);
     runtimeState.quickActionObserver?.disconnect();
     runtimeState.quickActionObserver = null;
     closeQuickActionMenu();
@@ -98,10 +59,9 @@ export async function teardownQuickerApi(): Promise<boolean> {
     $('#quicker_api_quick_left, #quicker_api_quick_right, [data-quicker-api-qr-entry]').remove();
     runtimeState.quickPresetWaitCancel?.();
     runtimeState.quickPresetWaitCancel = null;
-    await cancelOwnedPopups();
+    await Promise.allSettled([...ownedPopups].map(popup => (popup as any).completeCancelled?.()));
     for (const controller of [...activeFetchControllers]) controller.abort();
     runtimeState.quickActionTransaction++;
-    runtimeState.profileSelectionGeneration++;
 
     await runtimeState.quickActionQueue.catch(() => undefined);
     let stableQueue: Promise<unknown> | null = null;
@@ -116,29 +76,11 @@ export async function teardownQuickerApi(): Promise<boolean> {
     runtimeState.quickActionBlockingToken = 0;
     endPresetTransition({ force: true });
     runtimeState.quickActionRenderPending = false;
-    clearKeyEditor();
-    $('#quicker_api').remove();
     teardownRouting();
-    $('#custom_form, #claude_form, #makersuite_form').removeClass('quicker-api__native-provider');
     $(document).off('.quickerApi').off('.quickerApiMenu');
     $(window).off('.quickerApiMenu');
     if (globalThis.visualViewport) $(globalThis.visualViewport).off('.quickerApiMenu');
     $('#custom_api_url_text, #custom_model_id, #openai_reverse_proxy, #model_claude_select, #model_google_select, #chat_completion_source').off('.quickerApi');
-    eventSource.removeListener(event_types.OAI_PRESET_CHANGED_BEFORE, handleNativePresetChangeBefore);
-    eventSource.removeListener(event_types.OAI_PRESET_CHANGED_AFTER, handleNativePresetChange);
-    eventSource.removeListener(event_types.PRESET_RENAMED, handlePresetRenamed);
-    eventSource.removeListener(event_types.PRESET_DELETED, handlePresetDeleted);
-    eventSource.removeListener(event_types.CHAT_COMPLETION_SETTINGS_READY, guardGenerationWhenBlocked);
-    const updateButton = document.getElementById('update_oai_preset');
-    const createButton = document.getElementById('new_oai_preset');
-    if (nativePresetCaptureHandlers.update) updateButton?.removeEventListener('click', nativePresetCaptureHandlers.update, true);
-    if (nativePresetCaptureHandlers.create) createButton?.removeEventListener('click', nativePresetCaptureHandlers.create, true);
-    delete nativePresetCaptureHandlers.update;
-    delete nativePresetCaptureHandlers.create;
-    runtimeState.nativePresetSaveIntent = null;
-    if (runtimeState.presetObservedFetch && globalThis.fetch === runtimeState.presetObservedFetch) globalThis.fetch = runtimeState.originalFetch as typeof fetch;
-    runtimeState.originalFetch = null;
-    runtimeState.presetObservedFetch = null;
     debugLog('teardownQuickerApi done');
     return true;
 }
@@ -156,19 +98,11 @@ export function initQuickerApi(): void {
         debugLog('initQuickerApi aborted: #openai_api missing');
         return;
     }
-    if (document.getElementById('quicker_api')) {
-        debugLog('initQuickerApi skipped: panel already present');
-        return;
-    }
-    $('#chat_completion_source').after(toolbarHtml());
-    updatePanelVisibility();
-    bindEvents();
-    renderProfiles();
     initRouting();
+    ensureQuickActionEntries();
     watchForDomChanges();
     void enqueueOperation(async () => {
         if (!await readAuthoritativeSecretState()) toastr.warning('Quicker Api 暂时无法读取权威密钥状态；切换将保持阻断。');
-        await restoreInitialProfileSelection();
     });
     debugLog('initQuickerApi done');
     console.log('[QuickerApi] Extension loaded');

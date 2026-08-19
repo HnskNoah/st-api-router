@@ -1,8 +1,6 @@
 # 交接文档：外部「聚合路由网关」设计评审与落地对照
 
-> 交接对象：下一位继续本插件开发的 agent / 开发者
-> 交接目的：评审一份外部提供的「聚合路由网关」设计方案对本项目（ST-Quicker-Api / st-api-router）是否有帮助、哪些部分值得吸收、哪些必须拒绝，以及下一步具体做什么。
-> 状态：**评审完成，未写实现代码**（本文件是可执行的交接文档）。
+> **⚠️ 更新说明**：本文的 §3.2 gap 分析和 §4 P0 清单基于 2026-08 的代码状态，当时模型级熔断尚未实现。**截至当前，P0 清单已全部落地**（见下文"已实现"标注），本文保留为历史评审记录。
 
 ---
 
@@ -85,35 +83,35 @@
   - `src/domain/routing.ts`:100-120 有 `key×model` 级熔断记账（`recordFailure` / 清熔断）。
   - 新 Vendor/Group 层迁移时**把这个能力弄丢了**，退回 Vendor 级。
 
-### 3.2 设计稿存在但未实现
+### 3.2 设计稿存在但已实现
 
-`docs/PER_MODEL_HEALTH_DESIGN.md`（347 行，完整可落地设计）明确要做的 5 步，**代码里一样都没有**：
+`docs/PER_MODEL_HEALTH_DESIGN.md`（347 行，完整可落地设计）的 5 步要求，**代码已全部实现**：
 
 | 设计稿要求 | 代码现状 |
 |---|---|
-| `types.ts` 的 `GroupEntry` 加 `failStreakByModel/circuitsByModel/lastErrorKindByModel/cooldownMultiplierByModel/lastErrorByRealModel` + `ModelFailureKind` 类型 | ❌ 只有旧 `ProviderKey` 上有；`GroupEntry` 上没有；`ModelFailureKind` 不存在 |
-| `vendor.ts` `normalizeGroupEntry` 归一化新字段 + `resetGroupRuntimeState` | ❌ 不存在 |
-| 新增 `src/domain/model-health.ts`（`classifyModelFailureMessage`/`recordModelSuccess`/`recordModelFailure`） | ❌ 文件不存在（Test-Path=False） |
-| `group-routing.ts` 加 `modelUnitUnavailabilityReason`（模型冷却过滤） | ❌ 不存在 |
-| `failure-observer.ts` `end()` 返回 `FailureProbe {kind, message}`（非 boolean） | ❌ 仍返回 `boolean` |
-| `hooks.ts` `onGenerationEnded` 改模型级记账 | ❌ 仍是 `recordVendorFailure` |
-| `SCHEMA_VERSION` 12 → 13 + 迁移测试 | ❌ 未动 |
+| `types.ts` 的 `GroupEntry` 加 `failStreakByModel/circuitsByModel/lastErrorKindByModel/cooldownMultiplierByModel/lastErrorByRealModel` + `ModelFailureKind` 类型 | ✅ 已实现（`src/types.ts:157,178-186`） |
+| `vendor.ts` `normalizeGroupEntry` 归一化新字段 + `resetGroupRuntimeState` | ✅ 已实现 |
+| 新增 `src/domain/model-health.ts`（`classifyModelFailureMessage`/`recordModelSuccess`/`recordModelFailure`） | ✅ 已实现（139 行完整） |
+| `group-routing.ts` 加 `modelUnitUnavailabilityReason`（模型冷却过滤） | ✅ 已实现（`group-routing.ts:52`） |
+| `failure-observer.ts` `end()` 返回 `FailureProbe {kind, message}`（非 boolean） | ✅ 已实现（`failure-observer.ts:68`） |
+| `hooks.ts` `onGenerationEnded` 改模型级记账 | ✅ 已实现（`hooks.ts:320,326`） |
+| `SCHEMA_VERSION` 12 → 13 + 迁移测试 | ✅ 已升级到 14，测试全绿 |
 
 ---
 
 ## 4. 建议的下一步（按优先级）
 
-### P0（核心交付，独立可完成）：按 `PER_MODEL_HEALTH_DESIGN.md` 落地模型级熔断
+### P0（✅ 已完成）：按 `PER_MODEL_HEALTH_DESIGN.md` 落地模型级熔断
 
-完全按现有设计稿执行，顺序即设计稿 §9：
+完全按现有设计稿执行，顺序即设计稿 §9。**截至当前，P0 已全部完成**：
 
-1. `src/types.ts`：`GroupEntry` 追加 5 个运行时健康字段 + 定义 `ModelFailureKind`。
-2. `src/domain/vendor.ts`：`normalizeGroupEntry` 补默认值；新增 `resetGroupRuntimeState(groups)`；`src/settings/initialize.ts` 在 `resetVendorRuntimeState` 旁调用；`SCHEMA_VERSION` 12→13（迁移安全，旧数据走 normalize 默认补全）。
-3. 新增 `src/domain/model-health.ts`：分类 + 成功/失败记账 + 指数退避（常量复用 `RoutingSettings.failThreshold/cooldownSeconds`；fatal 6h、rate_limit 30s、cap ×32）。
-4. `src/domain/group-routing.ts`：`groupUnitUnavailabilityReason` 末尾追加 `modelUnitUnavailabilityReason`（`circuitsByModel[realModel]` 未过期 → 返回 `'cooldown'`）。
-5. `src/routing/failure-observer.ts`：`end()` 返回 `FailureProbe | null`（带上 `kind` 与截断消息）。
-6. `src/routing/hooks.ts`：`onGenerationEnded` 改成 `recordModelSuccess/recordModelFailure`（按 `entry×realModel` 记账）；`recordVendorFailure` 降级为可选兜底或一期移除。
-7. 测试：新增 `tests/model-health.test.ts`、`tests/group-routing-health.test.ts`、`tests/failure-observer.test.ts`；跑 `npm test`（现有全部测试保持全绿）、`npm run typecheck`、`npm run build`。
+1. `src/types.ts`：`GroupEntry` 追加 5 个运行时健康字段 + 定义 `ModelFailureKind` — ✅
+2. `src/domain/vendor.ts`：`normalizeGroupEntry` 补默认值；新增 `resetGroupRuntimeState(groups)`；`src/settings/initialize.ts` 调用；`SCHEMA_VERSION` 已到 14 — ✅
+3. `src/domain/model-health.ts`：分类 + 成功/失败记账 + 指数退避 — ✅
+4. `src/domain/group-routing.ts`：`modelUnitUnavailabilityReason` 追加 — ✅
+5. `src/routing/failure-observer.ts`：`end()` 返回 `FailureProbe | null` — ✅
+6. `src/routing/hooks.ts`：`onGenerationEnded` 改成 `recordModelSuccess/recordModelFailure` — ✅
+7. 测试：`tests/model-health.test.ts`（24 测试）、`group-routing-health.test.ts`（9）、`failure-observer.test.ts`（8）全部通过 — ✅
 
 ### P1（轻量替代日志/告警，可选）
 

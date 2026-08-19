@@ -1,4 +1,4 @@
-// 领域类型定义（忠实移植 index.js 的数据形状）
+// 领域类型定义（Vendor / Group / QuickAction）
 
 export type FormatName = 'openai' | 'anthropic' | 'gemini';
 
@@ -13,26 +13,6 @@ export interface FormatConfig {
     endpointInput: string;
 }
 
-export interface Profile {
-    id: string;
-    name: string;
-    format: FormatName;
-    endpoint: string;
-    model: string;
-    availableModels: string[];
-    fetchedModels: string[];
-    customized: boolean;
-    fetchedFromEndpoint: string;
-    includeBody: string;
-    excludeBody: string;
-    includeHeaders: string;
-    secretId: string;
-    proxyPreset: string;
-    needsSecret: boolean;
-    nativeImportFingerprint: string;
-    updatedAt: string;
-}
-
 export interface QuickAction {
     id: string;
     name: string;
@@ -43,46 +23,6 @@ export interface QuickAction {
 
 export type QuickActionPlacement = 'leftSendForm' | 'rightSendForm' | 'qrButtons' | 'disabled';
 
-// ── Provider 聚合路由领域类型（v11）──
-
-export type ProviderFormat = 'custom' | 'deepseek';
-
-export interface ProviderKey {
-    id: string;
-    label: string;
-    apiKey: string;
-    fetchedModels: string[];
-    rpm: number;
-    weight: number;
-    enabled: boolean;
-    // ── 运行时状态（不持久化语义）──
-    window: number[];                       // rpm 滑动窗口（熔断不影响 rpm 计数）
-    circuits: Record<string, number>;       // model -> 熔断截止时间（熔断针对模型）
-    failStreakByModel: Record<string, number>; // model -> 连续失败
-    lastError: string;
-}
-
-export interface Provider {
-    id: string;
-    name: string;
-    format: ProviderFormat;
-    endpoint: string;
-    keys: ProviderKey[];
-    enabled: boolean;
-    updatedAt: string;
-}
-
-export interface RoutingUnit {
-    provider: Provider;
-    key: ProviderKey;
-}
-
-/** 模型注册表条目：模型记录自己的承载供应商（provider/key）。 */
-export interface ModelEntry {
-    model: string;
-    units: RoutingUnit[];
-}
-
 export interface RoutingSettings {
     enabled: boolean;
     stickyCount: number;
@@ -90,18 +30,7 @@ export interface RoutingSettings {
     cooldownSeconds: number;
 }
 
-export interface LastPicked {
-    unitId: string;
-    until: number;
-}
-
-export interface RouteResult {
-    unit: RoutingUnit | null;
-    reasons: string[];
-    nextLastPicked: LastPicked | null;
-}
-
-export type VendorFormat = ProviderFormat;
+export type VendorFormat = 'custom' | 'deepseek';
 
 /** Vendor 级模型映射：真实模型名归并到逻辑模型。 */
 export interface VendorModelMapping {
@@ -173,7 +102,7 @@ export interface GroupEntry {
     fetchedModels: string[];
     mappings: VendorModelMapping[];
 
-    // ── 按 realModel 粒度的健康字段（仿旧 ProviderKey 的 circuits/failStreakByModel）──
+    // ── 按 realModel 粒度的健康字段 ──
     /** realModel -> 连续失败次数（运行时，跨会话载入即重置为 {}）。 */
     failStreakByModel?: Record<string, number>;
     /** realModel -> 熔断(冷却)截止时间戳（持久化，载入时按"已过期=可恢复"处理）。 */
@@ -195,26 +124,14 @@ export interface Group {
     entries: GroupEntry[];
 }
 
-export interface VendorMigrationResult {
-    vendors: Vendor[];
-    logicalModels: LogicalModel[];
-    groups: Group[];
-}
-
 export interface QuickerApiSettings {
     schemaVersion: number;
-    profiles: Profile[];
-    providers: Provider[];
     vendors: Vendor[];
     logicalModels: LogicalModel[];
     groups: Group[];
     routing: RoutingSettings;
-    selectedProfileId: string | null;
-    activeProfileId: string | null;
     activeGroupId: string | null;
     emptySecretIds: Record<string, string>;
-    presetBindings: Record<string, string>;
-    migratedFromCustomOpenAIProfiles: boolean;
     blockedSecretKeys: Record<string, string>;
     quickActions: QuickAction[];
     quickActionPlacement: QuickActionPlacement;
@@ -224,48 +141,6 @@ export interface QuickerApiSettings {
     ignoredModels: string[];
 }
 
-export interface NativeSnapshot {
-    source: string;
-    custom_url: string;
-    custom_model: string;
-    custom_include_body: string;
-    custom_exclude_body: string;
-    custom_include_headers: string;
-    reverse_proxy: string;
-    claude_model: string;
-    google_model: string;
-    proxy_password: string;
-}
-
-export interface CredentialDescriptor {
-    value: string;
-    identity: string;
-    exposureDenied: boolean;
-}
-
-export interface NativeImportCandidate {
-    sourceRef: string;
-    sourceLabel: string;
-    name: string;
-    format: FormatName;
-    endpoint: string;
-    model: string;
-    proxyPreset: string;
-    plainKey: string;
-    sourceSecretKey: string;
-    sourceSecretId: string;
-    credential: CredentialDescriptor;
-    identity: string;
-    fingerprint: string;
-}
-
-export interface ResolvedImportCredential {
-    secretId: string;
-    proxyPreset: string;
-    needsSecret: boolean;
-    exposureDenied: boolean;
-}
-
 export interface SecretEntry {
     id: string;
     active?: boolean;
@@ -273,8 +148,15 @@ export interface SecretEntry {
     [key: string]: unknown;
 }
 
-export interface ModelFetchResult {
-    models: string[];
-    route: string;
-    frontendError?: unknown;
+/** UI 依赖注入契约：路由面板与子模块共用。 */
+export interface RoutingUIDeps {
+    getVendors(): Vendor[];
+    getGroups(): Group[];
+    getLogicalModels(): LogicalModel[];
+    getActiveGroupId(): string | null;
+    setActiveGroupId(id: string | null): void;
+    getRouting(): RoutingSettings;
+    getMappingRules(): MappingRule[];
+    getIgnoredModels(): string[];
+    save(): void;
 }
