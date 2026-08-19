@@ -8,6 +8,7 @@ import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { escapeHtml } from '../utils/text.js';
 import { makeId } from '../utils/id.js';
 import { isKeyUnused, isVendorUnused } from './ui-helpers.js';
+import { FORMAT_LABELS, field, formatCooldownMs, statusBadge, successRateText, vendorStatus } from './ui/ui-helpers2.js';
 import { normalizeRoutingSettings } from '../domain/routing.js';
 import {
     assignModelToLogical,
@@ -35,6 +36,7 @@ import {
 import { clearQuickApiSecrets, ensureEmptySecret, readAuthoritativeSecretState, rotateSecretVerified } from '../secrets/api.js';
 import { isModelInCooldown, modelCooldownRemainingMs, recordModelSuccess } from '../domain/model-health.js';
 import { initMappingTools } from './ui/mapping-tools.js';
+import { openConsolePanel } from './ui/console-panel.js';
 import { exportDebugLog } from '../debug.js';
 import type { Group, GroupEntry, LogicalModel, MappingRule, RoutingSettings, Vendor, VendorModelMapping } from '../types.js';
 
@@ -48,13 +50,6 @@ export interface RoutingUIDeps {
     getMappingRules(): MappingRule[];
     getIgnoredModels(): string[];
     save(): void;
-}
-
-const FORMAT_LABELS: Record<string, string> = { 'custom': 'OpenAI 兼容', 'deepseek': 'DeepSeek' };
-
-function statusBadge(reason: string | null): string {
-    const label: Record<string, string> = { disabled: '禁用', rpm: '限流' };
-    return `<span class="st-router-badge st-router-badge--${reason ?? 'ok'}">${reason ? (label[reason] ?? reason) : '可用'}</span>`;
 }
 
 export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>; render(): void } {
@@ -262,6 +257,7 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             <div class="quicker-api__title">
                 <span><i class="fa-solid fa-route"></i> ST Api Router</span>
                 <span class="st-router-title-actions">
+                    <button id="st_router_open_console" class="menu_button" type="button" title="打开路由控制台（新 UI）"><i class="fa-solid fa-table-columns"></i><span>控制台</span></button>
                     <button id="st_router_toggle_legacy" class="menu_button" type="button" title="旧版 API Profile 设置（过渡兼容）"><i class="fa-solid fa-clock-rotate-left"></i><span>旧版设置</span></button>
                 </span>
             </div>
@@ -647,20 +643,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         unmappedList.append(rows);
     }
 
-    function vendorStatus(vendor: Vendor, now = Date.now()): string | null {
-        if (!vendor || vendor.enabled === false) return 'disabled';
-        const { window } = windowForVendor(vendor, now);
-        const rpm = Number(vendor.rpm) || 0;
-        if (rpm > 0 && window.length >= rpm) return 'rpm';
-        return null;
-    }
-
-    function windowForVendor(vendor: Vendor, now: number): { window: number[]; count: number } {
-        const cutoff = now - 60 * 1000;
-        const window = (vendor?.window || []).filter(ts => typeof ts === 'number' && ts > cutoff);
-        return { window, count: window.length };
-    }
-
     function renderProviderList(): void {
         const vendors = deps.getVendors();
         const group = activeGroup();
@@ -884,30 +866,6 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
             wrap.append(pill);
         }
         return wrap;
-    }
-
-    /** 把毫秒格式化为人类可读时长（如 5m 20s / 1h 30m / 6h）。 */
-    function formatCooldownMs(ms: number): string {
-        const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
-        if (total < 60) return `${total}s`;
-        const m = Math.floor(total / 60);
-        const s = total % 60;
-        if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-        const h = Math.floor(m / 60);
-        const rm = m % 60;
-        return h > 0 ? (rm > 0 ? `${h}h ${rm}m` : `${h}h`) : `${rm}m`;
-    }
-
-    function successRateText(vendor: Vendor): string {
-        const total = (Number(vendor.successes) || 0) + (Number(vendor.failures) || 0);
-        if (total <= 0) return '无历史';
-        return `${Math.round((Number(vendor.successes) || 0) / total * 100)}%`;
-    }
-
-    function field(labelText: string, control: JQuery<HTMLElement>, hint = ''): JQuery<HTMLElement> {
-        const label = $('<label></label>').append($('<span>').text(labelText));
-        if (hint) label.append($('<span class="quicker-api__field-hint" title=""></span>').attr('title', hint).text('?'));
-        return $('<div class="quicker-api__field"></div>').append(label, control);
     }
 
     async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): Promise<string[] | null> {
@@ -1632,6 +1590,9 @@ export function initRoutingUI(deps: RoutingUIDeps): { panel: JQuery<HTMLElement>
         save: deps.save,
         refresh: () => { renderModelList(); renderGroupSummary(); },
     });
+
+    // 路由控制台（新 UI 浮层）：从标题栏按钮打开
+    panel.find('#st_router_open_console').on('click', () => { openConsolePanel(); });
 
     return { panel, render: () => { renderRoutingControls(); renderGroupSelect(); renderProviderList(); renderModelList(); } };
 }
