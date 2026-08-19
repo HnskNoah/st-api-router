@@ -183,6 +183,12 @@ export function ensureConsolePanelStyles(): void {
         .csl-vendor-badge--disabled { color: #e08a8a; border-color: rgba(224, 138, 138, 0.5); }
         .csl-vendor-badge--rpm { color: #e0c07e; border-color: rgba(224, 192, 126, 0.5); }
         .csl-vendor-meta { font-size: 11px; color: #999; flex: none; }
+        .csl-vendor-subrow {
+            display: flex; align-items: center; gap: 6px;
+            padding: 0 10px 6px 34px; font-size: 11px; color: #999;
+            flex-wrap: wrap; min-width: 0;
+        }
+        .csl-vendor-subrow .csl-vendor-meta { display: inline-flex; align-items: center; }
         .csl-vendor-rate-bar { display: inline-flex; width: 40px; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; vertical-align: middle; margin: 0 4px; }
         .csl-vendor-rate-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
         .csl-vendor-actions { flex: none; display: flex; gap: 4px; }

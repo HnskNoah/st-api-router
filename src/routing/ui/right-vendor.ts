@@ -115,6 +115,7 @@ export function renderRightVendor(
         const statusClass = statusBadge === 'disabled' ? 'csl-vendor-badge--disabled' : statusBadge === 'rpm' ? 'csl-vendor-badge--rpm' : 'csl-vendor-badge--ok';
         const nameSpan = $('<span class="csl-vendor-name"></span>').text(vendor.name);
         const badge = $(`<span class="csl-vendor-badge ${statusClass}"></span>`).text(statusText);
+        // 元信息（格式 + 成功率）放到副行，避免挤压名称横排
         const total = (Number(vendor.successes) || 0) + (Number(vendor.failures) || 0);
         const rate = total > 0 ? Math.round((Number(vendor.successes) || 0) / total * 100) : 0;
         const meta = $('<span class="csl-vendor-meta"></span>');
@@ -130,7 +131,8 @@ export function renderRightVendor(
         } else {
             meta.append(document.createTextNode('无历史'));
         }
-        headRow.append(nameSpan, badge, meta);
+        headRow.append(nameSpan, badge);
+        const subRow = $('<div class="csl-vendor-subrow"></div>').append(meta);
 
         // 操作按钮
         const actions = $('<span class="csl-vendor-actions"></span>');
@@ -159,7 +161,7 @@ export function renderRightVendor(
         }
 
         headRow.append(actions);
-        container.append(headRow);
+        container.append(headRow, subRow);
 
         // 展开区：Key 列表 + 模型健康（启用在前、禁用在后）
         if (isExpanded) {
