@@ -2,6 +2,7 @@
 // 纯渲染函数，由 console-panel.ts 调用。
 
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
+import { showEditorDialog } from './controls.js';
 import { makeId } from '../../utils/id.js';
 import { escapeHtml } from '../../utils/text.js';
 import {
@@ -232,11 +233,11 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
     content.append(actions);
     const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
 
-    const doSave = (applyNow: boolean) => {
+    const doSave = (applyNow: boolean): boolean => {
         const pattern = String(patternInput.val() ?? '').trim();
-        if (!pattern) { toastr.warning('请填写匹配正则。'); return; }
+        if (!pattern) { toastr.warning('请填写匹配正则。'); return false; }
         const logicalModelId = String(logicalSelect.val() || '');
-        if (!logicalModelId) { toastr.warning('请选择目标逻辑模型。'); return; }
+        if (!logicalModelId) { toastr.warning('请选择目标逻辑模型。'); return false; }
         let rule: MappingRule;
         const rules = mappingRules();
         if (existing) {
@@ -251,13 +252,22 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
         if (applyNow) touched = applyMappingRule(groups(), rule);
         saveSettingsNow();
         onDone();
-        void popup.completeCancelled();
         toastr.success(existing ? '规则已更新。' : `规则已保存${applyNow ? `并应用，更新 ${touched} 条映射` : ''}。`);
+        return true;
     };
-    saveBtn.on('click', () => doSave(false));
-    applyBtn.on('click', () => doSave(true));
-    cancelBtn.on('click', () => void popup.completeCancelled());
-    void popup.show();
+    showEditorDialog({
+        title: existing ? '编辑映射规则' : '添加映射规则',
+        content,
+        onSave: () => doSave(false),
+        extraActions: [
+            {
+                label: '保存并应用',
+                icon: 'fa-bolt',
+                title: '保存并立即映射',
+                onClick: () => doSave(true),
+            },
+        ],
+    });
 }
 
 /** 编辑逻辑模型的附加参数（custom_include_body / exclude_body / headers，仅 custom Vendor 路由时透传）。 */
@@ -280,25 +290,20 @@ function openLogicalParamsEditor(logicalModelId: string, onDone: () => void): vo
         includeHeadersInput,
     );
 
-    const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-    const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
-    content.append(actions);
-    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
-
-    saveBtn.on('click', () => {
-        const normalized = normalizeLogicalModel({
-            ...model,
-            customIncludeBody: String(includeBodyInput.val() ?? ''),
-            customExcludeBody: String(excludeBodyInput.val() ?? ''),
-            customIncludeHeaders: String(includeHeadersInput.val() ?? ''),
-        });
-        Object.assign(logicalModels().find(item => item.id === logicalModelId) ?? {}, normalized);
-        saveSettingsNow();
-        onDone();
-        void popup.completeCancelled();
-        toastr.success(`逻辑模型「${normalized.name}」的附加参数已保存。`);
+    showEditorDialog({
+        title: `逻辑模型「${model.name}」附加参数`,
+        content,
+        onSave: () => {
+            const normalized = normalizeLogicalModel({
+                ...model,
+                customIncludeBody: String(includeBodyInput.val() ?? ''),
+                customExcludeBody: String(excludeBodyInput.val() ?? ''),
+                customIncludeHeaders: String(includeHeadersInput.val() ?? ''),
+            });
+            Object.assign(logicalModels().find(item => item.id === logicalModelId) ?? {}, normalized);
+            saveSettingsNow();
+            onDone();
+        },
+        successMessage: `逻辑模型「${model.name}」的附加参数已保存。`,
     });
-    cancelBtn.on('click', () => void popup.completeCancelled());
-    void popup.show();
 }

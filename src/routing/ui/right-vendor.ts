@@ -4,6 +4,7 @@
 import { getRequestHeaders } from '@sillytavern/script';
 import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
+import { showEditorDialog } from './controls.js';
 import { groups, logicalModels, vendors } from '../../settings/access.js';
 import { isModelInCooldown, recordModelSuccess } from '../../domain/model-health.js';
 import {
@@ -30,6 +31,44 @@ export function renderRightVendor(
 ): void {
     if (!rightEl) return;
     rightEl.empty();
+
+    // ── 批量刷新全部 Vendor 模型 ──
+    const batchBar = $('<div class="csl-vendor-batch" style="display:flex;gap:4px;margin-bottom:6px"></div>');
+    const batchBtn = $('<button class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表"><i class="fa-solid fa-arrows-rotate"></i><span>刷新全部模型</span></button>')
+        .on('click', async () => {
+            const vendorList = vendors();
+            if (vendorList.length === 0) {
+                toastr.info('还没有 Vendor。先新增 Vendor 并配置 Key。');
+                return;
+            }
+            const btn = batchBtn;
+            btn.prop('disabled', true);
+            try {
+                let ok = 0, skipped = 0;
+                const failed: string[] = [];
+                for (const v of vendorList) {
+                    const localGroup = activeGroup();
+                    const entry = localGroup?.entries.find(e => e.vendorId === v.id && e.apiKey && e.enabled);
+                    if (!entry) { skipped++; continue; }
+                    const result = await fetchModelsForVendor(v, entry);
+                    if (result) ok++;
+                    else failed.push(v.name);
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                saveSettingsNow();
+                renderRightVendor(rightEl, onRefreshDashboard);
+                onRefreshDashboard();
+                const parts = [`成功 ${ok} 个`];
+                if (skipped > 0) parts.push(`无可用 Key 跳过 ${skipped} 个 Vendor`);
+                if (failed.length > 0) parts.push(`失败 ${failed.length} 个（${failed.join('、')}）`);
+                toastr.success(`模型刷新完成：${parts.join('，')}。`);
+            } finally {
+                btn.prop('disabled', false);
+            }
+        });
+    batchBar.append(batchBtn);
+    rightEl.append(batchBar);
+
     const vendorList = vendors();
     if (vendorList.length === 0) {
         rightEl.append($('<div class="csl-empty">').text('还没有 Vendor。点击下方"新增 Vendor"添加。'));
@@ -144,7 +183,7 @@ export function renderRightVendor(
                     });
                 keyRow.append(keyInput);
 
-                // 模型健康胶囊
+                // 模型健康胶囊：正常淡化，冷却/异常高亮并显示状态
                 const now = Date.now();
                 const realModels = [...new Set(entry.mappings.map(mapping => mapping.realModel))];
                 if (realModels.length > 0) {
@@ -153,16 +192,20 @@ export function renderRightVendor(
                         const isCooling = isModelInCooldown(entry, realModel, now);
                         const remainingMs = entry.circuitsByModel?.[realModel] ? entry.circuitsByModel[realModel] - now : 0;
                         const kind = entry.lastErrorKindByModel?.[realModel];
-                        let cls = 'csl-health--healthy';
-                        let text = '正常';
+                        let cls = 'csl-health--healthy csl-health--muted';
+                        let label = '';
                         if (kind === 'fatal' && isCooling) {
                             cls = 'csl-health--fatal';
-                            text = `不可恢复 ${formatCooldownMs(remainingMs)}`;
+                            label = `不可恢复 ${formatCooldownMs(remainingMs)}`;
                         } else if (isCooling) {
                             cls = 'csl-health--cooldown';
-                            text = `冷却 ${formatCooldownMs(remainingMs)}`;
+                            label = `冷却 ${formatCooldownMs(remainingMs)}`;
                         }
-                        const pill = $(`<span class="csl-health-pill ${cls}"></span>`).text(realModel).attr('title', text);
+                        const pill = $(`<span class="csl-health-pill ${cls}"></span>`);
+                        if (label) pill.append($('<span>⚠️</span>'));
+                        pill.append($('<span class="csl-health-pill-model">').text(realModel));
+                        if (label) pill.append($('<span class="csl-health-pill-state">').text(label));
+                        pill.prop('title', `${realModel}${label ? `：${label}` : '（正常）'}`);
                         if (isCooling) {
                             const resetBtn = $('<span class="csl-health-reset" title="手动恢复"><i class="fa-solid fa-rotate-left"></i></span>')
                                 .on('click', () => {
@@ -191,7 +234,7 @@ export function renderRightVendor(
 function renderAddVendorBtn(onRefreshDashboard: () => void): JQuery<HTMLElement> {
     const wrap = $('<div class="csl-vendor-add-wrap"></div>');
     const addBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>')
-        .on('click', async () => {
+        .on('click', () => {
             const content = $('<div></div>');
             const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="如：硅基流动 / OpenRouter">');
             const endpointInput = $('<input class="text_pole" type="text" maxlength="2048" placeholder="站点 API 地址，如 https://api.example.com/v1">');
@@ -200,24 +243,20 @@ function renderAddVendorBtn(onRefreshDashboard: () => void): JQuery<HTMLElement>
                 cslField('名称（识别用）', nameInput),
                 cslField('Endpoint（站点 API 地址）', endpointInput),
             );
-            const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>添加</span></button>');
-            const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-            const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
-            content.append(actions);
-            const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
-            saveBtn.on('click', async () => {
-                const name = String(nameInput.val() ?? '').trim().slice(0, 120);
-                if (!name) return toastr.warning('请填写 Vendor 名称。');
-                const endpoint = String(endpointInput.val() ?? '').trim().slice(0, 2048);
-                const vendor = normalizeVendor({ name, endpoint });
-                vendors().push(vendor);
-                saveSettingsNow();
-                onRefreshDashboard();
-                await popup.completeCancelled();
-                toastr.success(`Vendor「${name}」已添加。`);
+            showEditorDialog({
+                title: '新增 Vendor',
+                content,
+                onSave: () => {
+                    const name = String(nameInput.val() ?? '').trim().slice(0, 120);
+                    if (!name) { toastr.warning('请填写 Vendor 名称。'); return false; }
+                    const endpoint = String(endpointInput.val() ?? '').trim().slice(0, 2048);
+                    const vendor = normalizeVendor({ name, endpoint });
+                    vendors().push(vendor);
+                    saveSettingsNow();
+                    onRefreshDashboard();
+                },
+                successMessage: `Vendor「${nameInput.val()}」已添加。`,
             });
-            cancelBtn.on('click', () => void popup.completeCancelled());
-            void popup.show();
         });
     wrap.append(addBtn);
     return wrap;
@@ -252,29 +291,25 @@ function openVendorEditor(vendor: Vendor, onDone: () => void): void {
         $('<label class="checkbox_label"></label>').append(enabledCheck, ' 启用（参与路由）'),
     );
 
-    const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-    const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn, cancelBtn);
-    content.append(actions);
-    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
-    saveBtn.on('click', async () => {
-        draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || 'Vendor';
-        draft.format = String(formatSelect.val() || 'custom') as Vendor['format'];
-        draft.endpoint = String(endpointInput.val() ?? '').trim();
-        draft.rpm = Math.max(0, Math.floor(Number(rpmInput.val()) || 0));
-        draft.maxContext = Math.max(0, Math.floor(Number(contextInput.val()) || 0));
-        draft.maxInputTokens = Math.max(0, Math.floor(Number(inputTokensInput.val()) || 0));
-        draft.maxOutputTokens = Math.max(0, Math.floor(Number(outputTokensInput.val()) || 0));
-        draft.weight = Math.max(0, Number(weightInput.val()) || 1);
-        draft.enabled = enabledCheck.prop('checked');
-        Object.assign(vendor, normalizeVendor(draft));
-        saveSettingsNow();
-        onDone();
-        await popup.completeCancelled();
-        toastr.success(`Vendor「${draft.name}」已保存。`);
+    showEditorDialog({
+        title: `编辑 Vendor「${vendor.name}」`,
+        content,
+        onSave: () => {
+            draft.name = String(nameInput.val() ?? '').trim().slice(0, 120) || 'Vendor';
+            draft.format = String(formatSelect.val() || 'custom') as Vendor['format'];
+            draft.endpoint = String(endpointInput.val() ?? '').trim();
+            draft.rpm = Math.max(0, Math.floor(Number(rpmInput.val()) || 0));
+            draft.maxContext = Math.max(0, Math.floor(Number(contextInput.val()) || 0));
+            draft.maxInputTokens = Math.max(0, Math.floor(Number(inputTokensInput.val()) || 0));
+            draft.maxOutputTokens = Math.max(0, Math.floor(Number(outputTokensInput.val()) || 0));
+            draft.weight = Math.max(0, Number(weightInput.val()) || 1);
+            draft.enabled = enabledCheck.prop('checked');
+            Object.assign(vendor, normalizeVendor(draft));
+            saveSettingsNow();
+            onDone();
+        },
+        successMessage: `Vendor「${draft.name}」已保存。`,
     });
-    cancelBtn.on('click', () => void popup.completeCancelled());
-    void popup.show();
 }
 
 export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): Promise<string[] | null> {

@@ -15,7 +15,6 @@ import {
     sortedLogicalModels,
 } from '../../domain/vendor.js';
 import { normalizeRoutingSettings } from '../../constants.js';
-import { fetchModelsForVendor, renderRightVendor } from './right-vendor.js';
 import { exportDebugLog } from '../../debug.js';
 import { clearQuickApiSecrets } from '../../secrets/api.js';
 import { escapeHtml } from '../../utils/text.js';
@@ -76,41 +75,9 @@ export function renderRightRoute(
         rows.append(groupRow);
     }
 
-    // 模型管理
+    // 模型管理（批量刷新已移到 Vendor 标签页顶部）
     rows.append($('<div class="csl-section-title">').text('模型管理'));
     const modelRow = $('<div class="csl-field" style="gap:4px"></div>');
-    const refreshAllBtn = $('<button class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表"><i class="fa-solid fa-arrows-rotate"></i><span>刷新全部模型</span></button>')
-        .on('click', async () => {
-            const vendorList = vendors();
-            if (vendorList.length === 0) {
-                toastr.info('还没有 Vendor。先在 Vendor 标签页新增 Vendor 并配置 Key。');
-                return;
-            }
-            const btn = refreshAllBtn;
-            btn.prop('disabled', true);
-            try {
-                let ok = 0, skipped = 0;
-                const failed: string[] = [];
-                for (const v of vendorList) {
-                    const groupLocal = activeGroup();
-                    const entry = groupLocal?.entries.find(e => e.vendorId === v.id && e.apiKey && e.enabled);
-                    if (!entry) { skipped++; continue; }
-                    const result = await fetchModelsForVendor(v, entry);
-                    if (result) ok++;
-                    else failed.push(v.name);
-                    await new Promise(r => setTimeout(r, 100)); // 微小间隔避免连发
-                }
-                saveSettingsNow();
-                onRefreshVendor();
-                onRefreshDashboard();
-                const parts = [`成功 ${ok} 个`];
-                if (skipped > 0) parts.push(`无可用 Key 跳过 ${skipped} 个 Vendor`);
-                if (failed.length > 0) parts.push(`失败 ${failed.length} 个（${failed.join('、')}）`);
-                toastr.success(`模型刷新完成：${parts.join('，')}。`);
-            } finally {
-                btn.prop('disabled', false);
-            }
-        });
     const buildLogicalBtn = $('<button class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>')
         .on('click', () => {
             const allModels: string[] = [];
@@ -166,7 +133,7 @@ export function renderRightRoute(
             cancelBtn.on('click', () => void popup.completeCancelled());
             void popup.show();
         });
-    modelRow.append(refreshAllBtn, buildLogicalBtn, addLogicalBtn);
+    modelRow.append(buildLogicalBtn, addLogicalBtn);
     rows.append(modelRow);
 
     // 数据管理

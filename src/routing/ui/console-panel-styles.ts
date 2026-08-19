@@ -200,9 +200,15 @@ export function ensureConsolePanelStyles(): void {
             font-size: 10px; padding: 1px 6px; border-radius: 8px;
             border: 1px solid rgba(128, 128, 128, 0.3);
         }
+        /* 正常模型淡化，冷却/异常高亮 */
+        .csl-health--muted { opacity: 0.45; }
+        .csl-health--muted .csl-health-pill-state,
+        .csl-health--muted .csl-health-reset { display: none; }
         .csl-health--healthy { border-color: rgba(126, 207, 138, 0.5); color: #7ecf8a; }
-        .csl-health--cooldown { border-color: rgba(224, 192, 126, 0.5); color: #e0c07e; }
-        .csl-health--fatal { border-color: rgba(224, 138, 138, 0.5); color: #e08a8a; }
+        .csl-health--cooldown { border-color: rgba(224, 192, 126, 0.5); color: #e0c07e; background: rgba(224,192,126,0.1); }
+        .csl-health--fatal { border-color: rgba(224, 138, 138, 0.5); color: #e08a8a; background: rgba(224,138,138,0.12); }
+        .csl-health-pill-model { min-width: 0; }
+        .csl-health-pill-state { font-weight: 600; }
         .csl-health-reset { cursor: pointer; opacity: 0.6; font-size: 10px; }
         .csl-health-reset:hover { opacity: 1; color: #fff; }
 
