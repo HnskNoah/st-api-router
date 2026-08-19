@@ -152,6 +152,7 @@ export function ensureConsolePanelStyles(): void {
         .csl-field > input[type="checkbox"] { flex: none; }
         .csl-num { width: 60px; }
         .csl-settings-group { display: flex; flex-direction: column; gap: 2px; }
+        .csl-settings-block + .csl-settings-block { border-top: 1px solid rgba(128,128,128,0.15); padding-top: 8px; margin-top: 8px; }
         .csl-section-title {
             font-size: 12px; font-weight: 600; color: #999;
             padding: 8px 0 4px; border-bottom: 1px solid rgba(128, 128, 128, 0.1);

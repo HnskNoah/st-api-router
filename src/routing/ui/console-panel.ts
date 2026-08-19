@@ -18,7 +18,7 @@ import { ensureConsolePanelStyles } from './console-panel-styles.js';
 let overlayEl: JQuery<HTMLElement> | null = null;
 let isOpen = false;
 let selectedLogicalId: string | null = null;
-let rightTab: 'settings' | 'vendor' | 'route' | 'mapping' = 'settings';
+let rightTab: 'settings' | 'vendor' | 'route' = 'settings';
 
 // ── 面板 DOM 创建 ──
 
@@ -63,7 +63,6 @@ function ensurePanel(): JQuery<HTMLElement> {
         $('<div class="csl-right-tab" data-tab="settings">设置</div>'),
         $('<div class="csl-right-tab" data-tab="vendor">Vendor</div>'),
         $('<div class="csl-right-tab" data-tab="route">路由</div>'),
-        $('<div class="csl-right-tab" data-tab="mapping">映射</div>'),
     );
     right.append(rightTabs, $('<div class="csl-right-content"></div>'));
     body.append(right);
@@ -143,17 +142,20 @@ function refreshRightPanel(): void {
     const tabs = overlayEl?.find('.csl-right-tab');
     tabs?.removeClass('is-active').filter(`[data-tab="${rightTab}"]`).addClass('is-active');
     switch (rightTab) {
-        case 'settings':
-            renderRightSettings(rightContent);
+        case 'settings': {
+            // 设置 tab = 路由参数 + 映射规则/忽略（映射不再单独分栏）
+            const paramsSection = $('<div class="csl-settings-block"></div>');
+            const mappingSection = $('<div class="csl-settings-block"></div>');
+            renderRightSettings(paramsSection);
+            renderRightMapping(mappingSection, () => { refreshDashboard(); refreshCenterPanel(); });
+            rightContent.empty().append(paramsSection, mappingSection);
             break;
+        }
         case 'vendor':
             renderRightVendor(rightContent, () => { refreshDashboard(); refreshCenterPanel(); });
             break;
         case 'route':
             renderRightRoute(rightContent, () => { refreshDashboard(); }, () => { refreshRightPanel(); });
-            break;
-        case 'mapping':
-            renderRightMapping(rightContent, () => { refreshDashboard(); });
             break;
     }
 }
