@@ -63,6 +63,14 @@ export function renderRightRoute(
         routing.stickyCount = v;
         saveSettingsNow();
     })));
+    rows.append(cslField('失败阈值', cslNumber(routing.failThreshold, v => {
+        routing.failThreshold = v;
+        saveSettingsNow();
+    })));
+    rows.append(cslField('冷却时间（秒）', cslNumber(routing.cooldownSeconds, v => {
+        routing.cooldownSeconds = v;
+        saveSettingsNow();
+    })));
 
     // 分组选择
     const group = activeGroup();

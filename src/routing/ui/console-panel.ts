@@ -7,7 +7,6 @@ import { debugLog } from '../../debug.js';
 import { logicalModels } from '../../settings/access.js';
 import { renderDashboard } from './dashboard.js';
 import { renderRouteDetail } from './route-detail.js';
-import { renderRightSettings } from './right-settings.js';
 import { renderRightVendor } from './right-vendor.js';
 import { renderRightRoute } from './right-route.js';
 import { renderRightMapping } from './right-mapping.js';
@@ -144,12 +143,8 @@ function refreshRightPanel(): void {
     tabs?.removeClass('is-active').filter(`[data-tab="${rightTab}"]`).addClass('is-active');
     switch (rightTab) {
         case 'settings': {
-            // 设置 tab = 路由参数 + 映射规则/忽略（映射不再单独分栏）
-            const paramsSection = $('<div class="csl-settings-block"></div>');
-            const mappingSection = $('<div class="csl-settings-block"></div>');
-            renderRightSettings(paramsSection);
-            renderRightMapping(mappingSection, () => { refreshDashboard(); refreshCenterPanel(); });
-            rightContent.empty().append(paramsSection, mappingSection);
+            // 「设置」tab = 映射规则/忽略（路由参数已聚合到「路由」tab，消除重叠）
+            renderRightMapping(rightContent, () => { refreshDashboard(); refreshCenterPanel(); });
             break;
         }
         case 'vendor':

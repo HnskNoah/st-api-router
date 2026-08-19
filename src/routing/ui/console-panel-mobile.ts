@@ -5,7 +5,7 @@ import { debugLog } from '../../debug.js';
 import { activeGroup, logicalModels } from '../../settings/access.js';
 import { renderDashboard } from './dashboard.js';
 import { renderRouteDetail } from './route-detail.js';
-import { renderRightSettings } from './right-settings.js';
+import { renderRightMapping } from './right-mapping.js';
 import { renderRightVendor } from './right-vendor.js';
 import { renderRightRoute } from './right-route.js';
 import { ensureConsolePanelStyles } from './console-panel-styles.js';
@@ -190,7 +190,7 @@ function renderManagePane(container: JQuery<HTMLElement>, replace: boolean): voi
     }
     if (!pane.length) return;
     pane.empty();
-    if (manageTab === 'settings') renderRightSettings(pane);
+    if (manageTab === 'settings') renderRightMapping(pane, () => renderManagePane(container, true));
     else if (manageTab === 'vendor') renderRightVendor(pane, () => renderManagePane(container, true));
     else renderRightRoute(pane, () => renderManagePane(container, true), () => renderManagePane(container, true));
 }
