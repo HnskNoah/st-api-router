@@ -10,7 +10,7 @@ import { ensureSecretId } from '../secrets/api.js';
 import { routeGroupOnce, recordGroupSelection, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
 import { recordModelFailure, recordModelSuccess } from '../domain/model-health.js';
 import { computeVendorTokenClamps, recordVendorSuccess } from '../domain/vendor.js';
-import { applyVendorConnection, applyVendorTokenClamps } from './apply-provider.js';
+import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
 import { resolveFallbackRoute } from './fallback.js';
 import { isManualLockApplicable } from './manual-route.js';
@@ -194,8 +194,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         const active = state.active;
         if (active) {
             patchGenerateData(generateData, active.unit, customParamsForUnit(active.unit));
-            // 同步 ST 原生连接字段（oai_settings + secret_state + DOM 显示；不触发 source change / /v1/models）
-            applyVendorConnection(active.unit.vendor, active.unit.entry.apiKey, active.unit.realModel);
+            // 不写 oai_settings / 不触发连接（拦截模式，保持用户空占位连接状态仅 setOnlineStatus）
             const source = generateData.chat_completion_source;
             const endpoint = source === 'custom' ? generateData.custom_url : generateData.reverse_proxy;
             const u = active.unit;
@@ -264,8 +263,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             debugLog('onChatCompletionSettingsReady fallback: token clamps skipped (no popup in fallback)', { clamps });
         }
         patchGenerateData(generateData, unit, customParamsForUnit(unit));
-        // 同步 ST 原生连接字段（oai_settings + secret_state + DOM 显示；不触发 source change / /v1/models）
-        applyVendorConnection(unit.vendor, unit.entry.apiKey, unit.realModel);
         setOnlineStatus('Valid');
         toastr.info(`Quicker Api：${unit.vendor.name} / ${unit.entry.label} / ${unit.realModel}`, '已路由', { timeOut: 8000 });
         debugLog('onChatCompletionSettingsReady fallback routed', {
