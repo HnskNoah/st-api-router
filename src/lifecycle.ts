@@ -12,7 +12,7 @@ import { ensureQuickActionEntries, scheduleQuickActionEntries } from './quick-ac
 import { ensureManualRouteEntry } from './routing/manual-route-entry.js';
 import { normalizeQuickActionPlacement } from './domain/quick-action.js';
 import { initRouting, teardownRouting } from './routing/init.js';
-import { initDebugLog, debugLog } from './debug.js';
+import { initDebugLog, debugLog, installFetchLogging } from './debug.js';
 
 export function detectConflict(): boolean {
     if (!document.getElementById('apihub_container')) return false;
@@ -102,6 +102,7 @@ export async function teardownQuickerApi(): Promise<boolean> {
 
 export function initQuickerApi(): void {
     initDebugLog();
+    installFetchLogging();
     debugLog('initQuickerApi start');
     if (!initializeSettings() || detectConflict()) {
         debugLog('initQuickerApi aborted: settings/conflict');

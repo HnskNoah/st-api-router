@@ -12,6 +12,7 @@ import { renderRightVendor } from './right-vendor.js';
 import { renderRightRoute } from './right-route.js';
 import { renderRightMapping } from './right-mapping.js';
 import { ensureConsolePanelStyles } from './console-panel-styles.js';
+import { isMobileViewport, openConsolePanelMobile } from './console-panel-mobile.js';
 
 // ── 状态 ──
 
@@ -170,6 +171,10 @@ function refreshAll(): void {
 
 export function openConsolePanel(): void {
     debugLog('openConsolePanel');
+    if (isMobileViewport()) {
+        openConsolePanelMobile();
+        return;
+    }
     if (isOpen) {
         // 已打开，前置到最前
         if (overlayEl?.length) document.body.append(overlayEl[0]);

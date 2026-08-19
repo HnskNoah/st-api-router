@@ -23,6 +23,32 @@ export function initDebugLog(): void {
     if (enabled) console.log('[ST Api Router] debug log enabled');
 }
 
+/** 包装 window.fetch：debug 开启时记录与插件相关的 API 请求（/secrets /status /generate /models）。 */
+export function installFetchLogging(): void {
+    if (typeof window === 'undefined' || !window.fetch) return;
+    if (!isDebugLogEnabled()) return;
+    const originalFetch = window.fetch.bind(window);
+    const RELEVANT = /(\/api\/secrets\/|\/api\/backends\/chat-completions\/(status|generate)|\/models)/i;
+    window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : (input instanceof globalThis.Request ? input.url : String(input));
+        if (RELEVANT.test(url)) {
+            const method = (init?.method ?? 'GET').toUpperCase();
+            const start = performance.now();
+            try {
+                const res = await originalFetch(input, init);
+                debugLog('HTTP', { url, method, status: res.status, ms: Math.round(performance.now() - start) });
+                return res;
+            } catch (error) {
+                debugLog('HTTP fail', { url, method, error: error instanceof Error ? error.message : String(error) });
+                throw error;
+            }
+        }
+        return originalFetch(input, init);
+    };
+    debugLog('fetch logging installed');
+}
+
+
 /** 记录结构化日志并带时间戳/自增序号；始终进入导出缓冲，仅开启开关时同步输出到 Console。 */
 export function debugLog(...args: unknown[]): void {
     seq += 1;
