@@ -18,7 +18,7 @@ import { isMobileViewport, openConsolePanelMobile } from './console-panel-mobile
 let overlayEl: JQuery<HTMLElement> | null = null;
 let isOpen = false;
 let selectedLogicalId: string | null = null;
-let rightTab: 'settings' | 'vendor' | 'route' = 'settings';
+let rightTab: 'settings' | 'vendor' = 'settings';
 
 // ── 面板 DOM 创建 ──
 
@@ -62,7 +62,6 @@ function ensurePanel(): JQuery<HTMLElement> {
     rightTabs.append(
         $('<div class="csl-right-tab" data-tab="settings">设置</div>'),
         $('<div class="csl-right-tab" data-tab="vendor">Vendor</div>'),
-        $('<div class="csl-right-tab" data-tab="route">路由</div>'),
     );
     right.append(rightTabs, $('<div class="csl-right-content"></div>'));
     body.append(right);
@@ -143,15 +142,16 @@ function refreshRightPanel(): void {
     tabs?.removeClass('is-active').filter(`[data-tab="${rightTab}"]`).addClass('is-active');
     switch (rightTab) {
         case 'settings': {
-            // 「设置」tab = 映射规则/忽略（路由参数已聚合到「路由」tab，消除重叠）
-            renderRightMapping(rightContent, () => { refreshDashboard(); refreshCenterPanel(); });
+            // 「设置」tab = 路由功能（参数/分组/模型/数据）+ 映射规则/忽略
+            const routeSection = $('<div class="csl-settings-block"></div>');
+            const mappingSection = $('<div class="csl-settings-block"></div>');
+            renderRightRoute(routeSection, () => { refreshDashboard(); refreshCenterPanel(); }, () => { refreshRightPanel(); });
+            renderRightMapping(mappingSection, () => { refreshDashboard(); refreshCenterPanel(); });
+            rightContent.empty().append(routeSection, mappingSection);
             break;
         }
         case 'vendor':
             renderRightVendor(rightContent, () => { refreshDashboard(); refreshCenterPanel(); });
-            break;
-        case 'route':
-            renderRightRoute(rightContent, () => { refreshDashboard(); }, () => { refreshRightPanel(); });
             break;
     }
 }

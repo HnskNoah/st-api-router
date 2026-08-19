@@ -15,7 +15,7 @@ let sheetEl: JQuery<HTMLElement> | null = null;
 let isOpen = false;
 let selectedLogicalId: string | null = null;
 let tab: 'models' | 'manage' = 'models';
-let manageTab: 'settings' | 'vendor' | 'route' = 'settings';
+let manageTab: 'settings' | 'vendor' = 'settings';
 
 export function isMobileViewport(): boolean {
     return typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
@@ -167,12 +167,12 @@ function renderModels(body: JQuery<HTMLElement>): void {
     });
 }
 
-/** 管理 tab：子 tab（设置 / Vendor / 路由），复用 right-* 渲染。 */
+/** 管理 tab：子 tab（设置 / Vendor），复用 right-* 渲染（路由功能并入设置）。 */
 function renderManage(body: JQuery<HTMLElement>): void {
     const tabs = $('<div class="qam-manage-tabs"></div>');
-    const mk = (label: string, k: 'settings' | 'vendor' | 'route') => $('<div class="qam-manage-tab"></div>')
+    const mk = (label: string, k: 'settings' | 'vendor') => $('<div class="qam-manage-tab"></div>')
         .text(label).attr('data-mtab', k).on('click', () => { manageTab = k; renderManageTabs(tabs); renderManagePane(body, true); });
-    tabs.append(mk('设置', 'settings'), mk('Vendor', 'vendor'), mk('路由', 'route'));
+    tabs.append(mk('设置', 'settings'), mk('Vendor', 'vendor'));
     body.append(tabs);
     renderManageTabs(tabs);
     renderManagePane(body, true);
@@ -190,9 +190,16 @@ function renderManagePane(container: JQuery<HTMLElement>, replace: boolean): voi
     }
     if (!pane.length) return;
     pane.empty();
-    if (manageTab === 'settings') renderRightMapping(pane, () => renderManagePane(container, true));
-    else if (manageTab === 'vendor') renderRightVendor(pane, () => renderManagePane(container, true));
-    else renderRightRoute(pane, () => renderManagePane(container, true), () => renderManagePane(container, true));
+    if (manageTab === 'settings') {
+        // 设置 = 路由功能（参数/分组/模型/数据）+ 映射规则/忽略
+        const routeBlock = $('<div class="csl-settings-block"></div>');
+        const mappingBlock = $('<div class="csl-settings-block"></div>');
+        renderRightRoute(routeBlock, () => renderManagePane(container, true), () => renderManagePane(container, true));
+        renderRightMapping(mappingBlock, () => renderManagePane(container, true));
+        pane.append(routeBlock, mappingBlock);
+    } else {
+        renderRightVendor(pane, () => renderManagePane(container, true));
+    }
 }
 
 export function closeMobilePanel(): void {
