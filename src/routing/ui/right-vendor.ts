@@ -195,6 +195,19 @@ export function renderRightVendor(
                     });
                 keyRow.append(keyInput);
 
+                // 删除 Key
+                const delBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除该 Key"><i class="fa-solid fa-trash"></i></button>')
+                    .on('click', async () => {
+                        const confirmed = await Popup.show.confirm('删除 Key', `删除 Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）？`);
+                        if (!confirmed || !group) return;
+                        group.entries = group.entries.filter(item => item.id !== entry.id);
+                        saveSettingsNow();
+                        renderRightVendor(rightEl, onRefreshDashboard);
+                        onRefreshDashboard();
+                        toastr.success('Key 已删除。');
+                    });
+                keyRow.append(delBtn);
+
                 // 模型健康胶囊：异常(冷却/不可恢复)直接显示；正常聚合进「N 个正常」折叠
                 const now = Date.now();
                 const realModels = [...new Set(entry.mappings.map(mapping => mapping.realModel))];

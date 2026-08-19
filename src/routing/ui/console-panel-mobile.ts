@@ -70,6 +70,8 @@ function ensureStyles(): void {
         .qam-manage-tab { flex: 1; text-align: center; padding: 6px 2px; font-size: 11px; cursor: pointer; color: #999; }
         .qam-manage-tab.active { color: #5b9bd5; }
         .qam-empty { font-size: 12px; color: #999; padding: 16px 10px; }
+        .qam-search { padding: 6px 10px; flex: none; }
+        .qam-search > input { width: 100%; margin: 0; box-sizing: border-box; }
     `).appendTo(document.head);
 }
 
@@ -146,6 +148,18 @@ function renderModels(body: JQuery<HTMLElement>): void {
         });
         return;
     }
+    // 搜索框（过滤 data-search）
+    const searchWrap = $('<div class="qam-search"></div>');
+    const search = $('<input class="text_pole" type="search" maxlength="200" placeholder="搜索模型…">')
+        .on('input', () => {
+            const q = String(search.val() ?? '').trim().toLowerCase();
+            body.find('.csl-model-row').each(function () {
+                const matches = !q || String($(this).attr('data-search') || '').includes(q);
+                $(this).toggle(matches);
+            });
+        });
+    searchWrap.append(search);
+    body.append(searchWrap);
     renderDashboard(body, null, (id) => {
         selectedLogicalId = id;
         body.empty();
@@ -161,7 +175,7 @@ function renderManage(body: JQuery<HTMLElement>): void {
     tabs.append(mk('设置', 'settings'), mk('Vendor', 'vendor'), mk('路由', 'route'));
     body.append(tabs);
     renderManageTabs(tabs);
-    renderManagePane(body, false);
+    renderManagePane(body, true);
 }
 
 function renderManageTabs(tabsEl: JQuery<HTMLElement>): void {
