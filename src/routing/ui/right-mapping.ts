@@ -220,9 +220,9 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
     updatePreview();
 
     content.append(
-        $('<label class="quicker-api__field"><span>匹配正则（真实模型名，大小写不敏感）</span></label>'),
+        $('<div style="font-size:12px;color:#999;padding:4px 0 2px">').text('匹配正则（真实模型名，大小写不敏感）'),
         patternInput,
-        $('<label class="quicker-api__field"><span>目标逻辑模型</span></label>'),
+        $('<div style="font-size:12px;color:#999;padding:8px 0 2px">').text('目标逻辑模型'),
         logicalSelect,
         previewRow,
     );
@@ -276,11 +276,11 @@ function openLogicalParamsEditor(logicalModelId: string, onDone: () => void): vo
 
     content.append(
         $('<div class="csl-empty" style="padding:0 0 6px">').text(`编辑逻辑模型「${model.name}」的路由附加参数。仅当该逻辑模型最终路由到 custom（OpenAI 兼容）Vendor 时才生效。`),
-        $('<label class="quicker-api__field"><span>自定义 include body（YAML，路由时透传进请求体）</span></label>'),
+        $('<div style="font-size:12px;color:#999;padding:4px 0 2px">').text('自定义 include body（YAML，路由时透传进请求体）'),
         includeBodyInput,
-        $('<label class="quicker-api__field"><span>自定义 exclude body（YAML，从请求体排除这些参数）</span></label>'),
+        $('<div style="font-size:12px;color:#999;padding:8px 0 2px">').text('自定义 exclude body（YAML，从请求体排除这些参数）'),
         excludeBodyInput,
-        $('<label class="quicker-api__field"><span>自定义请求头（YAML，附加请求头）</span></label>'),
+        $('<div style="font-size:12px;color:#999;padding:8px 0 2px">').text('自定义请求头（YAML，附加请求头）'),
         includeHeadersInput,
     );
 
