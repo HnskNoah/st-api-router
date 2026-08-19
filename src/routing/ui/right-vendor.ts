@@ -10,6 +10,7 @@ import { isModelInCooldown, recordModelSuccess } from '../../domain/model-health
 import {
     assignRealModel,
     isSpecialVariant,
+    normalizeGroupEntry,
     normalizeVendor,
     pruneOrphanLogicalModels,
     reconcileEntryMappings,
@@ -234,6 +235,24 @@ export function renderRightVendor(
                 }
                 keyList.append(keyRow);
             }
+            // 添加 Key 入口（追加 GroupEntry 到当前分组该 Vendor 下）
+            const addKeyWrap = $('<div class="csl-vendor-add-wrap" style="padding:4px 0 0"></div>');
+            const addKeyBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>添加 Key</span></button>')
+                .on('click', () => {
+                    if (!group) { toastr.warning('当前没有分组。'); return; }
+                    const entry = normalizeGroupEntry({
+                        vendorId: vendor.id,
+                        apiKey: '',
+                        label: `Key ${group.entries.filter(e => e.vendorId === vendor.id).length + 1}`,
+                        enabled: true,
+                    });
+                    group.entries.push(entry);
+                    saveSettingsNow();
+                    renderRightVendor(rightEl, onRefreshDashboard);
+                    toastr.success('已添加 Key，请填入密钥。');
+                });
+            addKeyWrap.append(addKeyBtn);
+            keyList.append(addKeyWrap);
             container.append(keyList);
         }
 

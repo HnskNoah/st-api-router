@@ -29,7 +29,8 @@ export interface EditorDialogOptions {
 export function showEditorDialog(opts: EditorDialogOptions): Popup {
     const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
     const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-    const actions = $('<div class="st-router-editor-actions"></div>').append(saveBtn);
+    // 按钮行：横向靠右布局，确保始终可见
+    const actions = $('<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:12px"></div>').append(saveBtn);
 
     if (opts.extraActions) {
         for (const extra of opts.extraActions) {
@@ -47,9 +48,9 @@ export function showEditorDialog(opts: EditorDialogOptions): Popup {
     }
     actions.append(cancelBtn);
 
-    const body = $('<div class="st-router-editor"></div>');
+    const body = $('<div class="csl-editor"></div>');
     const titleRow = opts.title
-        ? $('<div style="margin-bottom:8px;font-weight:600;font-size:14px"></div>').text(opts.title)
+        ? $('<div style="margin-bottom:10px;font-weight:600;font-size:14px;color:var(--SmartThemeBodyColor, #e8e8e8)"></div>').text(opts.title)
         : $('<div></div>');
     body.append(titleRow, opts.content, actions);
 

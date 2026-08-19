@@ -197,7 +197,7 @@ function renderRules(ruleList: JQuery<HTMLElement>): void {
 
 function openRuleEditor(existing: MappingRule | null, onDone: () => void): void {
     const draft = existing ? normalizeMappingRule(structuredClone(existing)) : { id: '', pattern: '', logicalModelId: '' };
-    const content = $('<div class="st-router-editor"></div>');
+    const content = $('<div class="csl-editor"></div>');
     const patternInput = $('<input class="text_pole" type="text" maxlength="500" placeholder="正则，如：kimi|k3">').val(draft.pattern);
     const logicalSelect = $('<select class="text_pole"></select>');
     logicalSelect.append($('<option value="">— 选择逻辑模型 —</option>'));
@@ -226,12 +226,6 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
         logicalSelect,
         previewRow,
     );
-    const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
-    const applyBtn = $('<button class="menu_button" type="button" title="保存并立即映射"><i class="fa-solid fa-bolt"></i><span>保存并应用</span></button>');
-    const actions = $('<div class="st-router-editor-actions"></div>').append(applyBtn, saveBtn, cancelBtn);
-    content.append(actions);
-    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { large: false, wide: true, okButton: false, cancelButton: false });
 
     const doSave = (applyNow: boolean): boolean => {
         const pattern = String(patternInput.val() ?? '').trim();
@@ -275,7 +269,7 @@ function openLogicalParamsEditor(logicalModelId: string, onDone: () => void): vo
     const model = logicalModels().find(item => item.id === logicalModelId);
     if (!model) return;
     const draft = normalizeLogicalModel(structuredClone(model));
-    const content = $('<div class="st-router-editor"></div>');
+    const content = $('<div class="csl-editor"></div>');
     const includeBodyInput = $('<textarea class="text_pole" rows="4" maxlength="100000" placeholder="YAML，如：top_k: 20\nrepetition_penalty: 1.1"></textarea>').val(draft.customIncludeBody ?? '');
     const excludeBodyInput = $('<textarea class="text_pole" rows="4" maxlength="100000" placeholder="YAML 数组，如：frequency_penalty\npresence_penalty"></textarea>').val(draft.customExcludeBody ?? '');
     const includeHeadersInput = $('<textarea class="text_pole" rows="4" maxlength="100000" placeholder="YAML，如：X-Custom: abc\nAnother-Header: def"></textarea>').val(draft.customIncludeHeaders ?? '');
