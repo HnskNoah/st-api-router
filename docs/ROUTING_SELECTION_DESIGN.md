@@ -2,7 +2,7 @@
 
 > 状态：已实施。
 >
-> 实现：`src/types.ts`、`src/domain/vendor.ts`、`src/domain/group-routing.ts`、`src/routing/manual-route.ts`、`src/routing/ui/right-vendor.ts`、`src/routing/ui/right-route.ts`、`src/routing/ui/route-detail.ts`；回归测试位于 `tests/`。
+> 实现：`src/types.ts`、`src/domain/vendor.ts`、`src/domain/group-routing.ts`、`src/routing/manual-route.ts`、`src/routing/ui/right-mapping.ts`、`src/routing/ui/right-vendor.ts`、`src/routing/ui/right-route.ts`、`src/routing/ui/route-detail.ts`；回归测试位于 `tests/`。
 >
 > 目标：在同一 Vendor 下存在多个真实模型/渠道、且各自可用性不同的情况下，避免一个模型故障误伤同 Vendor 的其他模型，同时保留 Vendor 级整体偏好。
 
@@ -78,16 +78,14 @@ Vendor + GroupEntry(Key) + VendorModelMapping(真实模型)
 
 ## 2. 当前行为基线
 
-当前实际代码：
-
 - `Vendor.weight` 是 Vendor 基础权重。
 - `vendorEffectiveWeight()` 根据 Vendor 历史成功/失败统计调整 Vendor 权重。
 - `groupUnitsForLogicalModel()` 返回当前 Group 下全部匹配映射的路由单元。
 - `candidateGroupUnits()` 过滤 Vendor、Key、RPM 和 `Key × realModel` 冷却。
-- `pickGroupUnit()` 把所有候选放在一个池里，并使用 Vendor 权重。
-- `groupUnitKey()` 当前只使用 `vendorId::entryId`，没有区分同一 Key 下的不同真实模型。
+- `pickGroupUnit()` 先按 Vendor 分组选择，再在选中的 Vendor 内按 Key × 映射权重选择。
+- `groupUnitKey()` 使用 `vendorId::entryId::mappingId`，区分同一 Key 下的不同真实模型。
 
-因此本设计不是重新定义健康模型，而是改造候选选择层，并修正 sticky 的粒度。
+当前实现已经完成本设计的两阶段路由、权重、健康隔离和 sticky 粒度调整。
 
 ## 3. 数据模型
 
@@ -160,7 +158,28 @@ channelScore = GroupEntry.weight × VendorModelMapping.weight
 
 旧配置没有字段时自动得到 `1`。不新增一次性复杂迁移。
 
-## 4. 两阶段路由算法
+### 3.6 模型名称归类与手动修正
+
+
+模型归类不会改写真实模型名。`VendorModelMapping.realModel` 始终保存并用于请求原名。
+
+自动归类顺序：
+
+1. 逻辑模型 `matchPattern` 正则。
+2. 真实模型名完整匹配。
+3. 用已有逻辑模型名作为后缀进行最长匹配，识别不定长渠道前缀，例如 `供应商A-gemini-3.5-flash` → `gemini-3.5-flash`。
+4. 内置核心名归一化。
+5. 无法确认时创建独立逻辑模型。
+
+最长后缀策略不会把正常模型变体误当成渠道前缀。例如已有 `gemini-3.5-flash` 时，`gemini-3.5-flash-lite` 仍保持独立。
+
+版本分隔符不同也不会默认合并。例如 `claude-opus-4-7` 与 `claude-opus-4.7` 默认是两个真实模型；需要在映射面板配置显式正则，例如：
+
+```regex
+^claude-opus-4(?:-|\\.)7$
+```
+
+对于自动归类遗漏的真实模型，映射面板的“未归类真实模型”区域支持选择目标逻辑模型并手动映射。该操作只修改映射归属，不修改真实模型名，并对所有包含该模型的 Key 生效。
 
 ### 4.1 构造可用渠道
 
