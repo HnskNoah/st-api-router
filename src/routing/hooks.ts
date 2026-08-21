@@ -118,8 +118,8 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             activeGroupId: deps.getActiveGroupId(),
             groupCount: deps.getGroups().length,
         });
-        // 跳过非用户主动触发的生成：quiet/continue/impersonate
-        if (type === 'quiet' || type === 'continue' || type === 'impersonate') {
+        // 跳过非用户主动触发的生成：quiet/continue/impersonate；swipe（滑动切换回复）不参与路由与自动重试
+        if (type === 'quiet' || type === 'continue' || type === 'impersonate' || type === 'swipe') {
             debugLog('onGenerationStarted skip: non-user trigger', { type });
             return;
         }
