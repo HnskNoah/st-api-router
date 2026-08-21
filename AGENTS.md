@@ -25,7 +25,7 @@ TypeScript + ES Modules，Vite 构建（`dist/index.js`），Vitest 测试。
 1. **拦截模式**：不改 ST 的 `oai_settings` 持久连接，只改**本次请求的 generate_data**（source/custom_url/secret_id/reverse_proxy/proxy_password/model）。入口 `src/routing/hooks.ts`（GENERATION_STARTED→选路；CHAT_COMPLETION_SETTINGS_READY→patch；GENERATION_ENDED→记账）+ `patch-generate-data.ts`。
 2. **连接状态空占位**：启动 `ensureEmptyConnectionPlaceholder()`（lifecycle.ts）把 ST 连接置为 **custom + 空 URL** 并持久化 → 避免「自动连接上次服务器」连到上次 vendor；`setOnlineStatus('Valid')` 双保险。**绝不 `trigger('change')` source**（会触发 ST reconnect → /v1/models，违反硬约束1）。
 3. **密钥走 ST secret 槽**：`secrets/api.ts`，key 存 ST 的 `/api/secrets/*`（`ensureSecretId`/`rotateSecretVerified`），路由时拿 secretId 写进 generate_data，ST 后端 `readSecret` 取真实 key。**不主动发 /v1/models**。
-4. **健康是 Key×真实模型粒度被动判断**：`model-health.ts`，只从真实请求结果记（fatal=6h 冷却 / rate_limited=30s / temp=累积达阈值+指数退避）。**不自动禁用整个 vendor.enabled**（那仅用户手动）。
+4. **健康是 Key×真实模型粒度被动判断**：`model-health.ts`，只从真实请求结果记（fatal/rate_limited 立即进冷却、temp/unknown 累计达阈值后进冷却；统一用 `cooldownSeconds × 1000 × 退避倍数`，倍数 1→2→4→…→32）。**不自动禁用整个 vendor.enabled**（那仅用户手动）。
 
 ## 目录（关键文件）
 
