@@ -147,7 +147,7 @@ Vendor --提供(多对多)--> RealModel --多对一--> LogicalModel --属于(多
 
 ### 模型健康（Key × realModel 级熔断 — 当前实际行为）
 
-- **Key × realModel 级**（`src/domain/model-health.ts`）：`recordModelFailure` 按 `GroupEntry(Key) × realModel` 粒度记账，区分 `fatal`（不可恢复→长冷却 6h）、`rate_limited`（限流→短冷却 30s 不累计）、`temp/unknown`（临时→累计连续失败达阈值冷却+指数退避 1→2→4→…→32）。`recordModelSuccess` 清除冷却，恢复健康。
+- **Key × realModel 级**（`src/domain/model-health.ts`）：`recordModelFailure` 按 `GroupEntry(Key) × realModel` 粒度记账。`fatal`/`rate_limited` 立即触发统一的 `baseCooldown × multiplier` 冷却，`temp/unknown` 达阈值后触发；倍数 1→2→4→…→32。`bad_request` 不计失败，`recordModelSuccess` 清除冷却并恢复健康。
 - **路由过滤**（`src/domain/group-routing.ts` `modelUnitUnavailabilityReason`）：冷却中模型自动排除，同 Key 的其他模型不受影响。
 - **Vendor 级统计**（`src/domain/vendor.ts`）：`successes/failures` 跨会话保留，仅用于 UI 展示和路由加权（`vendorEffectiveWeight`），不再触发 Vendor 级禁用。
 - **失败观察**（`src/routing/failure-observer.ts`）：`end()` 返回 `FailureProbe { kind, message }`，供模型级记账使用。

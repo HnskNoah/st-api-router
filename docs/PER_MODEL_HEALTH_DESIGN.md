@@ -10,7 +10,7 @@
 > - `src/types.ts` — `ModelFailureKind` + `GroupEntry` 健康字段
 > - `SCHEMA_VERSION` 已达到 14
 >
-> 当前代码行为：**GroupEntry(Key) × realModel 级熔断**，冷却采用指数退避（1→2→4→…→32），不可恢复错误（fatal）长冷却 6h，限流短冷却 30s 不累计。冷却到期即恢复可路由，下一次真实请求自然验证。
+> 当前代码行为：**GroupEntry(Key) × realModel 级熔断**，所有可冷却错误统一使用 `baseCooldown × multiplier`（默认 `cooldownSeconds × 1000`，倍数 1→2→4→…→32）。`fatal`/`rate_limited` 立即进入该公式的冷却，`temp`/`unknown` 达失败阈值后进入；`bad_request` 不计失败，空回复只记录观测。冷却到期即恢复可路由，下一次真实请求自然验证。
 >
 > 本设计稿保留为实施参考和文档索引。
 
@@ -80,8 +80,8 @@ export interface GroupEntry {
 }
 ```
 
-> 说明：**不新增「禁用清单字段」**。不可恢复错误（fatal）也用 `circuitsByModel[realModel] = now + 长冷却(6h)` 表达，路由层把"冷却中"就当作不可路由，效果等同于禁用，但冷却结束可自动进半开试探，无需人工。
-> 这样**统一用一个 `circuitsByModel` 表达「临时冷却」和「长时间禁用」**，不需要多维护一个 `disabledModels` 列表。
+> 说明：**不新增「禁用清单字段」**。不可恢复错误（fatal）也使用统一的 `circuitsByModel[realModel] = now + baseCooldown * multiplier` 表达，路由层把“冷却中”视为不可路由，效果等同于禁用，但冷却结束可自动恢复，无需人工。
+> 这样统一用一个 `circuitsByModel` 表达临时冷却和长时间冷却，不需要多维护一个 `disabledModels` 列表。
 
 ### 1.2 归一化（`src/domain/vendor.ts`）
 
@@ -116,10 +116,8 @@ export function resetGroupRuntimeState(groups: Group[]): void {
 
 | 参数 | 建议值 | 来源/说明 |
 |---|---|---|
-| `failThreshold` | 2（现有默认 3，公益站不稳定可降到 2） | 复用现有 `RoutingSettings.failThreshold` |
-| `baseCooldownMs` | 现有 `RoutingSettings.cooldownSeconds`（默认 60s） | 复用 |
-| `fatalCooldownMs` | 6h | 不可恢复错误，长时间后再进半开试探 |
-| `rateLimitCooldownMs` | 30s | 429，不累计连续失败 |
+| `failThreshold` | 3（现有默认值） | 复用现有 `RoutingSettings.failThreshold`；`temp/unknown` 达阈值，`fatal/rate_limited` 立即触发 |
+| `baseCooldownMs` | `RoutingSettings.cooldownSeconds * 1000`（默认 300s） | 所有可冷却分类共用 |
 | `maxCooldownMultiplier` | 32 | 指数退避上限 = base * 32 |
 | 窗口错误率阈值 | >50% 且 窗口请求数 ≥ 5 | （可选，第一期可只做连续失败，不引入窗口计数） |
 
@@ -223,13 +221,11 @@ export function recordModelSuccess(entry: GroupEntry, realModel: string): void {
 ```ts
 export interface RecordModelFailureOptions {
   threshold?: number;          // 复用 RoutingSettings.failThreshold
-  baseCooldownMs?: number;     // 复用 RoutingSettings.cooldownSeconds * 1000
-  fatalCooldownMs?: number;    
-  rateLimitCooldownMs?: number;
+  baseCooldownMs?: number;     // 复用 RoutingSettings.cooldownSeconds * 1000，所有可冷却分类共用
   maxCooldownMultiplier?: number;
 }
 
-/** 记录该 Key 上 realModel 的一次失败。返回本次是否进入了冷却/禁用状态。 */
+/** 记录失败；fatal/rate_limited 立即触发，temp/unknown 达阈值触发，冷却公式统一。 */
 export function recordModelFailure(
   entry: GroupEntry,
   realModel: string,
@@ -238,7 +234,7 @@ export function recordModelFailure(
   opts: RecordModelFailureOptions = {},
   now = Date.now(),
 ): boolean {
-  const base = Math.max(1, Math.floor(Number(opts.baseCooldownMs) || 60_000));
+  const base = Math.max(1, Math.floor(Number(opts.baseCooldownMs) || 300_000));
   const threshold = Math.max(1, Math.floor(Number(opts.threshold) || 3));
   const maxMul = Math.max(1, Math.floor(Number(opts.maxCooldownMultiplier) || 32));
 
@@ -246,43 +242,21 @@ export function recordModelFailure(
   entry.lastErrorKindByModel ??= {};
   entry.lastErrorByRealModel[realModel] = String(error ?? '').slice(0, 500);
   entry.lastErrorKindByModel[realModel] = kind;
-
-  // 不可恢复 → 长时间冷却（等同禁用），不退避计数
-  if (kind === 'fatal') {
-    entry.circuitsByModel ??= {};
-    entry.circuitsByModel[realModel] = now + (Number(opts.fatalCooldownMs) || 6 * 3600_000);
-    delete entry.failStreakByModel?.[realModel];
-    return true;
-  }
-
-  // 限流 → 只短冷却，不累计连续失败
-  if (kind === 'rate_limited') {
-    entry.circuitsByModel ??= {};
-    entry.circuitsByModel[realModel] = now + (Number(opts.rateLimitCooldownMs) || 30_000);
-    return true;
-  }
-
-  // 参数错误 → 不是渠道故障，不处理（也算调用方问题，不算失败）
   if (kind === 'bad_request') return false;
 
-  // temp / unknown → 累计连续失败，达阈值进入冷却 + 指数退避
   entry.failStreakByModel ??= {};
   entry.cooldownMultiplierByModel ??= {};
+  const immediate = kind === 'fatal' || kind === 'rate_limited';
   const streak = (Number(entry.failStreakByModel[realModel]) || 0) + 1;
   entry.failStreakByModel[realModel] = streak;
-  if (streak >= threshold) {
-    const mul = Math.min(
-      Math.max(1, Math.floor(Number(entry.cooldownMultiplierByModel[realModel]) || 1)),
-      maxMul,
-    );
-    entry.circuitsByModel ??= {};
-    entry.circuitsByModel[realModel] = now + base * mul;
-    // 退避翻倍，供下次冷却用；同时可选重置连续失败
-    entry.cooldownMultiplierByModel[realModel] = Math.min(mul * 2, maxMul);
-    delete entry.failStreakByModel[realModel];
-    return true;
-  }
-  return false;
+  if (!immediate && streak < threshold) return false;
+
+  const mul = Math.min(Math.max(1, Math.floor(Number(entry.cooldownMultiplierByModel[realModel]) || 1)), maxMul);
+  entry.circuitsByModel ??= {};
+  entry.circuitsByModel[realModel] = now + base * mul;
+  entry.cooldownMultiplierByModel[realModel] = Math.min(mul * 2, maxMul);
+  delete entry.failStreakByModel[realModel];
+  return true;
 }
 ```
 

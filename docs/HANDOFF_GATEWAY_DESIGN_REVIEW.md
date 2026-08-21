@@ -48,10 +48,10 @@
 
 1. **最小禁用粒度 = Key × realModel**（外部「渠道+模型」原则）→ 我们：`circuitsByModel` 挂 `GroupEntry`，key 为 `mapping.realModel`。同 Key 不同模型独立冷却。
 2. **不主动测试，真实请求即探针** → 我们：`FailureObserver` 观察 toastr 判定成败，`GENERATION_ENDED` 记账；半开用下一次真实请求验证。
-3. **错误分类**：`fatal`（模型不存在/余额/401/403 → 立即长冷却 6h）、`rate_limited`（429 → 短冷却 30s 不累计）、`bad_request`（参数错误不处理）、`temp/unknown`（累计连续失败达阈值冷却）。
-4. **指数退避 + 上限**：`base * multiplier`，`multiplier 1→2→4→…→32`，成功/半开成功归 1。
+3. **错误分类**：`fatal`（立即触发统一冷却）、`rate_limited`（立即触发统一冷却）、`bad_request`（参数错误不处理）、`temp/unknown`（累计连续失败达阈值后触发统一冷却）。
+4. **指数退避 + 上限**：统一使用 `base * multiplier`，`multiplier 1→2→4→…→32`，成功/半开成功归 1。
 5. **冷却到期 → 半开 → 真实流量验证**：我们首期约定「冷却到期即恢复可路由，下次真实请求自然验证」（不做并发闸门，二期可加）。
-6. **阈值建议**：`failThreshold=2`、`baseCooldown=现有 cooldownSeconds(默认60s)`、`fatal=6h`、`429=30s`、`maxMultiplier=32`。
+6. **阈值建议**：`failThreshold=2`、`baseCooldown=现有 cooldownSeconds`、所有可冷却分类共用同一公式。
 
 > 结论：外部文档的「方法论层」= 我们设计稿的内容；**不用再引入新的外部理念**，直接把 `PER_MODEL_HEALTH_DESIGN.md` 落地即可（它就是把旧 Provider 层已验证的 `key×model` 熔断模式搬进新 Group 层的方案）。
 

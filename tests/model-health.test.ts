@@ -18,8 +18,6 @@ function makeEntry(overrides?: Partial<GroupEntry>): GroupEntry {
 const defaultOpts: RecordModelFailureOptions = {
     threshold: 2,
     baseCooldownMs: 300_000,
-    fatalCooldownMs: 6 * 3600_000,
-    rateLimitCooldownMs: 30_000,
     maxCooldownMultiplier: 32,
 };
 
@@ -134,24 +132,14 @@ describe('recordModelSuccess', () => {
 // ── recordModelFailure ──
 
 describe('recordModelFailure', () => {
-    it('fatal: immediately enters long cooldown, does not count failStreak', () => {
+    it.each(['fatal', 'rate_limited'] as const)('%s: immediate cooldown uses the shared base formula', kind => {
         const entry = makeEntry();
         const now = 1000000;
-        const result = recordModelFailure(entry, 'gpt-4o', 'fatal', 'model not found', defaultOpts, now);
+        const result = recordModelFailure(entry, 'gpt-4o', kind, kind, defaultOpts, now);
         expect(result).toBe(true);
-        const until = entry.circuitsByModel?.['gpt-4o'] ?? 0;
-        expect(until - now).toBeGreaterThanOrEqual(6 * 3600_000 - 100);
+        expect((entry.circuitsByModel?.['gpt-4o'] ?? 0) - now).toBe(300_000);
         expect(entry.failStreakByModel?.['gpt-4o']).toBeUndefined();
-    });
-
-    it('rate_limited: short cooldown, does not count failStreak', () => {
-        const entry = makeEntry();
-        const now = 1000000;
-        const result = recordModelFailure(entry, 'gpt-4o', 'rate_limited', '429', defaultOpts, now);
-        expect(result).toBe(true);
-        const until = entry.circuitsByModel?.['gpt-4o'] ?? 0;
-        expect(until - now).toBeGreaterThanOrEqual(30_000 - 100);
-        expect(entry.failStreakByModel?.['gpt-4o']).toBeUndefined();
+        expect(entry.cooldownMultiplierByModel?.['gpt-4o']).toBe(2);
     });
 
     it('bad_request: no effect, returns false', () => {

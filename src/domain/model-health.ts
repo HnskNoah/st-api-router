@@ -7,12 +7,8 @@ import type { GroupEntry, ModelFailureKind, ModelObservationKind } from '../type
 export interface RecordModelFailureOptions {
     /** 连续失败几次触发冷却。默认 3（复用 RoutingSettings.failThreshold）。 */
     threshold?: number;
-    /** 基础冷却时长（ms）。默认 300_000（5 分钟，复用 RoutingSettings.cooldownSeconds * 1000）。 */
+    /** 所有可冷却错误统一使用的基础冷却时长（ms）。默认 300_000。 */
     baseCooldownMs?: number;
-    /** 不可恢复错误（fatal）的冷却时长（ms）。默认 6 小时。 */
-    fatalCooldownMs?: number;
-    /** 限流（rate_limited）的冷却时长（ms）。默认 30 秒。 */
-    rateLimitCooldownMs?: number;
     /** 指数退避倍数上限。默认 32。 */
     maxCooldownMultiplier?: number;
 }
@@ -70,7 +66,7 @@ export function recordModelObservation(entry: GroupEntry, realModel: string, kin
 
 // ── 失败处理 ──
 
-/** 记录该 Key 上 realModel 的一次失败。返回本次是否进入了冷却/禁用状态。 */
+/** 记录该 Key 上 realModel 的一次失败。所有进入冷却的分类统一使用阈值 + 指数退避公式。 */
 export function recordModelFailure(
     entry: GroupEntry,
     realModel: string,
@@ -82,56 +78,32 @@ export function recordModelFailure(
     const base = Math.max(1, Math.floor(Number(opts.baseCooldownMs) || 300_000));
     const threshold = Math.max(1, Math.floor(Number(opts.threshold) || 3));
     const maxMul = Math.max(1, Math.floor(Number(opts.maxCooldownMultiplier) || 32));
-    const fatalMs = Math.max(1, Math.floor(Number(opts.fatalCooldownMs) || 6 * 3600_000));
-    const rateLimitMs = Math.max(1, Math.floor(Number(opts.rateLimitCooldownMs) || 30_000));
 
-    // 初始化字段
     entry.lastErrorByRealModel ??= {};
     entry.lastErrorKindByModel ??= {};
     entry.lastErrorByRealModel[realModel] = String(error ?? '').slice(0, 500);
     entry.lastErrorKindByModel[realModel] = kind;
 
-    // 不可恢复错误 → 长时间冷却（等同禁用），不退避计数
-    if (kind === 'fatal') {
-        entry.circuitsByModel ??= {};
-        entry.circuitsByModel[realModel] = now + fatalMs;
-        delete entry.failStreakByModel?.[realModel];
-        return true;
-    }
-
-    // 限流 → 只短冷却，不累计连续失败
-    if (kind === 'rate_limited') {
-        entry.circuitsByModel ??= {};
-        entry.circuitsByModel[realModel] = now + rateLimitMs;
-        return true;
-    }
-
-    // 参数错误 → 不是渠道故障，不处理
+    // 参数错误不是渠道故障，不进入健康失败计数。
     if (kind === 'bad_request') return false;
 
-    // temp / unknown → 累计连续失败，达阈值进入冷却 + 指数退避
     entry.failStreakByModel ??= {};
     entry.cooldownMultiplierByModel ??= {};
+    const immediate = kind === 'fatal' || kind === 'rate_limited';
     const streak = (Number(entry.failStreakByModel[realModel]) || 0) + 1;
     entry.failStreakByModel[realModel] = streak;
-    if (streak >= threshold) {
-        const mul = Math.min(
-            Math.max(1, Math.floor(Number(entry.cooldownMultiplierByModel[realModel]) || 1)),
-            maxMul,
-        );
-        entry.circuitsByModel ??= {};
-        entry.circuitsByModel[realModel] = now + base * mul;
-        // 退避翻倍，供下次冷却用
-        entry.cooldownMultiplierByModel[realModel] = Math.min(mul * 2, maxMul);
-        delete entry.failStreakByModel[realModel];
-        return true;
-    }
-    return false;
+    if (!immediate && streak < threshold) return false;
+
+    const mul = Math.min(
+        Math.max(1, Math.floor(Number(entry.cooldownMultiplierByModel[realModel]) || 1)),
+        maxMul,
+    );
+    entry.circuitsByModel ??= {};
+    entry.circuitsByModel[realModel] = now + base * mul;
+    entry.cooldownMultiplierByModel[realModel] = Math.min(mul * 2, maxMul);
+    delete entry.failStreakByModel[realModel];
+    return true;
 }
-
-// ── 辅助函数 ──
-
-/** 检查该 Key 上 realModel 是否处于冷却中。 */
 export function isModelInCooldown(entry: GroupEntry | null | undefined, realModel: string | null | undefined, now = Date.now()): boolean {
     if (!entry || !realModel) return false;
     const until = entry.circuitsByModel?.[realModel];
