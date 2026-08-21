@@ -143,6 +143,28 @@ export function groupUnitKey(unit: GroupRouteUnit): string {
     return `${unit?.vendor?.id ?? ''}::${unit?.entry?.id ?? ''}::${mappingId}`;
 }
 
+/** 自动重试延迟（ms）：基础值 + 0～jitterMs 随机抖动。randomValue ∈ [0,1)。 */
+export function autoRetryDelayMs(baseMs: number, jitterMs: number, randomValue: number): number {
+    const base = Math.max(0, Math.floor(baseMs));
+    const jitter = Math.floor(Math.max(0, jitterMs) * Math.max(0, Math.min(1, randomValue)));
+    return base + jitter;
+}
+
+/** 判断一次 GENERATION_STARTED 是否为自动重试触发的 regenerate（在调度窗口内）。 */
+export function isAutoRetryStart(opts: {
+    retryScheduled: boolean;
+    type: string | undefined;
+    scheduledAt: number;
+    now: number;
+    windowMs: number;
+}): boolean {
+    return Boolean(
+        opts.retryScheduled
+        && opts.type === 'regenerate'
+        && (opts.now - opts.scheduledAt) <= opts.windowMs,
+    );
+}
+
 export interface AutoRetryDecision {
     canRetry: boolean;
     /** 本次重试是第几次（1 起）。 */

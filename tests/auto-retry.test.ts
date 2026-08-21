@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateAutoRetry, routeGroupOnce, groupUnitKey, type GroupRouteUnit } from '../src/domain/group-routing.js';
+import {
+    autoRetryDelayMs,
+    evaluateAutoRetry,
+    isAutoRetryStart,
+    routeGroupOnce,
+    groupUnitKey,
+    type GroupRouteUnit,
+} from '../src/domain/group-routing.js';
 import { normalizeRoutingSettings } from '../src/constants.js';
 import type { Group, GroupEntry, Vendor } from '../src/types.js';
 
@@ -110,6 +117,47 @@ describe('routeGroupOnce excludeKeys', () => {
         // 排除的是另一个映射 id，不应误伤
         const result = routeGroupOnce([vendor], group, 'lm1', { excludeKeys: ['v1::e1::other'] });
         expect(result.unit).not.toBeNull();
+    });
+});
+
+describe('autoRetryDelayMs', () => {
+    it('returns base when randomValue is 0', () => {
+        expect(autoRetryDelayMs(1200, 500, 0)).toBe(1200);
+    });
+
+    it('stays strictly below base + jitter for randomValue < 1', () => {
+        expect(autoRetryDelayMs(1200, 500, 0.9999)).toBe(1699);
+    });
+
+    it('ignores negative base/jitter and clamps randomValue', () => {
+        expect(autoRetryDelayMs(-10, 500, 0.5)).toBe(250);
+        expect(autoRetryDelayMs(1200, 0, 0.5)).toBe(1200);
+        expect(autoRetryDelayMs(1200, 500, 2)).toBe(1700);
+    });
+});
+
+describe('isAutoRetryStart', () => {
+    const base = { retryScheduled: true, type: 'regenerate' as string | undefined, scheduledAt: 1000, now: 2500, windowMs: 15000 };
+
+    it('is false for a manual normal generation during the retry window', () => {
+        expect(isAutoRetryStart({ ...base, type: 'normal' })).toBe(false);
+    });
+
+    it('is true for a regenerate within the window', () => {
+        expect(isAutoRetryStart(base)).toBe(true);
+    });
+
+    it('is false when the scheduled marker has expired', () => {
+        // 1000 + 15000 + 1 > window → stale
+        expect(isAutoRetryStart({ ...base, now: 16001 })).toBe(false);
+    });
+
+    it('is false when nothing was scheduled', () => {
+        expect(isAutoRetryStart({ ...base, retryScheduled: false })).toBe(false);
+    });
+
+    it('is false for a regenerate outside the window', () => {
+        expect(isAutoRetryStart({ ...base, type: 'regenerate', now: 16001 })).toBe(false);
     });
 });
 
