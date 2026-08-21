@@ -285,7 +285,7 @@ Step 9  useAIInteraction.ts — processAIResponseDirectly(finalText)
 | **MClite 正常生成** | `window.generate()` → TavernHelper `generate()` | **否** | **是** | 兜底路由 (`resolveFallbackRoute`) | 最长路径，见上文完整调用链 |
 | **ST 原生发送 (主界面)** | ST 原生 `generate()` | **是** | **是** | 正常路由 (`runGenerationRouting`) | 设 `state.active`，`patchGenerateData` |
 | **JS-Slash-Runner 其他脚本** | `generate()` 或 `generateRaw()` | 取决于调用方式 | 取决于调用方式 | 正常/兜底 取决于 | `generateRaw` 不触发任何事件 |
-| **MagVarUpdate 额外模型解析** | `generate()` (使用当前预设) | **是** | **是** | 正常路由 | 设 `state.active`，但这是后台任务，routing 可能不是预期行为 |
+| **MagVarUpdate 额外模型解析** | `generate()` (使用当前预设) | **否** | **是** | 兜底路由 (`resolveFallbackRoute`) | 与 MClite 同链：`globalThis.generate` = `window.generate` → TavernHelper.generate，不发 GENERATION_STARTED |
 | **MagVarUpdate 额外模型解析** | `generateRaw()` (其他预设/默认) | **否** | **否** | 不触发 | 直连 TavernHelper API |
 | **ST-BaiBai-Book 摘要** | `fetch('/api/backends/chat-completions/generate')` | **否** | **否** | 不触发 | 直连 ST 后端 API |
 | **ST-BaiBai-Book 向量/重写** | 直接 `fetch()` 到向量端点 | **否** | **否** | 不触发 | 完全独立连接 |
