@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createFailureObserver, type FailureObserver } from '../src/routing/failure-observer.js';
+import { apiErrorResponseMessage, createFailureObserver, type FailureObserver } from '../src/routing/failure-observer.js';
 
 function stubToastr(): void {
     (globalThis as any).toastr = { error: vi.fn(() => undefined) as any };
@@ -30,7 +30,6 @@ describe('failure-observer end()', () => {
     });
 
     it('returns null when failure detected outside active window', () => {
-        // 未 begin，窗口未激活
         emitToastrError('Failed to fetch', 'Chat Completion API');
         expect(observer.end()).toBeNull();
     });
@@ -41,7 +40,6 @@ describe('failure-observer end()', () => {
         const probe = observer.end();
         expect(probe).not.toBeNull();
         expect(probe!.message).toBe('some message');
-        // 消息不含分类关键词 → unknown（title 命中失败）
         expect(probe!.kind).toBe('unknown');
     });
 
@@ -72,7 +70,6 @@ describe('failure-observer end()', () => {
 
     it('does not mark non-failure toasts as failure', () => {
         observer.begin();
-        // 不匹配失败模式 → 不算失败
         emitToastrError('some info message', 'Some Other Title');
         expect(observer.end()).toBeNull();
     });
@@ -81,8 +78,62 @@ describe('failure-observer end()', () => {
         observer.begin();
         emitToastrError('Failed to fetch', 'Chat Completion API');
         expect(observer.end()).not.toBeNull();
-        // 新一轮 begin：不触发失败
         observer.begin();
         expect(observer.end()).toBeNull();
+    });
+});
+
+describe('apiErrorResponseMessage', () => {
+    it.each([
+        '[API错误] model not found',
+        '[API 错误] model not found',
+        '[API Error] model not found',
+        '【API错误】model not found',
+        '【 API 错误 】 model not found',
+        '\uFEFF  [ API\u00A0错误 ]  model not found',
+    ])('recognizes common marker format: %s', text => {
+        expect(apiErrorResponseMessage(text)).toBe(text.trim());
+    });
+
+    it('does not classify an ordinary response that mentions the marker later', () => {
+        expect(apiErrorResponseMessage('正常内容：[API错误] not an API response')).toBeNull();
+    });
+});
+
+describe('failure-observer response text', () => {
+    it('returns a fatal probe for a marked response body', () => {
+        observer.begin();
+        observer.observeResponseText('[API 错误] model not found');
+        const probe = observer.end();
+        expect(probe).not.toBeNull();
+        expect(probe!.kind).toBe('fatal');
+        expect(probe!.message).toBe('[API 错误] model not found');
+    });
+
+    it('ignores an unmarked response body', () => {
+        observer.begin();
+        observer.observeResponseText('ordinary model response');
+        expect(observer.end()).toBeNull();
+    });
+});
+
+describe('failure-observer empty response', () => {
+    it('returns an empty_response observation for a blank assistant response', () => {
+        observer.begin();
+        observer.observeResponseText('   ');
+        expect(observer.end()).toEqual({ kind: 'empty_response', message: '[EMPTY_RESPONSE]' });
+    });
+
+    it('does not treat undefined as an empty response', () => {
+        observer.begin();
+        observer.observeResponseText(undefined);
+        expect(observer.end()).toBeNull();
+    });
+
+    it('prioritizes an API error over an earlier blank response', () => {
+        observer.begin();
+        observer.observeResponseText('');
+        observer.observeResponseText('[API错误] model not found');
+        expect(observer.end()?.kind).toBe('fatal');
     });
 });

@@ -13,6 +13,7 @@ declare module '@sillytavern/script' {
         [key: string]: unknown;
     };
     export const event_types: Record<string, string>;
+    export const chat: Array<{ mes?: unknown }>;
 }
 
 declare module '@sillytavern/scripts/openai' {

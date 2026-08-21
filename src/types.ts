@@ -84,13 +84,17 @@ export interface LogicalModel {
     customIncludeHeaders?: string;
 }
 
-/** 错误分类（从 toastr 错误消息推断，纯被动、无返回码）。 */
+/** 错误分类（从 toastr 或生成正文推断，纯被动、无返回码）。 */
 export type ModelFailureKind =
-    | 'fatal'         // 不可恢复：模型不存在 / 余额不足 / 401/403 / 封禁 → 立即禁用该 realModel
+    | 'fatal'         // 不可恢复：模型不存在 / 余额不足 / 401/403 / 封禁 → 立即冷却该 realModel
     | 'rate_limited'  // 429 / rate limit → 只短冷却，不累计连续失败
     | 'temp'          // 超时 / 5xx / 连接失败 / 网络 → 计入连续失败，达阈值冷却
     | 'bad_request'   // 400 / 参数 / 格式错误 → 不是渠道故障，不处理
     | 'unknown';      // 无法归类 → 按 temp 稳妥处理
+
+/** 生成结果观测：空回复会记录，但不参与失败记账。 */
+export type ModelObservationKind = ModelFailureKind | 'empty_response';
+
 
 /** Group 条目：Vendor + Key。同一 Vendor 可在同一 Group 中挂多个条目；每个 Key 独立持有模型数据（部分模型只在特定 Key 上可获取）。 */
 export interface GroupEntry {
@@ -111,8 +115,8 @@ export interface GroupEntry {
     failStreakByModel?: Record<string, number>;
     /** realModel -> 熔断(冷却)截止时间戳（持久化，载入时按"已过期=可恢复"处理）。 */
     circuitsByModel?: Record<string, number>;
-    /** realModel -> 错误分类（最近一次），诊断展示用（持久化）。 */
-    lastErrorKindByModel?: Record<string, ModelFailureKind>;
+    /** realModel -> 最近一次错误或结果观测分类，诊断展示用（持久化）。 */
+    lastErrorKindByModel?: Record<string, ModelObservationKind>;
     /** realModel -> 冷却倍数（指数退避：1→2→4→…，上限 cap）。成功或半开成功时归 1。 */
     cooldownMultiplierByModel?: Record<string, number>;
     /** 记录最近一次失败消息（截断），诊断展示用（持久化）。 */

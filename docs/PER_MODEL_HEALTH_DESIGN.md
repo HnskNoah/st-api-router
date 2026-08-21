@@ -48,7 +48,7 @@
 ### 1.1 类型（`src/types.ts`）
 
 ```ts
-/** 错误分类（从 toastr 错误消息推断，纯被动、无返回码）。 */
+/** 错误分类（从宿主错误提示或生成正文中的 API 错误标记推断，纯被动、无返回码）。 */
 export type ModelFailureKind =
   | 'fatal'         // 不可恢复：模型不存在 / 余额不足 / 401/403 / 封禁 → 立即禁用该 realModel
   | 'rate_limited'  // 429 / rate limit → 只短冷却，不累计连续失败
@@ -165,21 +165,47 @@ if (modelReason) return modelReason;
 ```ts
 export function classifyModelFailureMessage(msg: string): ModelFailureKind {
   const m = String(msg ?? '').toLowerCase();
-  if (/(model[_ -]?not[_ -]?found|no such model|model .* not exist|insufficient[_ -]?quota|no quota|balance|401|403|permission|banned|invalid api key)/i.test(m)) {
+  if (/(model[_ -]?not[_ -]?found|no such model|model .* not exist|insufficient[_ -]?quota|no quota|balance|401|403|permission|banned|invalid api key|account disabled|access denied|forbidden|unauthorized|payment required|模型不存在|模型未找到|余额不足|配额不足|密钥无效|无权限|禁止访问|账户禁用|账号禁用|欠费)/i.test(m)) {
     return 'fatal';
   }
-  if (/(429|rate ?limit|too many requests|quota exceeded)/i.test(m)) {
+  if (/(429|rate ?limit|too many requests|quota exceeded|限流|请求过多|频率限制|配额超限)/i.test(m)) {
     return 'rate_limited';
   }
-  if (/(400|bad request|parameter|invalid request|invalid parameter|format)/i.test(m)) {
+  if (/(400|bad request|parameter|invalid request|invalid parameter|format|invalid input|validation error|请求无效|参数错误|参数无效|格式错误|验证失败)/i.test(m)) {
     return 'bad_request';
   }
-  // 现有失败观察的正则命中项（failed to fetch / load failed / network / timed out / abort）归为 temp
-  return 'temp';
+  if (/(failed to fetch|load failed|network|timed out|abort|timeout|5\d{2}|server error|service unavailable|internal error|网络|超时|服务(?:暂时)?不可用|服务器错误|内部错误|连接失败)/i.test(m)) {
+    return 'temp';
+  }
+  return 'unknown';
 }
 ```
 
-### 4.2 成功处理
+除宿主错误提示外，路由窗口结束时还读取 SillyTavern 已写入的最新聊天消息正文。以下标记在正文开头时都会视为 API 失败：
+
+- `[API错误]`
+- `[API 错误]`
+- `[API Error]`
+- `【API错误】` / `【API 错误】`
+
+标记允许普通空白、全角空格和标记后无空格；正文中间出现这些词不会触发。标记后的英文或常见中文错误（如“模型不存在”“余额不足”“请求过多”“服务暂时不可用”）交给同一分类器，分别归为 fatal、rate_limited 或 temp。
+
+```ts
+const marked = /^\s*(?:\[|【)\s*api\s*(?:错误|error)\s*(?:\]|】)\s*/iu;
+```
+
+### 4.2 空回复观测（不计失败）
+
+如果生成结束时最新 assistant 消息是空白字符串，系统记录 `empty_response` 观测和 `[EMPTY_RESPONSE]` 诊断文本，但不会：
+
+- 增加 Vendor 失败数；
+- 增加 `failStreakByModel`；
+- 触发或延长模型冷却；
+- 将该次结果计入 Vendor 成功数。
+
+空回复不会自动重试，也不会被当作成功恢复已有冷却。真正的 API 错误优先级高于空回复观测。
+
+### 4.3 成功处理
 
 ```ts
 /** 生成成功 → 该 Key 上该 realModel 恢复健康。 */
@@ -192,7 +218,7 @@ export function recordModelSuccess(entry: GroupEntry, realModel: string): void {
 }
 ```
 
-### 4.3 失败处理（核心：分类 + 退避 + 半开语义）
+### 4.4 失败处理（核心：分类 + 退避 + 半开语义）
 
 ```ts
 export interface RecordModelFailureOptions {
@@ -260,7 +286,7 @@ export function recordModelFailure(
 }
 ```
 
-### 4.4 半开（冷却结束用真实流量自动验证）
+### 4.5 半开（冷却结束用真实流量自动验证）
 
 沿用现有架构：**冷却到点后路由层自然恢复该单元为可用**（`circuitsByModel[realModel] <= now` 即放行）。首版实现**不做并发限制的半开闸门**，而是"冷却到期即恢复可路由，下一次真实请求自然验证"——成功则 `recordModelSuccess` 归零，失败则 `recordModelFailure` 按退避再次冷却（此时 multiplier 已翻倍）。这已经满足「纯被动 + 指数退避 + 真实流量自动恢复」，且比手动启用省心很多。
 
@@ -270,48 +296,44 @@ export function recordModelFailure(
 
 ## 5. 接线改动（`src/routing/failure-observer.ts` + `hooks.ts`）
 
-### 5.1 failure-observer：从"是否失败"升级为"分类 + 归因到 realModel"
+### 5.1 failure-observer：分类并区分错误与结果观测
 
-现状：`end()` 只返回 `boolean failed`。需要把它扩展为能带回**错误分类**，且能**定位到 realModel**（因为我们现在要按模型记账，而不是按 Vendor）。
+`end()` 返回 `FailureProbe | null`：错误返回分类，空白 assistant 回复返回 `empty_response`，无观测返回 `null`。
 
 ```ts
 export interface FailureProbe {
-  kind: ModelFailureKind;    // 分类（从消息推断）
-  message: string;           // 原始消息（截断）
+  kind: ModelObservationKind; // 错误分类或 empty_response
+  message: string;             // 原始消息或 [EMPTY_RESPONSE]（截断）
 }
 
 export interface FailureObserver {
   install(): void;
   uninstall(): void;
   begin(): void;
-  end(): FailureProbe | null;   // 窗口内无失败 → null；有失败 → { kind, message }
+  observeResponseText(text: unknown): void;
+  end(): FailureProbe | null;
 }
 ```
 
-`end()` 内部：命中 `isFailureMessage` 时，除了置 `failed`，还调用 `classifyModelFailureMessage(message)` 记录 `kind`。
-
-> 注意：`bad_request` 命中了现有 `FAILURE_MESSAGE_PATTERN` 之外一般也未必触发（那个正则是网络类）。凡能触发现有失败观察的，基本是 temp/fatal/rate_limited，`bad_request` 主要用于"如果消息恰好含 400"时避免误伤。
+> 注意：`bad_request` 命中了现有错误消息之外一般也未必触发（那个正则是网络类）。凡能触发现有失败观察的，基本是 temp/fatal/rate_limited，`bad_request` 主要用于“如果消息恰好含 400”时避免误伤。
 
 ### 5.2 hooks.ts：onGenerationEnded 按 realModel 记账
 
-把现在的 `recordVendorFailure(vendor, ...)` 改成**同时在模型级记账**，并把 Vendor 级禁用作为"兜底/上一个层"保留（可选）：
+空回复只调用 `recordModelObservation()` 保存诊断，不调用失败记账，也不增加 Vendor 成功数；真正错误才调用 `recordModelFailure()`。
 
 ```ts
-// 现在的逻辑主要改动点：
-import { recordModelFailure, recordModelSuccess } from '../domain/model-health.js';
-// ...
-const probe = deps.endGeneration?.();            // 现在返回 FailureProbe | null
-if (!failed) {
-  recordVendorSuccess(vendor);                    // 保留 Vendor 成功率统计（UI/权重用）
-  recordModelSuccess(entry, realModel);           // 新增：模型级恢复
+const probe = deps.endGeneration?.();
+if (!probe) {
+  recordVendorSuccess(vendor);
+  recordModelSuccess(entry, realModel);
+} else if (probe.kind === 'empty_response') {
+  recordModelObservation(entry, realModel, probe.kind, probe.message);
 } else {
-  const kind = probe?.kind ?? 'temp';
-  recordModelFailure(entry, realModel, kind, probe?.message ?? '', {
+  recordModelFailure(entry, realModel, probe.kind, probe.message, {
     threshold: routing.failThreshold,
     baseCooldownMs: routing.cooldownSeconds * 1000,
   });
-  // Vendor 级禁用降级为可选「整 Vendor 全模型皆冷却时才自动禁」，避免一模型挂连带全商
-  // （一期可不做 Vendor 兜底，只做模型级；二期加「disableVendorIfAllModelsCooldown」）
+  vendor.failures = (Number(vendor.failures) || 0) + 1;
 }
 ```
 
@@ -342,7 +364,7 @@ if (!failed) {
 
 ## 8. 为什么这套能在我们的约束下成立
 
-- **纯被动**：只在真实生成的成功/失败（`GENERATION_ENDED` + toastr 观察）时记账，不主动调 vendor、不调 `/models`。半开验证也用真实流量。
+- **纯被动**：只在真实生成的成功/失败（`GENERATION_ENDED` + 宿主错误提示或最终正文标记）时记账，不主动调 vendor、不调 `/models`。半开验证也用真实流量。
 - **无服务端**：全部是 `GroupEntry` 上的字段 + 纯函数，不引入 Postgres/Redis。
 - **不改变 ST 发请求的约束**：我们仍只改连接字段，失败由 ST 原生反馈，我们只"读"。
 - **粒度正确**：熔断落在 `GroupEntry(Key) × realModel`，一个模型挂不影响同 Key 其它模型、不影响同 Vendor 其它 Key——正是设计文档第一原则，也是旧 Provider 层已证实的模式。

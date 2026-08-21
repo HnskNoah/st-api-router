@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyModelFailureMessage, recordModelFailure, recordModelSuccess, isModelInCooldown, modelCooldownRemainingMs, type RecordModelFailureOptions } from '../src/domain/model-health.js';
+import { classifyModelFailureMessage, recordModelFailure, recordModelObservation, recordModelSuccess, isModelInCooldown, modelCooldownRemainingMs, type RecordModelFailureOptions } from '../src/domain/model-health.js';
 import type { GroupEntry, ModelFailureKind } from '../src/types.js';
 
 function makeEntry(overrides?: Partial<GroupEntry>): GroupEntry {
@@ -84,6 +84,18 @@ describe('classifyModelFailureMessage', () => {
     it('handles non-string input gracefully', () => {
         expect(classifyModelFailureMessage(String(undefined))).toBe('unknown');
         expect(classifyModelFailureMessage(String(null))).toBe('unknown');
+    });
+});
+
+describe('classifyModelFailureMessage Chinese API errors', () => {
+    it('classifies common fatal API error text', () => {
+        expect(classifyModelFailureMessage('[API错误] 模型不存在')).toBe('fatal');
+        expect(classifyModelFailureMessage('[API 错误] 余额不足')).toBe('fatal');
+    });
+
+    it('classifies rate limits and transient Chinese API errors', () => {
+        expect(classifyModelFailureMessage('[API错误] 请求过多')).toBe('rate_limited');
+        expect(classifyModelFailureMessage('[API错误] 服务暂时不可用')).toBe('temp');
     });
 });
 
@@ -214,6 +226,7 @@ describe('recordModelFailure', () => {
         expect(entry.lastErrorKindByModel?.['gpt-4o']).toBe('temp');
     });
 
+
     it('does not affect other models', () => {
         const entry = makeEntry();
         const now = 1000000;
@@ -222,6 +235,16 @@ describe('recordModelFailure', () => {
         // gemini-pro 不应受影响
         expect(entry.failStreakByModel).not.toHaveProperty('gemini-pro');
         expect(entry.circuitsByModel).not.toHaveProperty('gemini-pro');
+    });
+});
+describe('recordModelObservation', () => {
+    it('records empty response without changing failure health state', () => {
+        const entry = makeEntry({ failStreakByModel: { 'gpt-4o': 2 }, circuitsByModel: { 'gpt-4o': 1234 } });
+        recordModelObservation(entry, 'gpt-4o', 'empty_response', '[EMPTY_RESPONSE]');
+        expect(entry.lastErrorByRealModel?.['gpt-4o']).toBe('[EMPTY_RESPONSE]');
+        expect(entry.lastErrorKindByModel?.['gpt-4o']).toBe('empty_response');
+        expect(entry.failStreakByModel?.['gpt-4o']).toBe(2);
+        expect(entry.circuitsByModel?.['gpt-4o']).toBe(1234);
     });
 });
 

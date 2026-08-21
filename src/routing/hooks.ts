@@ -8,7 +8,7 @@ import { SECRET_KEYS } from '@sillytavern/scripts/secrets';
 import { Popup } from '@sillytavern/scripts/popup';
 import { ensureSecretId } from '../secrets/api.js';
 import { routeGroupOnce, recordGroupSelection, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
-import { recordModelFailure, recordModelSuccess } from '../domain/model-health.js';
+import { recordModelFailure, recordModelObservation, recordModelSuccess } from '../domain/model-health.js';
 import { computeVendorTokenClamps, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
@@ -29,7 +29,7 @@ export interface RoutingHooksDeps {
     getActiveGroupId(): string | null;
     getRouting(): RoutingSettings;
     beginGeneration?(): void;
-    /** 返回本次生成的失败探针（含分类与消息），null 表示成功。 */
+    /** 返回本次生成的错误或结果观测；null 表示没有异常观测。 */
     endGeneration?(): FailureProbe | null;
 }
 
@@ -323,6 +323,13 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                 recordModelSuccess(entry, realModel);
                 saveSettingsDebounced();
                 debugLog('onGenerationEnded recorded success', { vendorName: vendor.name, realModel });
+                return;
+            }
+            if (probe.kind === 'empty_response') {
+                // 空回复只保留诊断观测，不计入 Vendor/模型失败，不触发冷却。
+                recordModelObservation(entry, realModel, probe.kind, probe.message);
+                saveSettingsDebounced();
+                debugLog('onGenerationEnded recorded empty response observation', { vendorName: vendor.name, realModel });
                 return;
             }
             // 失败：模型级记账（Key × realModel 粒度），不自动禁用整个 Vendor

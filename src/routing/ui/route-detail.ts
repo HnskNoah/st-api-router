@@ -73,9 +73,9 @@ export function renderRouteDetail(
         list.append(pill);
     }
     detailEl.append(list);
-    // ── 最近失败记录 ──
+    // ── 最近错误与结果观测 ──
     const failures = $('<div class="csl-route-failures"></div>');
-    const failuresHead = $('<div class="csl-route-failures-head">').text('最近失败记录');
+    const failuresHead = $('<div class="csl-route-failures-head">').text('最近错误与结果观测');
     failures.append(failuresHead);
     let hasFailures = false;
     for (const unit of status.units) {
@@ -84,14 +84,14 @@ export function renderRouteDetail(
         if (!lastError && !lastKind) continue;
         hasFailures = true;
         const row = $('<div class="csl-route-failure-row"></div>');
-        const kindLabel = lastKind === 'fatal' ? '不可恢复' : lastKind === 'rate_limited' ? '限流' : lastKind === 'temp' ? '临时错误' : lastKind === 'bad_request' ? '参数错误' : '未知';
+        const kindLabel = lastKind === 'fatal' ? '不可恢复' : lastKind === 'rate_limited' ? '限流' : lastKind === 'temp' ? '临时错误' : lastKind === 'bad_request' ? '参数错误' : lastKind === 'empty_response' ? '空回复（不计失败）' : '未知';
         row.append($('<span class="csl-route-failure-unit">').text(`${unit.vendor.name} · ${unit.entry.label} · ${unit.realModel}`));
         row.append($('<span class="csl-route-failure-kind">').text(kindLabel));
         if (lastError) row.append($('<span class="csl-route-failure-msg">').text(lastError.slice(0, 200)));
         failures.append(row);
     }
     if (!hasFailures) {
-        failures.append($('<div class="csl-route-failure-empty">').text('暂无失败记录。'));
+        failures.append($('<div class="csl-route-failure-empty">').text('暂无失败或结果观测记录。'));
     }
     detailEl.append(failures);
 }

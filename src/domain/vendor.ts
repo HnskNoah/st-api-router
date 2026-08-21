@@ -9,7 +9,7 @@ import type {
     GroupEntry,
     LogicalModel,
     MappingRule,
-    ModelFailureKind,
+    ModelObservationKind,
     Vendor,
     VendorFormat,
     VendorModelMapping,
@@ -749,13 +749,13 @@ function normalizeStringStringMap(raw: unknown, maxLen = 500): Record<string, st
     return result;
 }
 
-/** 安全归一化 Record<string, ModelFailureKind> 映射。 */
-function normalizeErrorKindMap(raw: unknown): Record<string, ModelFailureKind> {
+/** 安全归一化 Record<string, ModelObservationKind> 映射。 */
+function normalizeErrorKindMap(raw: unknown): Record<string, ModelObservationKind> {
     if (!raw || typeof raw !== 'object') return {};
-    const valid: ModelFailureKind[] = ['fatal', 'rate_limited', 'temp', 'bad_request', 'unknown'];
-    const result: Record<string, ModelFailureKind> = {};
+    const valid: ModelObservationKind[] = ['fatal', 'rate_limited', 'temp', 'bad_request', 'unknown', 'empty_response'];
+    const result: Record<string, ModelObservationKind> = {};
     for (const [key, value] of Object.entries(raw)) {
-        const s = String(value ?? '') as ModelFailureKind;
+        const s = String(value ?? '') as ModelObservationKind;
         if (valid.includes(s)) result[String(key)] = s;
     }
     return result;
