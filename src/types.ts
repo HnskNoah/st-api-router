@@ -37,6 +37,8 @@ export interface VendorModelMapping {
     id: string;
     realModel: string;
     logicalModelId: string;
+    /** 同一 Key 下该真实模型的相对渠道权重；归一化后默认 1。 */
+    weight?: number;
 }
 
 /** 手动批量映射规则：对命中的真实模型名批量映射到目标逻辑模型。持久化，手动建立。 */
@@ -99,6 +101,8 @@ export interface GroupEntry {
     secretId?: string;
     label: string;
     enabled: boolean;
+    /** 同一 Vendor 内该 Key 的相对渠道权重；归一化后默认 1。 */
+    weight?: number;
     fetchedModels: string[];
     mappings: VendorModelMapping[];
 

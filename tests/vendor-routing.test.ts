@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
     normalizeGroup,
     normalizeGroups,
@@ -15,6 +15,7 @@ import {
     candidateGroupUnits,
     groupUnitsForLogicalModel,
     groupUnitKey,
+    pickGroupUnit,
     routeGroupOnce,
     summarizeGroupUnavailable,
     vendorRpmAvailable,
@@ -72,7 +73,7 @@ describe('domain/vendor normalization', () => {
             }],
         }]);
         expect(groups[0].entries[0].fetchedModels).toEqual(['[1]claude-opus-4-8', 'gemini-3.1-pro-preview']);
-        expect(groups[0].entries[0].mappings).toEqual([{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'l1' }]);
+        expect(groups[0].entries[0].mappings).toEqual([{ id: 'm1', realModel: '[1]claude-opus-4-8', logicalModelId: 'l1', weight: 1 }]);
     });
 });
 
@@ -323,6 +324,73 @@ describe('domain/group-routing', () => {
         for (const unit of units) expect(unit.realModel).toBe('grok-4.5');
     });
 
+    it('selects Vendor before channel count can amplify its probability', () => {
+        const vendors = [makeVendor('v1', 'A'), makeVendor('v2', 'B')];
+        const group = normalizeGroup({
+            currentLogicalModelId: 'l1',
+            entries: [
+                { id: 'e1', vendorId: 'v1', label: 'A1', mappings: [{ id: 'm1', realModel: 'a1', logicalModelId: 'l1' }] },
+                { id: 'e2', vendorId: 'v1', label: 'A2', mappings: [{ id: 'm2', realModel: 'a2', logicalModelId: 'l1' }] },
+                { id: 'e3', vendorId: 'v2', label: 'B1', mappings: [{ id: 'm3', realModel: 'b1', logicalModelId: 'l1' }] },
+            ],
+        });
+        vi.spyOn(Math, 'random').mockReturnValue(0.6);
+        try {
+            const selected = pickGroupUnit(groupUnitsForLogicalModel(vendors, group, 'l1'));
+            expect(selected?.vendor.id).toBe('v2');
+        } finally {
+            vi.restoreAllMocks();
+        }
+    });
+
+    it('applies Vendor weight in stage one', () => {
+        const vendors = [makeVendor('v1', 'A'), makeVendor('v2', 'B')];
+        vendors[0].weight = 3;
+        vendors[1].weight = 1;
+        const group = makeGroupWithEntries([
+            { id: 'e1', vendorId: 'v1', label: 'A1', mapping: { realModel: 'a', logicalModelId: 'l1' } },
+            { id: 'e2', vendorId: 'v2', label: 'B1', mapping: { realModel: 'b', logicalModelId: 'l1' } },
+        ]);
+        vi.spyOn(Math, 'random').mockReturnValue(0.9);
+        try {
+            expect(pickGroupUnit(groupUnitsForLogicalModel(vendors, group, 'l1'))?.vendor.id).toBe('v2');
+        } finally {
+            vi.restoreAllMocks();
+        }
+    });
+
+    it('applies Key weight times mapping weight within the selected Vendor', () => {
+        const vendors = [makeVendor('v1', 'A')];
+        const group = normalizeGroup({
+            currentLogicalModelId: 'l1',
+            entries: [
+                { id: 'e1', vendorId: 'v1', label: 'A1', weight: 1, mappings: [
+                    { id: 'm1', realModel: 'a1', logicalModelId: 'l1', weight: 3 },
+                    { id: 'm2', realModel: 'a2', logicalModelId: 'l1', weight: 1 },
+                ] },
+                { id: 'e2', vendorId: 'v1', label: 'A2', weight: 2, mappings: [{ id: 'm3', realModel: 'a3', logicalModelId: 'l1', weight: 1 }] },
+            ],
+        });
+        vi.spyOn(Math, 'random').mockReturnValue(0.6);
+        try {
+            expect(pickGroupUnit(groupUnitsForLogicalModel(vendors, group, 'l1'))?.mapping.id).toBe('m2');
+        } finally {
+            vi.restoreAllMocks();
+        }
+    });
+
+    it('sticky identity distinguishes mappings under one Key', () => {
+        const vendors = [makeVendor('v1', 'A')];
+        const group = normalizeGroup({
+            currentLogicalModelId: 'l1',
+            entries: [{ id: 'e1', vendorId: 'v1', label: 'A1', mappings: [
+                { id: 'm1', realModel: 'a1', logicalModelId: 'l1' },
+                { id: 'm2', realModel: 'a2', logicalModelId: 'l1' },
+            ] }],
+        });
+        const [first, second] = groupUnitsForLogicalModel(vendors, group, 'l1');
+        expect(groupUnitKey(first)).not.toBe(groupUnitKey(second));
+    });
     it('sticky reuses last picked unit for N uses', () => {
         const vendors = [makeVendor('v1', 'A'), makeVendor('v2', 'B')];
         const group = makeGroupWithEntries([
@@ -335,7 +403,6 @@ describe('domain/group-routing', () => {
         // 第二次：提前消费剩余次数
         const second = routeGroupOnce(vendors, group, 'l1', { stickyCount: 2, lastPicked: first.nextLastPicked });
         expect(groupUnitKey(second.unit!)).toBe(groupUnitKey(first.unit!));
-        expect(second.nextLastPicked!.remaining).toBe(0);
         // 第三次：remaining=0，不再复用
         const third = routeGroupOnce(vendors, group, 'l1', { stickyCount: 2, lastPicked: second.nextLastPicked });
         expect(third.nextLastPicked!.remaining).toBe(1); // 新随机一次

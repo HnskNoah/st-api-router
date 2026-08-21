@@ -51,6 +51,18 @@ export function isManualLockApplicable(
     now = Date.now(),
 ): boolean {
     if (!locked || !group || locked.mapping?.logicalModelId !== logicalModelId) return false;
-    if (!group.entries.some(entry => entry.id === locked.entry?.id)) return false;
-    return !groupUnitUnavailabilityReason(locked, now);
+    const currentEntry = group.entries.find(entry => entry.id === locked.entry?.id);
+    if (!currentEntry) return false;
+    const lockedMappingId = locked.mapping?.id;
+    const currentMapping = lockedMappingId
+        ? currentEntry.mappings?.find(mapping => mapping.id === lockedMappingId)
+        : currentEntry.mappings?.find(mapping => mapping.realModel === locked.realModel && mapping.logicalModelId === logicalModelId);
+    if (!currentMapping || currentMapping.logicalModelId !== logicalModelId) return false;
+    const currentUnit: GroupRouteUnit = {
+        ...locked,
+        entry: currentEntry,
+        mapping: currentMapping,
+        realModel: currentMapping.realModel,
+    };
+    return !groupUnitUnavailabilityReason(currentUnit, now);
 }

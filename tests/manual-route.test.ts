@@ -143,4 +143,17 @@ describe('isManualLockApplicable：锁定是否仍适用于当前上下文', () 
         const lockedUnit = { vendor: v, entry: e, mapping: mapping(), realModel: 'gpt-4o' };
         expect(isManualLockApplicable(lockedUnit, groups[0], 'lm1')).toBe(false);
     });
+    it('mapping removed from current entry invalidates the lock', () => {
+        const { vendors, groups } = usableVendorGroup();
+        const unit = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors }).unit!;
+        groups[0].entries[0].mappings = [];
+        expect(isManualLockApplicable(unit, groups[0], 'lm1')).toBe(false);
+    });
+
+    it('mapping rebound to another logical model invalidates the lock', () => {
+        const { vendors, groups } = usableVendorGroup();
+        const unit = resolveManualLock({ routingEnabled: true, activeGroupId: 'g1', groups, vendors }).unit!;
+        groups[0].entries[0].mappings[0].logicalModelId = 'lm2';
+        expect(isManualLockApplicable(unit, groups[0], 'lm1')).toBe(false);
+    });
 });

@@ -8,6 +8,7 @@ SillyTavern 扩展：按逻辑模型在各 Vendor + Key 之间自动路由 API �
 |------|------|
 | **[ROUTING_REDESIGN.md](docs/ROUTING_REDESIGN.md)** | 架构设计：概念模型、关系图、路由流程、实现状态 |
 | **[PER_MODEL_HEALTH_DESIGN.md](docs/PER_MODEL_HEALTH_DESIGN.md)** | 设计稿：Key × 模型级被动健康检测与熔断（**已实现**，见 model-health.ts） |
+| **[ROUTING_SELECTION_DESIGN.md](ROUTING_SELECTION_DESIGN.md)** | 分层随机路由设计：Vendor → Key/真实模型渠道，含权重、健康隔离与 sticky 方案 |
 | **[CALL_CHAIN.md](docs/CALL_CHAIN.md)** | 调用链：MClite 发送消息到 AI 回复的完整流程，含路由触发对比 |
 | **[HANDOFF_GATEWAY_DESIGN_REVIEW.md](docs/HANDOFF_GATEWAY_DESIGN_REVIEW.md)** | 外部设计评审：聚合路由网关方案与本项目的对照，含下一步建议 |
 | **[AGENTS.md](../AGENTS.md)** | **AI agent 冷启动指南**：架构图、核心机制、目录、硬约束、编码规范（接手 agent 优先读） |

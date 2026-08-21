@@ -116,6 +116,8 @@ export function ensureConsolePanelStyles(): void {
         }
         .csl-route-row:hover { background: rgba(255, 255, 255, 0.04); }
         .csl-route-name { flex: 1; font-size: 13px; min-width: 0; }
+        .csl-route-weights { font-size: 11px; color: #999; flex: none; white-space: nowrap; }
+        .csl-route-weight, .csl-vendor-key-weight { width: 62px; flex: none; margin: 0; }
         .csl-route-state { font-size: 12px; color: #999; flex: none; }
 
         /* ── 右栏 ── */
@@ -248,9 +250,11 @@ export function ensureConsolePanelStyles(): void {
         .csl-mapping-topbar { margin-bottom: 10px; }
         .csl-mapping-section { margin-bottom: 14px; }
         .csl-mapping-section-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #ccc; }
-        .csl-mapping-rules { display: flex; flex-direction: column; gap: 6px; }
+        .csl-mapping-rules, .csl-mapping-unmapped { display: flex; flex-direction: column; gap: 6px; }
+        .csl-mapping-unmapped-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .csl-mapping-unmapped-row > code { flex: 1; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+        .csl-mapping-unmapped-row > select.text_pole { flex: 1; min-width: 120px; margin: 0; }
         .csl-mapping-rule-row {
-            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
             border: 1px solid rgba(128,128,128,0.22); border-radius: 6px;
             padding: 6px 10px; background: rgba(0,0,0,0.08);
         }

@@ -9,7 +9,9 @@ import {
     addIgnoreModel,
     applyMappingRule,
     applyMappingRules,
+    assignModelToLogical,
     buildLogicalModelsFromFetched,
+    findUnmappedModels,
     normalizeMappingRule,
     previewMappingRule,
     pruneOrphanLogicalModels,
@@ -45,6 +47,7 @@ export function renderRightMapping(
             const { created, mapped, skipped } = buildLogicalModelsFromFetched(allModels, logicalModels(), groups());
             const reapplied = applyMappingRules(groups(), mappingRules());
             const pruned = pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
+            renderUnmapped();
             saveSettingsNow();
             onRefreshDashboard();
             const parts: string[] = [];
@@ -54,6 +57,39 @@ export function renderRightMapping(
             if (pruned.length > 0) parts.push(`回收 ${pruned.length} 个孤儿子逻辑模型`);
             toastr.success(parts.length > 0 ? `一键归类完成：${parts.join('，')}。` : '没有未归类的模型。');
         });
+    const unmappedSection = $('<div class="csl-mapping-section"></div>');
+    unmappedSection.append($('<div class="csl-mapping-section-title">').text('未归类真实模型'));
+    const unmappedList = $('<div class="csl-mapping-unmapped"></div>');
+    const renderUnmapped = () => {
+        unmappedList.empty();
+        const models = findUnmappedModels(groups());
+        if (models.length === 0) {
+            unmappedList.append($('<div class="csl-mapping-empty">').text('没有未归类的真实模型。'));
+            return;
+        }
+        for (const realModel of models) {
+            const row = $('<div class="csl-mapping-unmapped-row"></div>');
+            const select = $('<select class="text_pole"></select>').append($('<option value="">').text('— 选择逻辑模型 —'));
+            for (const model of logicalModels()) select.append($('<option>').val(model.id).text(model.name));
+            const apply = $('<button class="menu_button" type="button" title="映射到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
+                .on('click', () => {
+                    const logicalModelId = String(select.val() || '');
+                    if (!logicalModelId) { toastr.warning('请选择目标逻辑模型。'); return; }
+                    const target = logicalModels().find(model => model.id === logicalModelId);
+                    if (!target) return;
+                    const touched = assignModelToLogical(groups(), realModel, logicalModelId);
+                    saveSettingsNow();
+                    renderUnmapped();
+                    onRefreshDashboard();
+                    toastr.success(`已将「${realModel}」映射到「${target.name}」，更新 ${touched} 个 Key。`);
+                });
+            row.append($('<code>').text(realModel), select, apply);
+            unmappedList.append(row);
+        }
+    };
+    renderUnmapped();
+    unmappedSection.append(unmappedList);
+    rightEl.append(unmappedSection);
     topBar.append(oneClickBtn);
     rightEl.append(topBar);
 

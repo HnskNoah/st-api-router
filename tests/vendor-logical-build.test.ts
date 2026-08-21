@@ -97,6 +97,16 @@ describe('domain/vendor > 从已拉取模型批量创建逻辑模型', () => {
         expect(existing).toHaveLength(1);
         expect(result.skipped).toEqual([]);
     });
+    it('已有逻辑模型时把不定长渠道前缀模型映射到最长已知后缀', () => {
+        const existing: LogicalModel[] = [
+            { id: 'short', name: 'gemini-3', matchPattern: '' },
+            { id: 'long', name: 'gemini-3.5-flash', matchPattern: '' },
+        ];
+        const result = buildLogicalModelsFromFetched(['供应商A-gemini-3.5-flash'], existing);
+        expect(result.created).toEqual([]);
+        expect(existing).toHaveLength(2);
+        expect(existing.find(model => model.id === 'long')?.name).toBe('gemini-3.5-flash');
+    });
 
     it('不同核心模型保持独立，不合并', () => {
         const existing: LogicalModel[] = [];

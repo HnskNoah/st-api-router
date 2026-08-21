@@ -26,10 +26,12 @@ export function normalizeProviderFormat(value: unknown): VendorFormat {
 }
 
 export function normalizeVendorModelMapping(raw: Record<string, any> | undefined): VendorModelMapping {
+    const weight = Number(raw?.weight);
     return {
         id: normalizeText(raw?.id) || makeId('mapping'),
         realModel: normalizeText(raw?.realModel).slice(0, 500),
         logicalModelId: normalizeText(raw?.logicalModelId).slice(0, 200),
+        weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
     };
 }
 
@@ -145,12 +147,34 @@ function findLogicalByNameCI(logicalModels: LogicalModel[], name: string): Logic
     return logicalModels.find(model => String(model?.name || '').trim().toLowerCase() === value) || null;
 }
 
-/** 拉取模型后的归类：正则命中 → 名称精确匹配（大小写不敏感）→ 核心模型名合并（剥渠道/变体前缀，大小写不敏感）→ 新建（用核心名）。返回归属的逻辑模型。 */
+/**
+ * 识别“渠道前缀-已知模型名”：只接受当前已有逻辑模型名作为后缀，且选择最长后缀。
+ * 这样不会把 gemini-3.5-flash-lite 按第一个短横线错误拆成前缀和模型名。
+ */
+function findLogicalByKnownSuffix(logicalModels: LogicalModel[], realModel: string): LogicalModel | null {
+    const value = String(realModel || '').trim().toLowerCase();
+    if (!value) return null;
+    let match: LogicalModel | null = null;
+    let matchLength = 0;
+    for (const model of logicalModels) {
+        const name = String(model?.name || '').trim().toLowerCase();
+        if (!name || value === name || !value.endsWith(`-${name}`)) continue;
+        if (name.length > matchLength) {
+            match = model;
+            matchLength = name.length;
+        }
+    }
+    return match;
+}
+
+/** 拉取模型后的归类：正则命中 → 名称精确匹配 → 已知模型最长后缀匹配 → 核心模型名合并 → 新建。 */
 export function assignRealModel(logicalModels: LogicalModel[], realModel: string): LogicalModel {
     const byPattern = findLogicalModelByPattern(logicalModels, realModel);
     if (byPattern) return byPattern;
     const byName = findLogicalByNameCI(logicalModels, realModel);
     if (byName) return byName;
+    const byKnownSuffix = findLogicalByKnownSuffix(logicalModels, realModel);
+    if (byKnownSuffix) return byKnownSuffix;
     const canonical = canonicalModelName(realModel);
     if (canonical && canonical !== realModel) {
         const byCanonical = findLogicalByNameCI(logicalModels, canonical);
@@ -338,7 +362,7 @@ export function assignModelToLogical(groups: Group[], realModel: string, logical
         if (existing) {
             existing.logicalModelId = logicalModelId;
         } else {
-            entry.mappings.push({ id: makeId('mapping'), realModel, logicalModelId });
+            entry.mappings.push({ id: makeId('mapping'), realModel, logicalModelId, weight: 1 });
         }
         touched++;
     }
@@ -423,7 +447,7 @@ export function applyMappingRule(groups: Group[], rule: MappingRule): number {
                     touched++;
                 }
             } else {
-                entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: rule.logicalModelId! });
+                entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: rule.logicalModelId!, weight: 1 });
                 touched++;
             }
         }
@@ -630,25 +654,24 @@ export function buildLogicalModelsFromFetched(
             continue;
         }
         const canonical = canonicalModelName(name);
-        if (!existingNames.has(canonical.toLowerCase())) {
+        const knownSuffixTarget = findLogicalByKnownSuffix(logicalModels, name);
+        if (!knownSuffixTarget && !existingNames.has(canonical.toLowerCase())) {
             const model = normalizeLogicalModel({ name: canonical });
             logicalModels.push(model);
             existingNames.add(canonical.toLowerCase());
             created.push(model);
         }
-        const target = findLogicalByNameCI(logicalModels, canonical);
+        const target = knownSuffixTarget || findLogicalByNameCI(logicalModels, canonical);
         if (!target) continue;
-        // 统一小写：已存在的同名逻辑模型把名字规范成小写核心名
-        if (String(target.name || '') !== canonical) target.name = canonical;
+        if (!knownSuffixTarget && String(target.name || '') !== canonical) target.name = canonical;
         for (const entry of allGroupEntries(groups)) {
             if (!entry.fetchedModels.includes(name)) continue;
             const existing = entry.mappings.find(mapping => mapping.realModel === name);
             if (!existing) {
-                entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id });
+                entry.mappings.push({ id: makeId('mapping'), realModel: name, logicalModelId: target.id, weight: 1 });
                 mapped++;
                 continue;
             }
-            // 全部重置重算：只要不是 canonical 同名逻辑模型就改为 target（覆盖手动映射）
             if (existing.logicalModelId !== target.id) {
                 existing.logicalModelId = target.id;
                 rebuilt++;
@@ -739,6 +762,7 @@ function normalizeErrorKindMap(raw: unknown): Record<string, ModelFailureKind> {
 }
 
 export function normalizeGroupEntry(raw: Record<string, any> | undefined): GroupEntry {
+    const weight = Number(raw?.weight);
     return {
         id: normalizeText(raw?.id) || makeId('group-entry'),
         vendorId: normalizeText(raw?.vendorId).slice(0, 200),
@@ -746,6 +770,7 @@ export function normalizeGroupEntry(raw: Record<string, any> | undefined): Group
         secretId: normalizeText(raw?.secretId).slice(0, 200),
         label: sanitizeName(raw?.label) || 'Key',
         enabled: raw?.enabled === undefined ? true : Boolean(raw.enabled),
+        weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
         fetchedModels: normalizeModelList(raw?.fetchedModels),
         mappings: normalizeMappings(raw?.mappings),
         failStreakByModel: normalizeStringNumberMap(raw?.failStreakByModel),

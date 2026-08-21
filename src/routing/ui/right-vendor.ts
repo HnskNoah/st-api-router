@@ -191,6 +191,15 @@ export function renderRightVendor(
                         saveSettingsNow();
                     });
                 keyRow.append(labelInput);
+                const keyWeight = $('<input class="text_pole csl-vendor-key-weight" type="number" min="0.01" step="0.1" title="Key 权重：同一 Vendor 内的相对概率" aria-label="Key 权重">')
+                    .val(entry.weight ?? 1)
+                    .on('change', function () {
+                        const value = Number($(this).val());
+                        entry.weight = Number.isFinite(value) && value > 0 ? value : 1;
+                        $(this).val(entry.weight);
+                        saveSettingsNow();
+                    });
+                keyRow.append(keyWeight);
 
                 const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">').val(entry.apiKey)
                     .on('input', function () {
@@ -434,7 +443,7 @@ export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): P
             if (isSpecialVariant(model)) continue;
             const logical = assignRealModel(logicalModels(), model);
             if (!entry.mappings.some(mapping => mapping.realModel === model)) {
-                entry.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id });
+                entry.mappings.push({ id: makeId('mapping'), realModel: model, logicalModelId: logical.id, weight: 1 });
             }
         }
         reconcileEntryMappings(entry, models);

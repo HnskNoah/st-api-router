@@ -77,8 +77,8 @@ describe('domain/vendor > assignModelToLogical 手动补选', () => {
         ];
         const touched = assignModelToLogical(groups, 'gpt-4o', 'l1');
         expect(touched).toBe(2);
-        expect(groups[0].entries[0].mappings).toEqual([{ id: expect.any(String), realModel: 'gpt-4o', logicalModelId: 'l1' }]);
-        expect(groups[0].entries[1].mappings).toEqual([{ id: expect.any(String), realModel: 'gpt-4o', logicalModelId: 'l1' }]);
+        expect(groups[0].entries[0].mappings).toEqual([{ id: expect.any(String), realModel: 'gpt-4o', logicalModelId: 'l1', weight: 1 }]);
+        expect(groups[0].entries[1].mappings).toEqual([{ id: expect.any(String), realModel: 'gpt-4o', logicalModelId: 'l1', weight: 1 }]);
         expect(groups[0].entries[2].mappings).toEqual([]);
     });
 

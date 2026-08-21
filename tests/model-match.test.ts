@@ -94,13 +94,23 @@ describe('domain/vendor > 逻辑模型正则归类', () => {
         expect(models).toHaveLength(1);
     });
 
-    it('assignRealModel 合并假流式/gcli 前缀变体到已有核心模型', () => {
+    it('assignRealModel 用已知逻辑模型的最长后缀识别不定长渠道前缀', () => {
         const models: LogicalModel[] = [
-            { id: 'lm-1', name: 'gemini-2.5-pro', ...base },
+            { id: 'short', name: 'gemini-3', ...base },
+            { id: 'long', name: 'gemini-3.5-flash', ...base },
         ];
-        expect(assignRealModel(models, '假流式-gemini-2.5-pro').id).toBe('lm-1');
-        expect(assignRealModel(models, 'gcli-gemini-2.5-pro').id).toBe('lm-1');
-        expect(models).toHaveLength(1);
+        expect(assignRealModel(models, '供应商A-gemini-3.5-flash').id).toBe('long');
+        expect(assignRealModel(models, 'abc-gemini-3.5-flash').id).toBe('long');
+        expect(models).toHaveLength(2);
+    });
+
+    it('assignRealModel 不把正常模型后缀误当成渠道前缀', () => {
+        const models: LogicalModel[] = [
+            { id: 'base', name: 'gemini-3.5-flash', ...base },
+        ];
+        const result = assignRealModel(models, 'gemini-3.5-flash-lite');
+        expect(result.id).not.toBe('base');
+        expect(result.name).toBe('gemini-3.5-flash-lite');
     });
 
     it('assignRealModel 无匹配时新建逻辑模型使用核心名（剥前缀）', () => {

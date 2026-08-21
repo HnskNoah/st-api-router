@@ -40,9 +40,22 @@ export function renderRouteDetail(
         const h = routeHealth(unit, now);
         const pill = $('<div class="csl-route-row"></div>');
         const rowName = $('<span class="csl-route-name"></span>').text(`${unit.vendor.name} · ${unit.entry.label} · ${unit.realModel}`);
+        const keyWeight = Number(unit.entry.weight) > 0 ? Number(unit.entry.weight) : 1;
+        const mappingWeight = Number(unit.mapping.weight) > 0 ? Number(unit.mapping.weight) : 1;
+        const weights = $('<span class="csl-route-weights"></span>').text(`Key ${keyWeight} × 模型 ${mappingWeight} = ${keyWeight * mappingWeight}`);
+        const mappingWeightInput = $('<input class="text_pole csl-route-weight" type="number" min="0.01" step="0.1" title="真实模型映射权重" aria-label="真实模型映射权重">')
+            .val(mappingWeight)
+            .on('change', function () {
+                const value = Number($(this).val());
+                unit.mapping.weight = Number.isFinite(value) && value > 0 ? value : 1;
+                $(this).val(unit.mapping.weight);
+                saveSettingsNow();
+                onRefresh();
+            });
+        pill.append(rowName, weights, mappingWeightInput);
         const remaining = h.remaining != null ? ` · 冷却中 ${formatDur(h.remaining)}` : '';
         const stateText = h.state === 'healthy' ? '🟢' : h.state === 'cooldown' ? `🟡${remaining}` : '🔴';
-        pill.append(rowName, $('<span class="csl-route-state">').text(stateText));
+        pill.append($('<span class="csl-route-state">').text(stateText));
         if (h.state === 'cooldown' || h.state === 'disabled') {
             const resetBtn = $('<button class="menu_button" type="button" title="手动恢复该模型"><i class="fa-solid fa-rotate-left"></i></button>')
                 .on('click', () => {

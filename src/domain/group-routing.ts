@@ -71,23 +71,51 @@ export function groupUnitsForLogicalModel(vendors: Vendor[], group: Group | null
     return units;
 }
 
-/** 可选候选：Vendor/条目启用且 RPM 有余量。 */
+/** 可选候选：Vendor/条目启用、RPM 有余量且模型未冷却。 */
 export function candidateGroupUnits(vendors: Vendor[], group: Group | null | undefined, logicalModelId: string, now = Date.now()): GroupRouteUnit[] {
     return groupUnitsForLogicalModel(vendors, group, logicalModelId)
         .filter(unit => !groupUnitUnavailabilityReason(unit, now));
 }
 
-/** 成功率加权随机选一个条目。 */
+function positiveWeight(value: unknown): number {
+    const weight = Number(value);
+    return Number.isFinite(weight) && weight > 0 ? weight : 1;
+}
+
+function pickWeighted<T>(items: T[], weightOf: (item: T) => number): T | null {
+    if (!Array.isArray(items) || items.length === 0) return null;
+    if (items.length === 1) return items[0] ?? null;
+    const weights = items.map(item => positiveWeight(weightOf(item)));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    if (total <= 0) return items[0] ?? null;
+    let roll = Math.random() * total;
+    for (let index = 0; index < items.length; index++) {
+        roll -= weights[index];
+        if (roll <= 0) return items[index] ?? null;
+    }
+    return items[items.length - 1] ?? null;
+}
+
+function channelWeight(unit: GroupRouteUnit): number {
+    return positiveWeight(unit?.entry?.weight) * positiveWeight(unit?.mapping?.weight);
+}
+
+/** 两阶段加权随机：先按 Vendor 选择，再在 Vendor 内按 Key × 真实模型映射选择。 */
 export function pickGroupUnit(candidates: GroupRouteUnit[]): GroupRouteUnit | null {
     if (!Array.isArray(candidates) || candidates.length === 0) return null;
-    const total = candidates.reduce((sum, unit) => sum + vendorEffectiveWeight(unit.vendor), 0);
-    if (total <= 0) return candidates[0] ?? null;
-    let roll = Math.random() * total;
+    const byVendor = new Map<string, GroupRouteUnit[]>();
     for (const unit of candidates) {
-        roll -= vendorEffectiveWeight(unit.vendor);
-        if (roll <= 0) return unit;
+        const vendorId = unit?.vendor?.id ?? '';
+        const units = byVendor.get(vendorId);
+        if (units) units.push(unit);
+        else byVendor.set(vendorId, [unit]);
     }
-    return candidates[candidates.length - 1] ?? null;
+    const vendorGroups = [...byVendor.values()].map(units => ({
+        vendor: units[0]!.vendor,
+        units,
+    }));
+    const selectedVendor = pickWeighted(vendorGroups, group => vendorEffectiveWeight(group.vendor));
+    return selectedVendor ? pickWeighted(selectedVendor.units, channelWeight) : null;
 }
 
 /** 记录本次选路（Vendor 全局限流窗口）。 */
@@ -109,9 +137,10 @@ export function summarizeGroupUnavailable(vendors: Vendor[], group: Group | null
     return reasons;
 }
 
-/** 路由单元唯一标识（sticky 复用判断：固定 Vendor + Key 粒度）。 */
+/** 路由单元唯一标识：sticky 必须区分同一 Key 下的不同真实模型映射。 */
 export function groupUnitKey(unit: GroupRouteUnit): string {
-    return `${unit?.vendor?.id ?? ''}::${unit?.entry?.id ?? ''}`;
+    const mappingId = unit?.mapping?.id || unit?.realModel || '';
+    return `${unit?.vendor?.id ?? ''}::${unit?.entry?.id ?? ''}::${mappingId}`;
 }
 
 export function routeGroupOnce(

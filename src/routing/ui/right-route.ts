@@ -304,24 +304,30 @@ function openGroupEditor(group: Group, onRefreshDashboard: () => void, onRefresh
             const vendorSelect = $('<select class="text_pole"></select>').html(`<option value="">— 选择 Vendor —</option>${vendorOptions()}`).val(entry.vendorId);
             const labelInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="名称，如：主号 / 备用">').val(entry.label);
             const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">').val(entry.apiKey);
+            const keyWeight = $('<input class="text_pole" type="number" min="0.01" step="0.1" title="Key 权重：同一 Vendor 内的相对概率" aria-label="Key 权重">').val(entry.weight ?? 1);
             const enabled = $('<input type="checkbox">').prop('checked', entry.enabled);
             vendorSelect.on('change', function () { entry.vendorId = String($(this).val() || ''); });
             labelInput.on('input', function () { entry.label = String($(this).val() ?? '').trim() || 'Key'; });
             keyInput.on('input', function () { entry.apiKey = String($(this).val() ?? '').trim(); entry.secretId = ''; });
+            keyWeight.on('change', function () {
+                const value = Number($(this).val());
+                entry.weight = Number.isFinite(value) && value > 0 ? value : 1;
+                $(this).val(entry.weight);
+            });
             enabled.on('change', function () { entry.enabled = $(this).prop('checked'); });
             const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
                 .on('click', () => {
                     draft.entries = draft.entries.filter(item => item.id !== entry.id);
                     renderEntries();
                 });
-            row.append(vendorSelect, labelInput, keyInput, enabled, removeBtn);
+            row.append(vendorSelect, labelInput, keyInput, keyWeight, enabled, removeBtn);
             entryList.append(row);
         }
     };
     renderEntries();
     const addEntryBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>添加 Vendor + Key</span></button>')
         .on('click', () => {
-            draft.entries.push({ id: makeId('group-entry'), vendorId: '', apiKey: '', label: 'Key', enabled: true, fetchedModels: [], mappings: [] });
+            draft.entries.push({ id: makeId('group-entry'), vendorId: '', apiKey: '', label: 'Key', enabled: true, weight: 1, fetchedModels: [], mappings: [] });
             renderEntries();
         });
 
