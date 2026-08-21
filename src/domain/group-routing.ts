@@ -62,9 +62,11 @@ export function groupUnitsForLogicalModel(vendors: Vendor[], group: Group | null
     const units: GroupRouteUnit[] = [];
     for (const entry of group.entries) {
         const vendor = (vendors || []).find(item => item.id === entry.vendorId);
-        const mapping = entry?.mappings?.find(item => item.logicalModelId === logicalModelId);
-        if (!vendor || !mapping) continue;
-        units.push({ vendor, entry, mapping, realModel: mapping.realModel });
+        if (!vendor) continue;
+        for (const mapping of entry.mappings ?? []) {
+            if (mapping.logicalModelId !== logicalModelId) continue;
+            units.push({ vendor, entry, mapping, realModel: mapping.realModel });
+        }
     }
     return units;
 }

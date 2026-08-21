@@ -197,6 +197,24 @@ describe('domain/group-routing', () => {
         expect(units[0].realModel).toBe('[希希2]grok-4.5');
     });
 
+    it('exposes every real-model mapping under the same Key', () => {
+        const vendors = [makeVendor('v1', 'A')];
+        const group = normalizeGroup({
+            currentLogicalModelId: 'l1',
+            entries: [{
+                id: 'e1', vendorId: 'v1', apiKey: 'k1', label: 'A1', enabled: true,
+                fetchedModels: ['gpt-4o', 'gpt-4o-mini'],
+                mappings: [
+                    { id: 'm1', realModel: 'gpt-4o', logicalModelId: 'l1' },
+                    { id: 'm2', realModel: 'gpt-4o-mini', logicalModelId: 'l1' },
+                ],
+            }],
+        });
+
+        expect(groupUnitsForLogicalModel(vendors, group, 'l1').map(unit => unit.realModel))
+            .toEqual(['gpt-4o', 'gpt-4o-mini']);
+    });
+
     it('vendor rpm is shared across entries in same group', () => {
         const vendors = [makeVendor('v1', 'A', 1)];
         const group = makeGroupWithEntries([

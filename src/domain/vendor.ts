@@ -170,8 +170,12 @@ export function reconcileEntryMappings(entry: GroupEntry, models: string[]): num
 }
 
 /** 回收孤儿逻辑模型：没有任何 Key 映射引用、且未配置自动归类正则的逻辑模型；返回被回收的 id 列表。 */
-export function pruneOrphanLogicalModels(logicalModels: LogicalModel[], groups: Group[]): string[] {
-    const referenced = new Set<string>();
+export function pruneOrphanLogicalModels(
+    logicalModels: LogicalModel[],
+    groups: Group[],
+    protectedLogicalModelIds: readonly string[] = [],
+): string[] {
+    const referenced = new Set(protectedLogicalModelIds);
     for (const entry of allGroupEntries(groups)) {
         for (const mapping of entry.mappings) referenced.add(mapping.logicalModelId);
     }
@@ -424,6 +428,13 @@ export function applyMappingRule(groups: Group[], rule: MappingRule): number {
             }
         }
     }
+    return touched;
+}
+
+/** 按保存顺序应用全部批量规则；后面的规则覆盖前面规则对同一真实模型的归属。 */
+export function applyMappingRules(groups: Group[], rules: readonly MappingRule[]): number {
+    let touched = 0;
+    for (const rule of rules ?? []) touched += applyMappingRule(groups, rule);
     return touched;
 }
 

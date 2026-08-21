@@ -4,7 +4,7 @@
 // 跳过 search/thinking/image 变体。
 
 import { describe, expect, it } from 'vitest';
-import { buildLogicalModelsFromFetched, canonicalModelName, isSpecialVariant, sortedLogicalModels } from '../src/domain/vendor.js';
+import { applyMappingRules, buildLogicalModelsFromFetched, canonicalModelName, isSpecialVariant, sortedLogicalModels } from '../src/domain/vendor.js';
 import type { Group, LogicalModel } from '../src/types.js';
 
 function makeGroup(overrides: Partial<Group> = {}): Group {
@@ -236,7 +236,25 @@ describe('domain/vendor > 从已拉取模型创建（自动映射）', () => {
         expect(groups[0].entries[0].mappings).toEqual([]);
         expect(result.mapped).toBe(0);
     });
+    it('reapplying saved rules restores their target after automatic canonical rebuild', () => {
+        const logicalModels: LogicalModel[] = [
+            { id: 'core', name: 'gemini-3.1-pro-preview', matchPattern: '' },
+            { id: 'family', name: 'Gemini 系', matchPattern: '' },
+        ];
+        const groups = [makeGroup({
+            entries: [makeEntry('e1', 'v1', ['gemini-3.1-pro-preview'], [
+                { id: 'm1', realModel: 'gemini-3.1-pro-preview', logicalModelId: 'family' },
+            ])],
+        })];
+        const rules = [{ id: 'r1', pattern: 'gemini', logicalModelId: 'family' }];
+
+        buildLogicalModelsFromFetched(['gemini-3.1-pro-preview'], logicalModels, groups);
+        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('core');
+        applyMappingRules(groups, rules);
+        expect(groups[0].entries[0].mappings[0].logicalModelId).toBe('family');
+    });
 });
+
 
 describe('domain/vendor > sortedLogicalModels 逻辑模型排序', () => {
     it('按名称排序（大小写不敏感，英文在前）', () => {

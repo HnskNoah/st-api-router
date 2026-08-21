@@ -2,8 +2,9 @@
 // 纯渲染函数，由 console-panel.ts 调用。
 
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
-import { groups, logicalModels, routingSettings, settings, vendors } from '../../settings/access.js';
+import { groups, logicalModels, mappingRules, routingSettings, settings, vendors } from '../../settings/access.js';
 import {
+    applyMappingRules,
     buildLogicalModelsFromFetched,
     normalizeGroup,
     normalizeLogicalModel,
@@ -100,8 +101,9 @@ export function renderRightRoute(
                 return;
             }
             const { created, skipped, mapped, rebuilt } = buildLogicalModelsFromFetched(allModels, logicalModels(), groups());
-            const pruned = pruneOrphanLogicalModels(logicalModels(), groups());
-            if (created.length === 0 && mapped === 0 && rebuilt === 0 && pruned.length === 0) {
+            const reapplied = applyMappingRules(groups(), mappingRules());
+            const pruned = pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
+            if (created.length === 0 && mapped === 0 && rebuilt === 0 && reapplied === 0 && pruned.length === 0) {
                 toastr.info(skipped.length > 0 ? `无新模型可创建（${skipped.length} 个搜索/思考/图像/缓存变体已跳过）。` : '逻辑模型已是最新，无需创建。');
                 return;
             }
@@ -111,6 +113,7 @@ export function renderRightRoute(
             const parts = [`已为 ${created.length} 个真实模型创建独立逻辑模型`];
             if (mapped > 0) parts.push(`自动映射 ${mapped} 条`);
             if (rebuilt > 0) parts.push(`修正归并 ${rebuilt} 条`);
+            if (reapplied > 0) parts.push(`重新应用规则 ${reapplied} 条`);
             if (pruned.length > 0) parts.push(`回收孤儿逻辑模型 ${pruned.length} 个`);
             if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 个特殊变体`);
             toastr.success(`${parts.join('，')}。`);

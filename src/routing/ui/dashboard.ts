@@ -2,7 +2,7 @@
 // 纯渲染函数，由 console-panel.ts 调用。
 
 import { logicalModels } from '../../settings/access.js';
-import { modelStatus, activeGroup, levelDot } from './console-helpers.js';
+import { modelStatus, activeGroup, levelDot, saveSettingsNow } from './console-helpers.js';
 import { openLogicalParamsEditor } from './logical-params-editor.js';
 
 /** 渲染逻辑模型仪表盘到 dashboardEl 容器。 */
@@ -39,6 +39,17 @@ export function renderDashboard(
             ? $('<span class="csl-model-sub">').text(`${status.best.vendor.name} · ${status.best.entry.label} · ${status.best.realModel}`)
             : $('<span class="csl-model-sub csl-model-sub--empty">').text(status.text);
         const top = $('<span class="csl-model-top"></span>').append(name, meta);
+        const useBtn = $('<button class="csl-model-params" type="button" role="button"></button>')
+            .attr('title', model.id === currentId ? '当前使用的逻辑模型' : '设为当前使用的逻辑模型')
+            .prop('disabled', model.id === currentId)
+            .append($(`<i class="fa-solid ${model.id === currentId ? 'fa-check' : 'fa-bullseye'}"></i>`))
+            .on('click', e => {
+                e.stopPropagation();
+                if (group.currentLogicalModelId === model.id) return;
+                group.currentLogicalModelId = model.id;
+                saveSettingsNow();
+                onSelect(model.id);
+            });
         // 附加参数编辑入口（include/exclude body + 请求头）
         const hasParams = Boolean(model.customIncludeBody || model.customExcludeBody || model.customIncludeHeaders);
         const paramsBtn = $('<button class="csl-model-params" type="button" role="button" tabindex="0"></button>')
@@ -46,8 +57,7 @@ export function renderDashboard(
             .append($(`<i class="fa-solid fa-sliders" style="${hasParams ? 'color:#5b9bd5' : 'opacity:0.55'}"></i>`))
             .on('click', e => { e.stopPropagation(); openLogicalParamsEditor(model.id, () => {}); })
             .on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogicalParamsEditor(model.id, () => {}); } });
-        top.append(paramsBtn);
-        row.append(top, sub);
+        top.append(useBtn, paramsBtn);
         row.on('click', () => { onSelect(model.id); });
         row.on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.trigger('click'); } });
         dashboardEl.append(row);

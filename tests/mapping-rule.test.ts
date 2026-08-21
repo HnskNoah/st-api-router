@@ -4,6 +4,7 @@ import {
     normalizeMappingRules,
     previewMappingRule,
     applyMappingRule,
+    applyMappingRules,
     addIgnoreModel,
     removeIgnoreModel,
     isIgnoreModel,
@@ -95,6 +96,19 @@ describe('applyMappingRule', () => {
     it('no-op on illegal regex or empty logicalId', () => {
         expect(applyMappingRule([feed], { id: 'r', pattern: '(bad', logicalModelId: 'l1' })).toBe(0);
         expect(applyMappingRule([feed], { id: 'r', pattern: 'kimi', logicalModelId: '' })).toBe(0);
+    });
+
+    it('applies saved rules in order so later matching rules take precedence', () => {
+        const groups = makeGroup([
+            { id: 'e1', vendorId: 'v1', apiKey: 'k', fetchedModels: ['kimi-k3-turbo'] },
+        ]);
+        const touched = applyMappingRules([groups], [
+            { id: 'r1', pattern: 'kimi', logicalModelId: 'general' },
+            { id: 'r2', pattern: 'k3', logicalModelId: 'k3' },
+        ]);
+
+        expect(touched).toBe(2);
+        expect(groups.entries[0].mappings[0].logicalModelId).toBe('k3');
     });
 });
 

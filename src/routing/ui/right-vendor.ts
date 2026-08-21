@@ -5,16 +5,16 @@ import { getRequestHeaders } from '@sillytavern/script';
 import { SECRET_KEYS, writeSecret } from '@sillytavern/scripts/secrets';
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { showEditorDialog } from './controls.js';
-import { groups, logicalModels, vendors } from '../../settings/access.js';
+import { groups, logicalModels, mappingRules, vendors } from '../../settings/access.js';
 import { isModelInCooldown, recordModelSuccess } from '../../domain/model-health.js';
 import {
+    applyMappingRules,
     assignRealModel,
     isSpecialVariant,
     normalizeGroupEntry,
     normalizeVendor,
     pruneOrphanLogicalModels,
     reconcileEntryMappings,
-    disableVendorIfNoUsableKeys,
 } from '../../domain/vendor.js';
 import { formatCooldownMs, successRateText, vendorStatus } from './ui-helpers2.js';
 import { makeId } from '../../utils/id.js';
@@ -184,8 +184,13 @@ export function renderRightVendor(
                     });
                 keyRow.append(keyEnabled);
 
-                const labelSpan = $('<span class="csl-vendor-key-label"></span>').text(entry.label || 'Key');
-                keyRow.append(labelSpan);
+                const labelInput = $('<input class="text_pole csl-vendor-key-label" type="text" maxlength="120" placeholder="Key 名称">').val(entry.label || 'Key')
+                    .attr('aria-label', 'Key 名称')
+                    .on('input', function () {
+                        entry.label = String($(this).val() ?? '').trim().slice(0, 120) || 'Key';
+                        saveSettingsNow();
+                    });
+                keyRow.append(labelInput);
 
                 const keyInput = $('<input class="text_pole" type="password" maxlength="2048" autocomplete="off" placeholder="Key">').val(entry.apiKey)
                     .on('input', function () {
@@ -195,6 +200,25 @@ export function renderRightVendor(
                     });
                 keyRow.append(keyInput);
 
+                const fetchBtn = $('<button class="menu_button" type="button" title="使用此 Key 拉取模型"><i class="fa-solid fa-arrows-rotate"></i></button>')
+                    .on('click', async () => {
+                        if (!entry.apiKey) {
+                            toastr.warning('请先填入该 Key。');
+                            return;
+                        }
+                        fetchBtn.prop('disabled', true);
+                        try {
+                            const models = await fetchModelsForVendor(vendor, entry);
+                            if (models) {
+                                renderRightVendor(rightEl, onRefreshDashboard);
+                                onRefreshDashboard();
+                                toastr.success(`Key「${entry.label || 'Key'}」模型已刷新（${models.length} 个）。`);
+                            }
+                        } finally {
+                            fetchBtn.prop('disabled', false);
+                        }
+                    });
+                keyRow.append(fetchBtn);
                 // 删除 Key
                 const delBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除该 Key"><i class="fa-solid fa-trash"></i></button>')
                     .on('click', async () => {
@@ -414,21 +438,14 @@ export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): P
             }
         }
         reconcileEntryMappings(entry, models);
-        pruneOrphanLogicalModels(logicalModels(), groups());
+        applyMappingRules(groups(), mappingRules());
+        pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
         saveSettingsNow();
         return models;
     } catch (error) {
         console.error('[QuickerApi] fetch vendor models failed:', error);
         const message = error instanceof Error ? error.message : String(error);
-        entry.enabled = false;
-        entry.fetchedModels = [];
-        entry.mappings = [];
-        const vendorDisabled = disableVendorIfNoUsableKeys(vendor, groups());
-        saveSettingsNow();
-        toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）获取模型失败，已禁用该 Key：${message}。`);
-        if (vendorDisabled) {
-            toastr.warning(`Vendor「${vendor.name}」所有 Key 均已失效，已自动禁用。`, '', { timeOut: 8000 });
-        }
+        toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）获取模型失败：${message}。`);
         return null;
     } finally {
         if (previousActiveId) {

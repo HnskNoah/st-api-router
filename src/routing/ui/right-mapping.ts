@@ -8,6 +8,7 @@ import { escapeHtml } from '../../utils/text.js';
 import {
     addIgnoreModel,
     applyMappingRule,
+    applyMappingRules,
     buildLogicalModelsFromFetched,
     normalizeMappingRule,
     previewMappingRule,
@@ -42,14 +43,15 @@ export function renderRightMapping(
                 return;
             }
             const { created, mapped, skipped } = buildLogicalModelsFromFetched(allModels, logicalModels(), groups());
-            const pruned = pruneOrphanLogicalModels(logicalModels(), groups());
+            const reapplied = applyMappingRules(groups(), mappingRules());
+            const pruned = pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
             saveSettingsNow();
             onRefreshDashboard();
             const parts: string[] = [];
             if (mapped > 0) parts.push(`归类 ${mapped} 个`);
+            if (reapplied > 0) parts.push(`重新应用规则 ${reapplied} 条`);
             if (created.length > 0) parts.push(`创建 ${created.length} 个逻辑模型`);
             if (pruned.length > 0) parts.push(`回收 ${pruned.length} 个孤儿子逻辑模型`);
-            if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 个特殊变体`);
             toastr.success(parts.length > 0 ? `一键归类完成：${parts.join('，')}。` : '没有未归类的模型。');
         });
     topBar.append(oneClickBtn);
