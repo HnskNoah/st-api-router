@@ -72,6 +72,10 @@ export function renderRightRoute(
         routing.cooldownSeconds = v;
         saveSettingsNow();
     })));
+    rows.append(cslField('自动重试次数', cslNumber(routing.autoRetryCount, v => {
+        routing.autoRetryCount = v;
+        saveSettingsNow();
+    }), '失败或空回复时自动换路由重试（每次附加 0～500ms 随机抖动）；0 = 关闭，达到次数后停止'));
 
     // 分组选择
     const group = activeGroup();

@@ -143,20 +143,51 @@ export function groupUnitKey(unit: GroupRouteUnit): string {
     return `${unit?.vendor?.id ?? ''}::${unit?.entry?.id ?? ''}::${mappingId}`;
 }
 
+export interface AutoRetryDecision {
+    canRetry: boolean;
+    /** 本次重试是第几次（1 起）。 */
+    attempt: number;
+}
+
+/** 自动重试决策：开启、未达上限且环境允许时换路由重试。 */
+export function evaluateAutoRetry(opts: {
+    autoRetryCount: number;
+    retriesUsed: number;
+    routingEnabled: boolean;
+    extensionDisabled: boolean;
+    presetTransitionBlocked: boolean;
+    groupIntact: boolean;
+}): AutoRetryDecision {
+    const max = Math.floor(Number(opts.autoRetryCount) || 0);
+    if (max <= 0 || opts.retriesUsed >= max) return { canRetry: false, attempt: opts.retriesUsed + 1 };
+    if (!opts.routingEnabled || opts.extensionDisabled || opts.presetTransitionBlocked || !opts.groupIntact) {
+        return { canRetry: false, attempt: opts.retriesUsed + 1 };
+    }
+    return { canRetry: true, attempt: opts.retriesUsed + 1 };
+}
+
 export function routeGroupOnce(
     vendors: Vendor[],
     group: Group | null | undefined,
     logicalModelId: string,
-    { now = Date.now(), stickyCount = 0, lastPicked = null }: {
+    { now = Date.now(), stickyCount = 0, lastPicked = null, excludeKeys = [] }: {
         now?: number;
         stickyCount?: number;
         lastPicked?: GroupRouteSticky | null;
+        /** 本次调用排除的单元 key（如自动重试链中已失败的渠道）。 */
+        excludeKeys?: string[];
     } = {},
 ): GroupRouteResult {
-    const candidates = candidateGroupUnits(vendors, group, logicalModelId, now);
+    let candidates = candidateGroupUnits(vendors, group, logicalModelId, now);
+    if (excludeKeys.length > 0) {
+        const excluded = new Set(excludeKeys);
+        candidates = candidates.filter(unit => !excluded.has(groupUnitKey(unit)));
+    }
     if (candidates.length === 0) {
         const reasons = summarizeGroupUnavailable(vendors, group, logicalModelId, now);
-        if (reasons.length === 0) reasons.push('当前 Group 未配置该逻辑模型的 Vendor 映射');
+        if (reasons.length === 0) {
+            reasons.push(excludeKeys.length > 0 ? '候选均已在本轮重试中失败（已排除）' : '当前 Group 未配置该逻辑模型的 Vendor 映射');
+        }
         return { unit: null, reasons, nextLastPicked: null };
     }
     let unit = pickGroupUnit(candidates);

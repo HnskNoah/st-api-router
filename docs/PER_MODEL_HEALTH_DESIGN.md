@@ -239,6 +239,16 @@ export interface ModelObservationRecord {
 - 追加点：`hooks.ts` `onGenerationEnded`（成功不记录）；持久化在 `init.ts` 的 `recordObservation`，落盘后派发 `MODEL_OBSERVATION_RECORDED_EVENT`，控制台（桌面三栏 / 手机底部面板）监听后实时刷新“最近错误与结果观测”区块。
 - 载入时 `normalizeObservationHistory` 过滤非法条目并按时间截断到 200 条；跨机导入/导出时不携带该字段（与其它健康字段一致）。
 
+### 4.6 自动换路重试（失败 / 空回复）
+
+设置 `RoutingSettings.autoRetryCount`（默认 0 = 关闭；控制台「设置 → 自动重试次数」）。开启后，路由生成的失败或空回复观测会：
+
+1. 把当前渠道（`groupUnitKey` = vendorId::entryId::mappingId）加入本轮重试排除集，下次选路不再选中它；
+2. 等待 `AUTO_RETRY_DELAY_MS`（1.2s）+ 0～500ms 随机抖动后，点击 ST 的 `#option_regenerate` 触发 `Generate('regenerate')`，重走 GENERATION_STARTED → 路由 → 拦截改写全流程（自动重试的生成跳过 token 钳制确认弹窗）；
+3. 连续失败达到 `autoRetryCount` 后停止，明确 toastr 告知；用户手动停止 / 成功生成 / 分组或逻辑模型变更会重置计数与排除集。
+
+决策与排除均为纯函数：`evaluateAutoRetry()`（group-routing.ts）与 `routeGroupOnce(..., { excludeKeys })`，有单元测试覆盖。触发前检查 `document.body.dataset.generating`（ST 是否仍在生成）与用户停止标记，避免并发重刷。
+
 ### 4.4 失败处理（核心：分类 + 退避 + 半开语义）
 
 ```ts

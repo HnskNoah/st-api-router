@@ -7,7 +7,7 @@ import { oai_settings } from '@sillytavern/scripts/openai';
 import { SECRET_KEYS } from '@sillytavern/scripts/secrets';
 import { Popup } from '@sillytavern/scripts/popup';
 import { ensureSecretId } from '../secrets/api.js';
-import { routeGroupOnce, recordGroupSelection, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
+import { routeGroupOnce, recordGroupSelection, evaluateAutoRetry, groupUnitKey, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
 import { recordModelFailure, recordModelObservation, recordModelSuccess } from '../domain/model-health.js';
 import { computeVendorTokenClamps, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
@@ -21,6 +21,12 @@ import type { FailureProbe } from './failure-observer.js';
 import type { Group, LogicalModel, ModelObservationRecord, RoutingSettings, Vendor } from '../types.js';
 
 const USER_STOP_GRACE_MS = 50;
+/** 自动重试触发前等待 ST 结算的毫秒数。 */
+const AUTO_RETRY_DELAY_MS = 1200;
+/** 每次自动重试额外随机抖动（0～500ms），避免多客户端/多轮重试同步打爆渠道。 */
+const AUTO_RETRY_JITTER_MS = 500;
+/** retryScheduled 标记的有效窗口：超过该时长视为已失效（防止误消费）。 */
+const AUTO_RETRY_SCHEDULE_WINDOW_MS = 15_000;
 
 export interface RoutingHooksDeps {
     getVendors(): Vendor[];
@@ -50,12 +56,27 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         userStopPending: boolean;
         manualLockedUnit: GroupRouteUnit | null;
         lastPicked: GroupRouteSticky | null;
+        retryCount: number;
+        retryScheduled: boolean;
+        retryScheduledAt: number;
+        retryExcluded: Set<string>;
     } = {
         active: null,
         userStopPending: false,
         manualLockedUnit: null,
         lastPicked: null,
+        retryCount: 0,
+        retryScheduled: false,
+        retryScheduledAt: 0,
+        retryExcluded: new Set<string>(),
     };
+
+    function resetRetryChain(): void {
+        state.retryCount = 0;
+        state.retryScheduled = false;
+        state.retryScheduledAt = 0;
+        state.retryExcluded.clear();
+    }
 
     function customParamsForUnit(unit: GroupRouteUnit): { includeBody: string; excludeBody: string; includeHeaders: string } {
         const logical = deps.getLogicalModels().find(item => item.id === unit.mapping?.logicalModelId);
@@ -115,6 +136,11 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             debugLog('onGenerationStarted skip: routing disabled');
             return;
         }
+        // 自动重试的生成（retryScheduled 在窗口内）保留计数与排除集；用户新发起则重置重试链
+        const isAutoRetry = state.retryScheduled && (Date.now() - state.retryScheduledAt <= AUTO_RETRY_SCHEDULE_WINDOW_MS);
+        state.retryScheduled = false;
+        if (!isAutoRetry) resetRetryChain();
+        debugLog('onGenerationStarted retry context', { isAutoRetry, retryCount: state.retryCount });
         const groups = deps.getGroups();
         const activeGroup = groups.find(group => group.id === deps.getActiveGroupId()) || groups[0] || null;
         if (!activeGroup || !activeGroup.enabled) {
@@ -128,10 +154,15 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             return;
         }
         let unit: GroupRouteUnit | null = consumeManualLock(activeGroup, logicalModelId);
+        if (unit && state.retryExcluded.has(groupUnitKey(unit))) {
+            debugLog('onGenerationStarted manual lock excluded by retry chain', { key: groupUnitKey(unit) });
+            unit = null;
+        }
         if (!unit) {
             const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId, {
                 stickyCount: routing.stickyCount,
                 lastPicked: state.lastPicked,
+                excludeKeys: [...state.retryExcluded],
             });
             state.lastPicked = result.nextLastPicked;
             if (!result.unit) {
@@ -160,16 +191,21 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
         debugLog('onGenerationStarted token clamps', { needsApply, clamps });
         if (needsApply) {
-            const details: string[] = [];
-            if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
-            if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
-            debugLog('onGenerationStarted showing token confirm');
-            const confirmed = await Popup.show.confirm(
-                '调整 token 限制',
-                `路由到 Vendor「${unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
-            );
-            debugLog('onGenerationStarted token confirm result', { confirmed });
-            if (confirmed) applyVendorTokenClamps(unit.vendor);
+            if (isAutoRetry) {
+                // 自动重试不弹确认窗（避免阻塞重试链）；钳制也跳过，防止中途改 oai_settings
+                debugLog('onGenerationStarted auto retry: token clamps skipped', { clamps });
+            } else {
+                const details: string[] = [];
+                if (clamps.maxContext !== undefined) details.push(`总上下文 → ${clamps.maxContext}`);
+                if (clamps.maxOutputTokens !== undefined) details.push(`输出 token → ${clamps.maxOutputTokens}`);
+                debugLog('onGenerationStarted showing token confirm');
+                const confirmed = await Popup.show.confirm(
+                    '调整 token 限制',
+                    `路由到 Vendor「${unit.vendor.name}」会按它的限制钳制 SillyTavern token 设置：\n${details.join('\n')}\n\n确定应用？`,
+                );
+                debugLog('onGenerationStarted token confirm result', { confirmed });
+                if (confirmed) applyVendorTokenClamps(unit.vendor);
+            }
         }
 
         // 存储选中的 unit，等 CHAT_COMPLETION_SETTINGS_READY 时直接改 generateData
@@ -293,6 +329,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         state.userStopPending = true;
         state.active = null;
+        resetRetryChain();
         deps.endGeneration?.();
     }
 
@@ -323,6 +360,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             if (!probe) {
                 recordVendorSuccess(vendor);
                 recordModelSuccess(entry, realModel);
+                resetRetryChain();
                 saveSettingsDebounced();
                 debugLog('onGenerationEnded recorded success', { vendorName: vendor.name, realModel });
                 return;
@@ -342,37 +380,82 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                 });
                 saveSettingsDebounced();
                 debugLog('onGenerationEnded recorded empty response observation', { vendorName: vendor.name, realModel });
-                return;
-            }
-            // 失败：模型级记账（Key × realModel 粒度），不自动禁用整个 Vendor
-            const cooling = recordModelFailure(entry, realModel, probe.kind, probe.message, {
-                threshold: routing.failThreshold,
-                baseCooldownMs: routing.cooldownSeconds * 1000,
-            });
-            deps.recordObservation?.({
-                occurredAt: Date.now(),
-                groupId: active.groupId,
-                vendorId: vendor.id,
-                entryId: entry.id,
-                realModel,
-                logicalModelId: active.logicalModelId,
-                kind: probe.kind,
-                message: probe.message,
-            });
-            // 保持 Vendor 失败计数（用于 UI 展示和路由加权），但不触发 Vendor 级禁用
-            vendor.failures = (Number(vendor.failures) || 0) + 1;
-            saveSettingsDebounced();
-            debugLog('onGenerationEnded recorded model failure', {
-                vendorName: vendor.name,
-                entryLabel: entry.label,
-                realModel,
-                kind: probe.kind,
-                cooling,
-            });
-            if (cooling) {
-                toastr.warning(`Quicker Api：${displayName} 失败已达阈值，已临时冷却（模型级，不影响其他模型）。`);
             } else {
-                toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录（模型级熔断）。`);
+                // 失败：模型级记账（Key × realModel 粒度），不自动禁用整个 Vendor
+                const cooling = recordModelFailure(entry, realModel, probe.kind, probe.message, {
+                    threshold: routing.failThreshold,
+                    baseCooldownMs: routing.cooldownSeconds * 1000,
+                });
+                deps.recordObservation?.({
+                    occurredAt: Date.now(),
+                    groupId: active.groupId,
+                    vendorId: vendor.id,
+                    entryId: entry.id,
+                    realModel,
+                    logicalModelId: active.logicalModelId,
+                    kind: probe.kind,
+                    message: probe.message,
+                });
+                // 保持 Vendor 失败计数（用于 UI 展示和路由加权），但不触发 Vendor 级禁用
+                vendor.failures = (Number(vendor.failures) || 0) + 1;
+                saveSettingsDebounced();
+                debugLog('onGenerationEnded recorded model failure', {
+                    vendorName: vendor.name,
+                    entryLabel: entry.label,
+                    realModel,
+                    kind: probe.kind,
+                    cooling,
+                });
+                if (cooling) {
+                    toastr.warning(`Quicker Api：${displayName} 失败已达阈值，已临时冷却（模型级，不影响其他模型）。`);
+                } else {
+                    toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录（模型级熔断）。`);
+                }
+            }
+            // ── 自动重试：失败或空回复 → 排除当前渠道，换路由重生成 ──
+            const groupIntact = (() => {
+                const g = deps.getGroups().find(item => item.id === deps.getActiveGroupId()) || deps.getGroups()[0] || null;
+                return Boolean(g && g.enabled && g.currentLogicalModelId === active.logicalModelId);
+            })();
+            const decision = evaluateAutoRetry({
+                autoRetryCount: routing.autoRetryCount,
+                retriesUsed: state.retryCount,
+                routingEnabled: routing.enabled,
+                extensionDisabled: runtimeState.extensionDisabled,
+                presetTransitionBlocked: runtimeState.presetTransitionBlocked,
+                groupIntact,
+            });
+            if (decision.canRetry) {
+                state.retryExcluded.add(groupUnitKey(active.unit));
+                state.retryCount = decision.attempt;
+                state.retryScheduled = true;
+                state.retryScheduledAt = Date.now();
+                const kindLabel = probe.kind === 'empty_response' ? '空回复' : '生成失败';
+                const delayMs = AUTO_RETRY_DELAY_MS + Math.floor(Math.random() * AUTO_RETRY_JITTER_MS);
+                toastr.info(`Quicker Api：${kindLabel}，${Math.round(delayMs / 1000)}s 后自动换路由重试（${decision.attempt}/${routing.autoRetryCount}）。`);
+                window.setTimeout(() => {
+                    if (state.userStopPending) {
+                        debugLog('auto retry cancelled: user stop');
+                        resetRetryChain();
+                        return;
+                    }
+                    if (document.body?.dataset?.generating) {
+                        debugLog('auto retry cancelled: ST still generating');
+                        resetRetryChain();
+                        return;
+                    }
+                    const btn = document.getElementById('option_regenerate');
+                    if (!btn) {
+                        debugLog('auto retry cancelled: regenerate button missing');
+                        resetRetryChain();
+                        return;
+                    }
+                    debugLog('auto retry: clicking regenerate', { attempt: decision.attempt });
+                    btn.click();
+                }, AUTO_RETRY_DELAY_MS);
+            } else if (state.retryCount > 0) {
+                toastr.warning(`Quicker Api：自动重试已达上限（${routing.autoRetryCount} 次），已停止。请检查 API 或手动重试。`);
+                resetRetryChain();
             }
         }, USER_STOP_GRACE_MS);
     }

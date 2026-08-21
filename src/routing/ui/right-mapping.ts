@@ -58,11 +58,14 @@ export function renderRightMapping(
             toastr.success(parts.length > 0 ? `一键归类完成：${parts.join('，')}。` : '没有未归类的模型。');
         });
     const unmappedSection = $('<div class="csl-mapping-section"></div>');
-    unmappedSection.append($('<div class="csl-mapping-section-title">').text('未归类真实模型'));
+    const unmappedTitle = $('<div class="csl-mapping-section-title">').text('未归类真实模型');
+    unmappedSection.append(unmappedTitle);
     const unmappedList = $('<div class="csl-mapping-unmapped"></div>');
+    let unmappedVisible = false;
     const renderUnmapped = () => {
         unmappedList.empty();
         const models = findUnmappedModels(groups());
+        unmappedTitle.text(models.length > 0 ? `未归类真实模型（${models.length}）` : '未归类真实模型');
         if (models.length === 0) {
             unmappedList.append($('<div class="csl-mapping-empty">').text('没有未归类的真实模型。'));
             return;
@@ -87,8 +90,20 @@ export function renderRightMapping(
             unmappedList.append(row);
         }
     };
+    const unmappedToggle = $('<button class="menu_button" type="button" style="margin-top:6px"><span>显示未归类模型</span></button>')
+        .on('click', function () {
+            unmappedVisible = !unmappedVisible;
+            $(this).find('span').text(unmappedVisible ? '隐藏未归类模型' : '显示未归类模型');
+            if (unmappedVisible) {
+                renderUnmapped();
+                unmappedList.show();
+            } else {
+                unmappedList.hide();
+            }
+        });
     renderUnmapped();
-    unmappedSection.append(unmappedList);
+    unmappedList.hide();
+    unmappedSection.append(unmappedList, unmappedToggle);
     rightEl.append(unmappedSection);
     topBar.append(oneClickBtn);
     rightEl.append(topBar);

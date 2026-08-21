@@ -28,6 +28,8 @@ export interface RoutingSettings {
     stickyCount: number;
     failThreshold: number;
     cooldownSeconds: number;
+    /** 失败或空回复时的自动重试次数（换路由重生成）；0 = 关闭。 */
+    autoRetryCount: number;
 }
 
 export type VendorFormat = 'custom' | 'deepseek';
