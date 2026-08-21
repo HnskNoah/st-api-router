@@ -1,9 +1,8 @@
 // 中栏：路由详情（选中逻辑模型后的具体路由列表）。
 // 纯渲染函数，由 console-panel.ts 调用。
 
-import { logicalModels } from '../../settings/access.js';
-import { recordModelSuccess } from '../../domain/model-health.js';
-import { modelStatus, routeHealth, formatDur, saveSettingsNow } from './console-helpers.js';
+import { groups, logicalModels, settings, vendors } from '../../settings/access.js';
+import { modelStatus, routeHealth, formatDur, formatClock, saveSettingsNow } from './console-helpers.js';
 
 /** 渲染路由详情到 detailEl 容器。 */
 export function renderRouteDetail(
@@ -73,25 +72,31 @@ export function renderRouteDetail(
         list.append(pill);
     }
     detailEl.append(list);
-    // ── 最近错误与结果观测 ──
+    // ── 最近错误与结果观测（全局滑动窗口） ──
     const failures = $('<div class="csl-route-failures"></div>');
-    const failuresHead = $('<div class="csl-route-failures-head">').text('最近错误与结果观测');
+    const failuresHead = $('<div class="csl-route-failures-head">').text('最近错误与结果观测（全局，最新 200 条）');
     failures.append(failuresHead);
-    let hasFailures = false;
-    for (const unit of status.units) {
-        const lastError = unit.entry.lastErrorByRealModel?.[unit.realModel];
-        const lastKind = unit.entry.lastErrorKindByModel?.[unit.realModel];
-        if (!lastError && !lastKind) continue;
-        hasFailures = true;
-        const row = $('<div class="csl-route-failure-row"></div>');
-        const kindLabel = lastKind === 'fatal' ? '不可恢复' : lastKind === 'rate_limited' ? '限流' : lastKind === 'temp' ? '临时错误' : lastKind === 'bad_request' ? '参数错误' : lastKind === 'empty_response' ? '空回复（不计失败）' : '未知';
-        row.append($('<span class="csl-route-failure-unit">').text(`${unit.vendor.name} · ${unit.entry.label} · ${unit.realModel}`));
-        row.append($('<span class="csl-route-failure-kind">').text(kindLabel));
-        if (lastError) row.append($('<span class="csl-route-failure-msg">').text(lastError.slice(0, 200)));
-        failures.append(row);
-    }
-    if (!hasFailures) {
+    const history = [...(settings().observationHistory ?? [])].sort((a, b) => b.occurredAt - a.occurredAt);
+    const vendorName = (id: string) => vendors().find(v => v.id === id)?.name ?? id;
+    const entryLabel = (entryId: string) => {
+        for (const group of groups()) {
+            const entry = group.entries.find(item => item.id === entryId);
+            if (entry) return entry.label;
+        }
+        return entryId;
+    };
+    const kindLabel = (kind: string) => kind === 'fatal' ? '不可恢复' : kind === 'rate_limited' ? '限流' : kind === 'temp' ? '临时错误' : kind === 'bad_request' ? '参数错误' : kind === 'empty_response' ? '空回复（不计失败）' : '未知';
+    if (history.length === 0) {
         failures.append($('<div class="csl-route-failure-empty">').text('暂无失败或结果观测记录。'));
+    } else {
+        for (const rec of history) {
+            const row = $('<div class="csl-route-failure-row"></div>');
+            row.append($('<span class="csl-route-failure-time">').text(formatClock(rec.occurredAt)));
+            row.append($('<span class="csl-route-failure-unit">').text(`${vendorName(rec.vendorId)} · ${entryLabel(rec.entryId)} · ${rec.realModel}`));
+            row.append($('<span class="csl-route-failure-kind">').text(kindLabel(rec.kind)));
+            if (rec.message) row.append($('<span class="csl-route-failure-msg">').text(rec.message.slice(0, 200)));
+            failures.append(row);
+        }
     }
     detailEl.append(failures);
 }

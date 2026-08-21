@@ -10,7 +10,7 @@
 > - `src/types.ts` — `ModelFailureKind` + `GroupEntry` 健康字段
 > - `SCHEMA_VERSION` 已达到 14
 >
-> 当前代码行为：**GroupEntry(Key) × realModel 级熔断**，所有可冷却错误统一使用 `baseCooldown × multiplier`（默认 `cooldownSeconds × 1000`，倍数 1→2→4→…→32）。`fatal`/`rate_limited` 立即进入该公式的冷却，`temp`/`unknown` 达失败阈值后进入；`bad_request` 不计失败，空回复只记录观测。冷却到期即恢复可路由，下一次真实请求自然验证。
+> 当前代码行为：**GroupEntry(Key) × realModel 级熔断**，所有可冷却错误统一使用 `baseCooldown × multiplier`（默认 `cooldownSeconds × 1000`，倍数 1→2→4→…→32）。`fatal`/`rate_limited` 立即进入该公式的冷却，`temp`/`unknown` 达失败阈值后进入；`bad_request` 不计失败，空回复只记录观测。错误与空回复还会追加进全局 200 条滑动窗口 `observationHistory`，控制台实时展示。冷却到期即恢复可路由，下一次真实请求自然验证。
 >
 > 本设计稿保留为实施参考和文档索引。
 
@@ -215,6 +215,29 @@ export function recordModelSuccess(entry: GroupEntry, realModel: string): void {
   if (entry.lastErrorKindByModel) delete entry.lastErrorKindByModel[realModel];
 }
 ```
+
+### 4.5 全局观测历史（错误 + 空回复，滑动窗口）
+
+除按 `GroupEntry × realModel` 的最近一次诊断字段外，每次失败与空回复观测还会追加进**全局有界历史** `QuickerApiSettings.observationHistory`：
+
+```ts
+/** 生成错误与空回复的全局滑动窗口记录（按时间顺序，最多 200 条）。 */
+export interface ModelObservationRecord {
+  occurredAt: number;     // Date.now()
+  groupId: string;        // 本次生成所在 Group
+  vendorId: string;
+  entryId: string;
+  realModel: string;
+  logicalModelId: string;
+  kind: ModelObservationKind;  // fatal | rate_limited | temp | bad_request | unknown | empty_response
+  message: string;        // 截断 500 字符
+}
+```
+
+- 上限 `MODEL_OBSERVATION_HISTORY_LIMIT = 200`；超限时删除最早记录（滑动窗口），**不再按模型只保留一条**。
+- 空回复与错误都记录（`empty_response` 标记为“不计失败”，但保留在历史中）。
+- 追加点：`hooks.ts` `onGenerationEnded`（成功不记录）；持久化在 `init.ts` 的 `recordObservation`，落盘后派发 `MODEL_OBSERVATION_RECORDED_EVENT`，控制台（桌面三栏 / 手机底部面板）监听后实时刷新“最近错误与结果观测”区块。
+- 载入时 `normalizeObservationHistory` 过滤非法条目并按时间截断到 200 条；跨机导入/导出时不携带该字段（与其它健康字段一致）。
 
 ### 4.4 失败处理（核心：分类 + 退避 + 半开语义）
 

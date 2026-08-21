@@ -12,6 +12,7 @@ import { renderRightRoute } from './right-route.js';
 import { renderRightMapping } from './right-mapping.js';
 import { ensureConsolePanelStyles } from './console-panel-styles.js';
 import { isMobileViewport, openConsolePanelMobile } from './console-panel-mobile.js';
+import { MODEL_OBSERVATION_RECORDED_EVENT } from '../../domain/model-health.js';
 
 // ── 状态 ──
 
@@ -19,6 +20,7 @@ let overlayEl: JQuery<HTMLElement> | null = null;
 let isOpen = false;
 let selectedLogicalId: string | null = null;
 let rightTab: 'settings' | 'vendor' = 'settings';
+let observationListener: (() => void) | null = null;
 
 // ── 面板 DOM 创建 ──
 
@@ -173,6 +175,8 @@ export function openConsolePanel(): void {
     const overlay = ensurePanel();
     overlay.addClass('csl-overlay--open');
     document.body.style.overflow = 'hidden';
+    observationListener = () => { if (isOpen) refreshCenterPanel(); };
+    window.addEventListener(MODEL_OBSERVATION_RECORDED_EVENT, observationListener);
     $(document).on('keydown.quickerApiConsole', (e) => {
         if (e.key === 'Escape' && isOpen) closeConsolePanel();
     });
@@ -184,6 +188,10 @@ export function closeConsolePanel(): void {
     debugLog('closeConsolePanel');
     if (!isOpen) return;
     isOpen = false;
+    if (observationListener) {
+        window.removeEventListener(MODEL_OBSERVATION_RECORDED_EVENT, observationListener);
+        observationListener = null;
+    }
     // 关闭时从 DOM 移除 overlay，避免透明全屏层继续拦截鼠标事件
     overlayEl?.remove();
     overlayEl = null;

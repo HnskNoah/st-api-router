@@ -9,6 +9,7 @@ import { renderRightMapping } from './right-mapping.js';
 import { renderRightVendor } from './right-vendor.js';
 import { renderRightRoute } from './right-route.js';
 import { ensureConsolePanelStyles } from './console-panel-styles.js';
+import { MODEL_OBSERVATION_RECORDED_EVENT } from '../../domain/model-health.js';
 
 let overlayEl: JQuery<HTMLElement> | null = null;
 let sheetEl: JQuery<HTMLElement> | null = null;
@@ -16,6 +17,7 @@ let isOpen = false;
 let selectedLogicalId: string | null = null;
 let tab: 'models' | 'manage' = 'models';
 let manageTab: 'settings' | 'vendor' = 'settings';
+let observationListener: (() => void) | null = null;
 
 export function isMobileViewport(): boolean {
     return typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
@@ -120,6 +122,8 @@ function openMobilePanel(): void {
     renderCards();
     renderBody();
     isOpen = true;
+    observationListener = () => { if (isOpen) renderBody(); };
+    window.addEventListener(MODEL_OBSERVATION_RECORDED_EVENT, observationListener);
     requestAnimationFrame(() => { overlay.addClass('open'); sheet.addClass('open'); });
 }
 
@@ -208,6 +212,10 @@ export function closeMobilePanel(): void {
     debugLog('closeMobilePanel', { isOpen });
     if (!isOpen && !overlayEl) return;
     isOpen = false;
+    if (observationListener) {
+        window.removeEventListener(MODEL_OBSERVATION_RECORDED_EVENT, observationListener);
+        observationListener = null;
+    }
     overlayEl?.removeClass('open');
     sheetEl?.removeClass('open');
     setTimeout(() => {

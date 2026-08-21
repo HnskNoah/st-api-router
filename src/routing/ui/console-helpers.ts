@@ -28,6 +28,13 @@ export function formatDur(ms: number): string {
     return h > 0 ? `${h}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`;
 }
 
+/** HH:MM:SS（本地时间）。 */
+export function formatClock(ts: number): string {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 export function levelDot(level: 'ok' | 'warn' | 'error' | 'empty'): string {
     const cls = { ok: 'ok', warn: 'warn', error: 'error', empty: 'empty' }[level];
     return `<span class="csl-dot csl-dot--${cls}"></span>`;

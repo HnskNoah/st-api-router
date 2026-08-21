@@ -2,7 +2,10 @@
 // 核心原则：可用性状态细化到「GroupEntry(Key) × realModel」粒度，不误伤同 Key 的其他模型。
 // 所有状态更新来自真实请求结果，不主动探测。
 
-import type { GroupEntry, ModelFailureKind, ModelObservationKind } from '../types.js';
+import type { GroupEntry, ModelFailureKind, ModelObservationKind, ModelObservationRecord } from '../types.js';
+
+export const MODEL_OBSERVATION_HISTORY_LIMIT = 200;
+export const MODEL_OBSERVATION_RECORDED_EVENT = 'quicker-api:model-observation-recorded';
 
 export interface RecordModelFailureOptions {
     /** 连续失败几次触发冷却。默认 3（复用 RoutingSettings.failThreshold）。 */
@@ -11,6 +14,19 @@ export interface RecordModelFailureOptions {
     baseCooldownMs?: number;
     /** 指数退避倍数上限。默认 32。 */
     maxCooldownMultiplier?: number;
+}
+
+/** 追加一条全局观测并删除最早记录，保持总窗口有界。 */
+export function appendModelObservation(
+    history: ModelObservationRecord[] | undefined,
+    record: ModelObservationRecord,
+): ModelObservationRecord[] {
+    const target = history ?? [];
+    target.push({ ...record, message: String(record.message ?? '').slice(0, 500) });
+    if (target.length > MODEL_OBSERVATION_HISTORY_LIMIT) {
+        target.splice(0, target.length - MODEL_OBSERVATION_HISTORY_LIMIT);
+    }
+    return target;
 }
 
 // ── 错误分类 ──

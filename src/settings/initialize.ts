@@ -10,6 +10,7 @@ import {
     normalizeGroups,
     normalizeLogicalModels,
     normalizeMappingRules,
+    normalizeObservationHistory,
     normalizeVendors,
     resetGroupRuntimeState,
     resetVendorRuntimeState,
@@ -66,6 +67,7 @@ export function initializeSettings(): boolean {
         : [];
     value.quickActions.sort((a, b) => a.sequence - b.sequence).forEach((action, index) => { action.sequence = index; });
     value.mappingRules = normalizeMappingRules(value.mappingRules);
+    value.observationHistory = normalizeObservationHistory(value.observationHistory);
     value.ignoredModels = Array.isArray(value.ignoredModels)
         ? value.ignoredModels.map(item => String(item || '').trim()).filter(Boolean)
         : [];

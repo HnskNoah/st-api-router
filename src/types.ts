@@ -92,6 +92,18 @@ export type ModelFailureKind =
     | 'bad_request'   // 400 / 参数 / 格式错误 → 不是渠道故障，不处理
     | 'unknown';      // 无法归类 → 按 temp 稳妥处理
 
+/** 生成错误与空回复的全局滑动窗口记录（按时间顺序，最多 200 条）。 */
+export interface ModelObservationRecord {
+    occurredAt: number;
+    groupId: string;
+    vendorId: string;
+    entryId: string;
+    realModel: string;
+    logicalModelId: string;
+    kind: ModelObservationKind;
+    message: string;
+}
+
 /** 生成结果观测：空回复会记录，但不参与失败记账。 */
 export type ModelObservationKind = ModelFailureKind | 'empty_response';
 
@@ -145,6 +157,8 @@ export interface QuickerApiSettings {
     quickActionPlacement: QuickActionPlacement;
     /** 手动批量映射规则（持久化）。 */
     mappingRules: MappingRule[];
+    /** 全局最近错误与空回复记录，最多保留 200 条。 */
+    observationHistory: ModelObservationRecord[];
     /** 全局忽略的真实模型名清单（含手动忽略；特殊变体自动忽略，不持久化进此数组）。 */
     ignoredModels: string[];
 }

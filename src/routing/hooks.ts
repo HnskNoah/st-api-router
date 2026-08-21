@@ -18,7 +18,7 @@ import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
 import { debugLog } from '../debug.js';
 import type { FailureProbe } from './failure-observer.js';
-import type { Group, LogicalModel, RoutingSettings, Vendor } from '../types.js';
+import type { Group, LogicalModel, ModelObservationRecord, RoutingSettings, Vendor } from '../types.js';
 
 const USER_STOP_GRACE_MS = 50;
 
@@ -28,11 +28,13 @@ export interface RoutingHooksDeps {
     getLogicalModels(): LogicalModel[];
     getActiveGroupId(): string | null;
     getRouting(): RoutingSettings;
+    /** 将错误或空回复追加到全局有界历史。 */
+    recordObservation?(record: ModelObservationRecord): void;
     beginGeneration?(): void;
     /** 返回本次生成的错误或结果观测；null 表示没有异常观测。 */
     endGeneration?(): FailureProbe | null;
-}
 
+}
 export interface RoutingHooks {
     onGenerationStarted(type?: string, automaticTrigger?: unknown): void;
     onChatCompletionSettingsReady(generateData: Record<string, any>): void;
@@ -44,7 +46,7 @@ export interface RoutingHooks {
 
 export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     const state: {
-        active: { unit: GroupRouteUnit; logicalModelId: string } | null;
+        active: { unit: GroupRouteUnit; logicalModelId: string; groupId: string } | null;
         userStopPending: boolean;
         manualLockedUnit: GroupRouteUnit | null;
         lastPicked: GroupRouteSticky | null;
@@ -171,7 +173,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
 
         // 存储选中的 unit，等 CHAT_COMPLETION_SETTINGS_READY 时直接改 generateData
-        state.active = { unit, logicalModelId };
+        state.active = { unit, logicalModelId, groupId: activeGroup.id };
         debugLog('onGenerationStarted active set', {
             vendorName: unit.vendor.name,
             entryLabel: unit.entry.label,
@@ -328,6 +330,16 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             if (probe.kind === 'empty_response') {
                 // 空回复只保留诊断观测，不计入 Vendor/模型失败，不触发冷却。
                 recordModelObservation(entry, realModel, probe.kind, probe.message);
+                deps.recordObservation?.({
+                    occurredAt: Date.now(),
+                    groupId: active.groupId,
+                    vendorId: vendor.id,
+                    entryId: entry.id,
+                    realModel,
+                    logicalModelId: active.logicalModelId,
+                    kind: probe.kind,
+                    message: probe.message,
+                });
                 saveSettingsDebounced();
                 debugLog('onGenerationEnded recorded empty response observation', { vendorName: vendor.name, realModel });
                 return;
@@ -336,6 +348,16 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             const cooling = recordModelFailure(entry, realModel, probe.kind, probe.message, {
                 threshold: routing.failThreshold,
                 baseCooldownMs: routing.cooldownSeconds * 1000,
+            });
+            deps.recordObservation?.({
+                occurredAt: Date.now(),
+                groupId: active.groupId,
+                vendorId: vendor.id,
+                entryId: entry.id,
+                realModel,
+                logicalModelId: active.logicalModelId,
+                kind: probe.kind,
+                message: probe.message,
             });
             // 保持 Vendor 失败计数（用于 UI 展示和路由加权），但不触发 Vendor 级禁用
             vendor.failures = (Number(vendor.failures) || 0) + 1;

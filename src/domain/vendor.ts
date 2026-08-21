@@ -10,10 +10,12 @@ import type {
     LogicalModel,
     MappingRule,
     ModelObservationKind,
+    ModelObservationRecord,
     Vendor,
     VendorFormat,
     VendorModelMapping,
 } from '../types.js';
+import { MODEL_OBSERVATION_HISTORY_LIMIT } from './model-health.js';
 
 export const VENDOR_RPM_DEFAULT = 3;
 export const VENDOR_WEIGHT_DEFAULT = 1;
@@ -747,6 +749,29 @@ function normalizeStringStringMap(raw: unknown, maxLen = 500): Record<string, st
         result[String(key)] = String(value ?? '').slice(0, maxLen);
     }
     return result;
+}
+
+/** 安全归一化全局错误与空回复滑动窗口。 */
+export function normalizeObservationHistory(raw: unknown): ModelObservationRecord[] {
+    if (!Array.isArray(raw)) return [];
+    const valid: ModelObservationKind[] = ['fatal', 'rate_limited', 'temp', 'bad_request', 'unknown', 'empty_response'];
+    return raw.slice(-MODEL_OBSERVATION_HISTORY_LIMIT).flatMap(item => {
+        if (!item || typeof item !== 'object') return [];
+        const value = item as Record<string, unknown>;
+        const occurredAt = Number(value.occurredAt);
+        const kind = String(value.kind ?? '') as ModelObservationKind;
+        if (!Number.isFinite(occurredAt) || !valid.includes(kind)) return [];
+        return [{
+            occurredAt,
+            groupId: normalizeText(value.groupId).slice(0, 200),
+            vendorId: normalizeText(value.vendorId).slice(0, 200),
+            entryId: normalizeText(value.entryId).slice(0, 200),
+            realModel: normalizeText(value.realModel).slice(0, 500),
+            logicalModelId: normalizeText(value.logicalModelId).slice(0, 200),
+            kind,
+            message: String(value.message ?? '').slice(0, 500),
+        }];
+    });
 }
 
 /** 安全归一化 Record<string, ModelObservationKind> 映射。 */

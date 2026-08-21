@@ -6,6 +6,7 @@ import { chat_completion_sources } from '@sillytavern/scripts/openai';
 import { FORMATS } from '../constants.js';
 import { activeGroup, groups, ignoredModels, logicalModels, mappingRules, routingSettings, settings, vendors } from '../settings/access.js';
 import { createFailureObserver } from './failure-observer.js';
+import { appendModelObservation, MODEL_OBSERVATION_RECORDED_EVENT } from '../domain/model-health.js';
 import { createRoutingHooks } from './hooks.js';
 import { ensureManualRouteEntry, removeManualRouteEntry, setManualRouteLocker } from './manual-route-entry.js';
 import { BLOCKED_SOURCE_PRESET_TRANSITION, BLOCKED_SOURCE_SAFETY } from '../domain/generation-guard.js';
@@ -55,6 +56,12 @@ export function initRouting(): void {
         endGeneration: () => {
             failureObserver.observeResponseText(chat[chat.length - 1]?.mes);
             return failureObserver.end();
+        },
+        recordObservation: (record) => {
+            settings().observationHistory = appendModelObservation(settings().observationHistory, record);
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(MODEL_OBSERVATION_RECORDED_EVENT));
+            }
         },
     });
     eventSource.on(event_types.GENERATION_STARTED, hooks.onGenerationStarted);

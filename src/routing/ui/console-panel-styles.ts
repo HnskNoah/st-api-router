@@ -282,6 +282,7 @@ export function ensureConsolePanelStyles(): void {
         .csl-route-failures { margin-top: 12px; border-top: 1px solid rgba(128,128,128,0.2); padding-top: 8px; }
         .csl-route-failures-head { font-size: 12px; color: #999; font-weight: 600; margin-bottom: 6px; }
         .csl-route-failure-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; flex-wrap: wrap; }
+        .csl-route-failure-time { flex: none; font-size: 10px; color: #888; font-variant-numeric: tabular-nums; }
         .csl-route-failure-unit { color: #ccc; flex: none; }
         .csl-route-failure-kind { flex: none; font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 1px solid rgba(224,138,138,0.5); color: #e08a8a; }
         .csl-route-failure-msg { color: #999; word-break: break-all; min-width: 0; }
