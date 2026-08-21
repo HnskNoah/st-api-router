@@ -33,7 +33,7 @@ export function renderDashboard(
             .toggleClass('is-current', model.id === currentId)
             .attr('data-search', model.name.toLowerCase());
         const name = $('<span class="csl-model-name"></span>');
-        name.html(`${levelDot(status.level)} <span>${model.name}</span>`);
+        name.append($('<span class="csl-model-status-dot"></span>').html(levelDot(status.level)), $('<span class="csl-model-name-text"></span>').text(model.name));
         const meta = $('<span class="csl-model-meta">').text(status.text);
         const sub = status.best
             ? $('<span class="csl-model-sub">').text(`${status.best.vendor.name} · ${status.best.entry.label} · ${status.best.realModel}`)
@@ -58,6 +58,7 @@ export function renderDashboard(
             .on('click', e => { e.stopPropagation(); openLogicalParamsEditor(model.id, () => {}); })
             .on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogicalParamsEditor(model.id, () => {}); } });
         top.append(useBtn, paramsBtn);
+        row.append(top, sub);
         row.on('click', () => { onSelect(model.id); });
         row.on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.trigger('click'); } });
         dashboardEl.append(row);

@@ -49,7 +49,7 @@ export function ensureConsolePanelStyles(): void {
 
         /* ── 左栏：仪表盘 ── */
         .csl-left {
-            width: 260px; flex-shrink: 0;
+            width: 260px; flex: 0 0 260px;
             border-right: 1px solid rgba(128, 128, 128, 0.15);
             display: flex; flex-direction: column; overflow: hidden;
         }
@@ -58,12 +58,13 @@ export function ensureConsolePanelStyles(): void {
             border-bottom: 1px solid rgba(128, 128, 128, 0.1);
         }
         .csl-left-search > input { width: 100%; margin: 0; box-sizing: border-box; }
-        .csl-left-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+        .csl-left-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0; visibility: visible; }
 
         /* ── 左栏模型行 ── */
         .csl-model-row {
-            display: flex; flex-direction: column; gap: 1px;
-            padding: 8px 12px; cursor: pointer;
+            display: flex !important; flex-direction: column; gap: 1px;
+            min-height: 42px; box-sizing: border-box;
+            padding: 8px 12px; cursor: pointer; visibility: visible; opacity: 1;
             border-left: 3px solid transparent;
             transition: background 0.1s, border-color 0.1s;
         }
@@ -81,7 +82,8 @@ export function ensureConsolePanelStyles(): void {
             border: 1px solid rgba(91,155,213,.5); border-radius: 8px; padding: 0 4px;
         }
         .csl-model-top { display: flex; align-items: center; gap: 6px; }
-        .csl-model-name { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; }
+        .csl-model-name { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--SmartThemeBodyColor, #e8e8e8); font-weight: 600; font-size: 13px; flex: 1; }
+        .csl-model-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .csl-model-name > span { vertical-align: middle; }
         .csl-model-meta { font-size: 11px; color: #999; flex: none; white-space: nowrap; }
         .csl-model-top > .csl-model-params {
