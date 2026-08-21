@@ -80,12 +80,6 @@ function ensurePanel(): JQuery<HTMLElement> {
         refreshRightPanel();
     });
 
-    // 事件：左栏选中模型
-    left.on('click', '.csl-model-row', function () {
-        selectedLogicalId = String($(this).data('logical-id') || '');
-        refreshDashboard();
-        refreshCenterPanel();
-    });
 
     overlayEl = overlay;
     document.body.append(overlay[0]);
