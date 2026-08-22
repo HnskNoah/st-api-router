@@ -94,7 +94,7 @@ export function renderRightMapping(
                     onRefreshDashboard();
                     renderUnmapped();
                 },
-                successMessage: `逻辑模型「${nameInput.val()}」已添加。`,
+                successMessage: () => `逻辑模型「${String(nameInput.val() ?? '').trim()}」已添加。`,
             });
         });
     addBtnRow.append(addRuleBtn, addLogicalBtn);
@@ -109,11 +109,11 @@ export function renderRightMapping(
         unmappedList.empty();
         const models = findUnmappedModels(groups());
         if (models.length === 0) {
-            unmappedHead.html('<i class="fa-solid fa-chevron-right"></i><span>显示未归类模型</span>');
+            updateUnmappedHead();
             unmappedList.append($('<div class="csl-mapping-empty">').text('没有未归类的真实模型。'));
             return;
         }
-        unmappedHead.html(`<i class="fa-solid ${unmappedOpen ? 'fa-chevron-down' : 'fa-chevron-right'}"></i><span>显示未归类模型（${models.length}）</span>`);
+        updateUnmappedHead();
         for (const realModel of models) {
             const row = $('<div class="csl-mapping-unmapped-row"></div>');
             const select = $('<select class="text_pole"></select>').append($('<option value="">').text('— 选择逻辑模型 —'));
@@ -135,6 +135,13 @@ export function renderRightMapping(
         }
     };
     const unmappedHead = $('<button class="csl-btn csl-btn--secondary csl-mapping-fold-head" type="button"></button>');
+    /** 头部标签唯一写入点：始终按 unmappedOpen 与当前数量渲染；重渲染列表时不得回退文案。 */
+    const updateUnmappedHead = (): void => {
+        const count = findUnmappedModels(groups()).length;
+        const suffix = count > 0 ? `（${count}）` : '';
+        unmappedHead.html(`<i class="fa-solid ${unmappedOpen ? 'fa-chevron-down' : 'fa-chevron-right'}"></i><span>${unmappedOpen ? '收起' : '显示'}未归类模型${suffix}</span>`);
+    };
+    updateUnmappedHead();
     unmappedHead.on('click', () => {
         unmappedOpen = !unmappedOpen;
         if (unmappedOpen) {
@@ -143,8 +150,7 @@ export function renderRightMapping(
         } else {
             unmappedList.hide();
         }
-        const models = findUnmappedModels(groups());
-        unmappedHead.html(`<i class="fa-solid ${unmappedOpen ? 'fa-chevron-down' : 'fa-chevron-right'}"></i><span>${unmappedOpen ? `收起未归类模型（${models.length}）` : '显示未归类模型'}</span>`);
+        updateUnmappedHead();
     });
     unmappedList.hide();
     unmappedSection.append(unmappedHead, unmappedList);

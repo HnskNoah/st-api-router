@@ -42,6 +42,12 @@ export function groupUnitUnavailabilityReason(unit: GroupRouteUnit, now: number)
     if (!unit?.vendor || !unit?.entry || !unit?.mapping) return 'missing';
     if (unit.vendor.enabled === false) return 'disabled';
     if (unit.entry.enabled === false) return 'disabled';
+    // 密钥材料缺失：deepseek 凭 proxy_password（=apiKey）直发；custom 可凭 secretId。
+    // 两者皆无时选路必然落空（生成不经过路由且不记账，sticky 还会反复选中），候选阶段直接排除。
+    const hasKeyMaterial = unit.vendor.format === 'deepseek'
+        ? Boolean(unit.entry.apiKey)
+        : Boolean(unit.entry.apiKey || unit.entry.secretId);
+    if (!hasKeyMaterial) return 'no-key';
     if (!vendorRpmAvailable(unit.vendor, now)) return 'rpm';
     const modelReason = modelUnitUnavailabilityReason(unit, now);
     if (modelReason) return modelReason;

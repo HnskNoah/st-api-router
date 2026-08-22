@@ -40,14 +40,18 @@ export function applyExplicitModel(model: unknown, preferredFormat = ''): boolea
     return String(input.val() || '') === value && String(oai_settings[config.modelField] || '') === value;
 }
 
-/** 路由命中的模型：只写 custom_model（生成时由路由钩子选 key），不做原生格式推断。 */
-export function setRoutedModel(model: unknown): boolean {
-    const value = normalizeText(model);
-    if (!value) return true;
-    oai_settings.custom_model = value;
-    const input = $('#custom_model_id');
-    if (input.length) input.val(value).trigger('input');
-    return String(oai_settings.custom_model || '') === value;
+/** 真实模型在当前分组 entries 中归属的逻辑模型；仅当归属唯一时返回，否则 null。 */
+function routedRealModelOwnerInActiveGroup(model: string): LogicalModel | null {
+    const activeGroup = groups().find(group => group.id === settings().activeGroupId) || groups()[0] || null;
+    if (!activeGroup) return null;
+    const ownerIds = new Set<string>();
+    for (const entry of activeGroup.entries ?? []) {
+        for (const mapping of entry.mappings ?? []) {
+            if (mapping.realModel === model && mapping.logicalModelId) ownerIds.add(mapping.logicalModelId);
+        }
+    }
+    if (ownerIds.size !== 1) return null;
+    return logicalModels().find(item => item.id === [...ownerIds][0]) ?? null;
 }
 
 export function waitForPresetAfter(expectedName: string, token: number): Promise<boolean> {
@@ -107,30 +111,41 @@ export async function runQuickAction(action: QuickAction, token: number): Promis
         }
         let switchedLogicalModel: LogicalModel | null = null;
         if (action.model) {
-            // 逻辑模型：只切换当前 Group 的逻辑模型（保存，不立即写 ST 连接，下次生成由路由钩子选 Vendor/Key）
+            const activeGroup = groups().find(group => group.id === settings().activeGroupId) || groups()[0] || null;
+            // 逻辑模型：直接切换当前 Group 的逻辑模型（下次生成由路由钩子选 Vendor/Key）
             const logical = resolveLogicalModelForAction(action.model, logicalModels());
-            if (logical) {
+            // 路由命中的真实模型：拦截模式下 generateData.model 由选路结果覆盖，写 custom_model 不生效；
+            // 改为切换到该真实模型在当前分组唯一归属的逻辑模型
+            const routed = !logical && routingSettings().enabled && isRoutedModel(groups(), logicalModels(), action.model);
+            const target = logical ?? (routed ? routedRealModelOwnerInActiveGroup(String(action.model)) : null);
+            if (target) {
                 const activeGroup = groups().find(group => group.id === settings().activeGroupId) || groups()[0] || null;
                 if (!activeGroup) {
                     toastr.warning('Quicker Api：还没有 Group，无法切换逻辑模型。');
                     debugLog('runQuickAction failed: no group for logical model', { logicalModel: action.model });
                     return;
                 }
-                activeGroup.currentLogicalModelId = logical.id;
-                switchedLogicalModel = logical;
-                debugLog('runQuickAction switched logical model', { logicalModelId: logical.id, logicalModelName: logical.name });
+                activeGroup.currentLogicalModelId = target.id;
+                switchedLogicalModel = target;
+                debugLog('runQuickAction switched logical model', {
+                    logicalModelId: target.id,
+                    logicalModelName: target.name,
+                    viaRealModel: logical ? undefined : action.model,
+                });
+            } else if (routed) {
+                // 真实模型存在但归属不唯一（或当前分组无承载映射）：如实告知，保持现状
+                toastr.warning(`Quicker Api：真实模型「${action.model}」在当前分组没有唯一归属的逻辑模型，已保持当前路由不变。`);
+                debugLog('runQuickAction skipped ambiguous routed model', { model: action.model });
+                return;
             } else {
-                // 路由命中的真实模型：只写 custom_model（生成时由路由钩子选 key）；其余走原生格式推断
-                const routedModel = routingSettings().enabled && isRoutedModel(groups(), logicalModels(), action.model);
-                const applied = routedModel
-                    ? setRoutedModel(action.model)
-                    : applyExplicitModel(action.model);
+                // 其余走原生格式推断
+                const applied = applyExplicitModel(action.model);
                 if (!applied) {
                     toastr.error('便捷方案模型写入验证失败。');
-                    debugLog('runQuickAction failed: model write', { model: action.model, routedModel });
+                    debugLog('runQuickAction failed: model write', { model: action.model });
                     return;
                 }
-                debugLog('runQuickAction applied explicit model', { model: action.model, routedModel });
+                debugLog('runQuickAction applied explicit model', { model: action.model });
             }
         }
         if (token !== runtimeState.quickActionTransaction) {

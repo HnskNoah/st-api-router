@@ -47,7 +47,7 @@ export function classifyModelFailureMessage(msg: string): ModelFailureKind {
         return 'bad_request';
     }
     // 网络类错误 / 超时 / 服务端错误 → temp
-    if (/(failed to fetch|load failed|network|timed out|abort|timeout|5\d{2}|server error|service unavailable|internal error|网络|超时|服务(?:暂时)?不可用|服务器错误|内部错误|连接失败)/i.test(m)) {
+    if (/(failed to fetch|load failed|network|timed out|abort|\b5\d{2}\b|timeout|server error|service unavailable|internal error|网络|超时|服务(?:暂时)?不可用|服务器错误|内部错误|连接失败)/i.test(m)) {
         return 'temp';
     }
     return 'unknown';

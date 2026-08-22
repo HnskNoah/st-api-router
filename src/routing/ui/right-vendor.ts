@@ -55,6 +55,7 @@ export function renderRightVendor(
                     if (!entry) { skipped++; continue; }
                     const result = await fetchModelsForVendor(v, entry, { quiet: true });
                     if (result) ok++;
+                    else failed.push(v.name || v.id);
                     const { promise: pause, resolve: resume } = Promise.withResolvers<void>();
                     setTimeout(resume, 100);
                     await pause;
@@ -183,6 +184,7 @@ export function renderRightVendor(
                         entry.enabled = $(this).prop('checked');
                         saveSettingsNow();
                         renderRightVendor(rightEl, onRefreshDashboard);
+                        onRefreshDashboard();
                     });
                 keyRow.append(keyEnabled);
 
@@ -367,7 +369,7 @@ function renderAddVendorBtn(onRefreshDashboard: () => void): JQuery<HTMLElement>
                     saveSettingsNow();
                     onRefreshDashboard();
                 },
-                successMessage: `Vendor「${nameInput.val()}」已添加。`,
+                successMessage: () => `Vendor「${String(nameInput.val() ?? '').trim()}」已添加。`,
             });
         });
     wrap.append(addBtn);
@@ -420,11 +422,20 @@ function openVendorEditor(vendor: Vendor, onDone: () => void): void {
             saveSettingsNow();
             onDone();
         },
-        successMessage: `Vendor「${draft.name}」已保存。`,
+        successMessage: () => `Vendor「${draft.name}」已保存。`,
     });
 }
 
-export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry, opts: { quiet?: boolean } = {}): Promise<string[] | null> {
+/** 串行化所有拉取：并发调用会互相把「活动 secret」恢复成对方的临时 Key，导致原生请求拿错凭据。 */
+let modelFetchChain: Promise<unknown> = Promise.resolve();
+
+export function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry, opts: { quiet?: boolean } = {}): Promise<string[] | null> {
+    const run = () => fetchModelsForVendorInternal(vendor, entry, opts);
+    modelFetchChain = modelFetchChain.then(run, run);
+    return modelFetchChain as Promise<string[] | null>;
+}
+
+async function fetchModelsForVendorInternal(vendor: Vendor, entry: GroupEntry, opts: { quiet?: boolean } = {}): Promise<string[] | null> {
     const key = entry.apiKey;
     const isDeepseek = vendor.format === 'deepseek';
     const secretKey = isDeepseek ? SECRET_KEYS.DEEPSEEK : SECRET_KEYS.CUSTOM;

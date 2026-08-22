@@ -12,7 +12,7 @@ import { recordModelFailure, recordModelObservation, recordModelSuccess } from '
 import { computeVendorTokenClamps, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
-import { resolveFallbackRoute } from './fallback.js';
+import { resolveActiveRoutingContext, resolveFallbackRoute } from './fallback.js';
 import { createRetryChain } from './retry-chain.js';
 import { isManualLockApplicable } from './manual-route.js';
 import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
@@ -286,12 +286,21 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
      */
     async function routeFallbackIfNeeded(generateData: Record<string, any>): Promise<void> {
         const type = String(generateData?.type || 'normal');
-        const activeGroup = deps.getGroups().find(group => group.id === deps.getActiveGroupId()) || deps.getGroups()[0] || null;
-        const logicalModelId = activeGroup?.currentLogicalModelId ?? '';
+        // 门禁先行（与主路径一致）：路由停用或分组不可用时不得接管请求、不得消费手动锁定，
+        // 否则一次残留锁会在路由关闭后仍改写请求并静默作废。
+        const ctx = resolveActiveRoutingContext({
+            routingEnabled: deps.getRouting().enabled,
+            activeGroupId: deps.getActiveGroupId(),
+            groups: deps.getGroups(),
+        });
+        if ('skipReason' in ctx) {
+            debugLog('onChatCompletionSettingsReady fallback skip', { reason: ctx.skipReason });
+            return;
+        }
         let unit: GroupRouteUnit | null = null;
         if (type !== 'quiet' && type !== 'continue' && type !== 'impersonate') {
             // 用户主动触发：优先消费手动锁定（对 MClite/独立流同样生效）
-            unit = consumeManualLock(activeGroup, logicalModelId);
+            unit = consumeManualLock(ctx.group, ctx.logicalModelId);
         }
         if (!unit) {
             const result = resolveFallbackRoute({

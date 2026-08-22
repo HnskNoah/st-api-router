@@ -9,8 +9,8 @@ export interface EditorDialogOptions {
     content: JQuery<HTMLElement>;
     /** 保存回调：返回 false 或 reject 时不关闭弹窗；成功后自动关闭并 toastr。 */
     onSave: () => void | boolean | Promise<void | boolean>;
-    /** 保存成功的提示文案（默认「已保存。」）。 */
-    successMessage?: string;
+    /** 保存成功的提示文案；传函数可在保存时才求值（弹窗创建时输入还是旧值）。默认「已保存。」。 */
+    successMessage?: string | (() => string);
     /** 弹窗显示完成后回调（用于初始化 select2 等依赖 DOM 挂载的控件）。 */
     onShown?: () => void;
     onCancel?: () => void;
@@ -65,7 +65,8 @@ export function showEditorDialog(opts: EditorDialogOptions): Popup {
     saveBtn.on('click', async () => {
         const shouldClose = await runSaveAction(opts.onSave);
         if (shouldClose) {
-            if (opts.successMessage) toastr.success(opts.successMessage);
+            const message = typeof opts.successMessage === 'function' ? opts.successMessage() : opts.successMessage;
+            if (message) toastr.success(message);
             popup.completeCancelled();
         }
     });

@@ -62,8 +62,10 @@ export function initializeSettings(): boolean {
     value.quickActionPlacement = ['leftSendForm', 'rightSendForm', 'qrButtons', 'disabled'].includes(value.quickActionPlacement)
         ? value.quickActionPlacement
         : 'rightSendForm';
+    // 不按 preset/model 过滤：管理界面「新增方案」会先保存未配置条目（显示为 方案N · 未配置），
+    // 持久化路径也保留它们；载入时过滤会导致重开后静默丢数据。
     value.quickActions = Array.isArray(value.quickActions)
-        ? value.quickActions.map(normalizeQuickAction).filter(action => action.preset || action.model)
+        ? value.quickActions.map(normalizeQuickAction)
         : [];
     value.quickActions.sort((a, b) => a.sequence - b.sequence).forEach((action, index) => { action.sequence = index; });
     value.mappingRules = normalizeMappingRules(value.mappingRules);

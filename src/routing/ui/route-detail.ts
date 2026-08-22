@@ -66,7 +66,11 @@ export function renderRouteDetail(
                     if (h.state === 'cooldown') {
                         if (unit.entry.circuitsByModel) delete unit.entry.circuitsByModel[unit.realModel];
                     } else if (h.state === 'disabled') {
-                        unit.vendor.enabled = true;
+                        // 只恢复实际被禁用的层级；Vendor 整体开关是用户的全局决定，不得被单模型恢复悄悄翻转
+                        if (unit.vendor.enabled === false) {
+                            toastr.info(`Vendor「${unit.vendor.name}」整体处于禁用状态；请在 Vendor 管理中启用。`);
+                            return;
+                        }
                         unit.entry.enabled = true;
                     }
                     saveSettingsNow();

@@ -293,6 +293,6 @@ function openGroupEditor(group: Group, onRefreshDashboard: () => void, onRefresh
             onRefreshVendor();
             onRefreshDashboard();
         },
-        successMessage: `分组「${draft.name}」已保存。`,
+        successMessage: () => `分组「${draft.name}」已保存。`,
     });
 }

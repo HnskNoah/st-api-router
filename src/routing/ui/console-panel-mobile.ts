@@ -18,6 +18,7 @@ let selectedLogicalId: string | null = null;
 let tab: 'models' | 'manage' = 'models';
 let manageTab: 'settings' | 'vendor' = 'settings';
 let observationListener: (() => void) | null = null;
+let closeTimer: number | null = null;
 
 export function isMobileViewport(): boolean {
     return typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
@@ -118,13 +119,24 @@ function openMobilePanel(): void {
     handle.on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closeMobilePanel(); } });
     closeBtn.on('click', () => closeMobilePanel());
     closeBtn.on('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closeMobilePanel(); } });
+    activateSheet();
+}
 
+/** 激活当前 sheet：刷新内容、登记观测监听、播放打开动画。打开与「关闭动画中重开」共用。 */
+function activateSheet(): void {
     renderCards();
     renderBody();
     isOpen = true;
-    observationListener = () => { if (isOpen) renderBody(); };
+    if (observationListener) window.removeEventListener(MODEL_OBSERVATION_RECORDED_EVENT, observationListener);
+    observationListener = () => {
+        if (!isOpen) return;
+        // 输入中不打断：重建 body 会清掉搜索框文本/编辑器焦点（桌面端只刷中栏，无此问题）
+        const active = document.activeElement;
+        if (active && sheetEl?.length && sheetEl[0].contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+        renderBody();
+    };
     window.addEventListener(MODEL_OBSERVATION_RECORDED_EVENT, observationListener);
-    requestAnimationFrame(() => { overlay.addClass('open'); sheet.addClass('open'); });
+    requestAnimationFrame(() => { overlayEl?.addClass('open'); sheetEl?.addClass('open'); });
 }
 
 function renderCards(): void {
@@ -218,7 +230,10 @@ export function closeMobilePanel(): void {
     }
     overlayEl?.removeClass('open');
     sheetEl?.removeClass('open');
-    setTimeout(() => {
+    // 延迟拆卸只为播放收起动画；记录定时器以便「动画期间重开」时撤销
+    if (closeTimer != null) window.clearTimeout(closeTimer);
+    closeTimer = window.setTimeout(() => {
+        closeTimer = null;
         overlayEl?.remove();
         overlayEl = null;
         sheetEl = null;
@@ -227,7 +242,15 @@ export function closeMobilePanel(): void {
 
 /** 由桌面 openConsolePanel 在 isMobile 时路由到这里。 */
 export function openConsolePanelMobile(): void {
-    // 已打开则前置
-    if (overlayEl?.length) { document.body.append(overlayEl[0]); return; }
+    if (overlayEl?.length) {
+        // 收起动画窗口内重开：撤销挂起的拆卸，原地复活同一 sheet（否则元素无 open 类且稍后被删，点击像失效）
+        if (closeTimer != null) {
+            window.clearTimeout(closeTimer);
+            closeTimer = null;
+        }
+        document.body.append(overlayEl[0]);
+        activateSheet();
+        return;
+    }
     openMobilePanel();
 }

@@ -20,8 +20,11 @@ export async function readAuthoritativeSecretState(): Promise<Record<string, any
         }, 15000);
         if (!response.ok) return null;
         if (!state || typeof state !== 'object') return null;
-        for (const config of Object.values(FORMATS)) {
-            secret_state[config.secretKey] = Array.isArray(state[config.secretKey]) ? state[config.secretKey] : [];
+        // 以 ST 的真实 secret 槽名（SECRET_KEYS 长名）刷新宿主缓存；FORMATS 里的短名
+        // （custom/claude/makersuite）只是插件内部命名空间，写进 secret_state 是幽灵键。
+        for (const key of Object.values(SECRET_KEYS)) {
+            if (typeof key !== 'string' || !key) continue;
+            secret_state[key] = Array.isArray(state[key]) ? state[key] : [];
         }
         return state;
     } catch (error) {
@@ -72,14 +75,13 @@ export async function rotateSecretVerified(key: string, id: string): Promise<boo
 export async function ensureEmptySecret(key: string): Promise<string> {
     const storedId = String(settings().emptySecretIds[key] || '');
     if (storedId && await rotateSecretVerified(key, storedId)) return storedId;
-    const id = await writeSecretVerified(key, '', EMPTY_SECRET_LABEL);
-    const state = id ? await readAuthoritativeSecretState() : null;
-    if (id && state?.[key]?.some(entry => entry.id === id && entry.active)) {
-        settings().emptySecretIds[key] = id;
-        saveSettingsDebounced();
-        return id;
-    }
-    return '';
+    // 标签必须带清理前缀：writeSecretVerified 成功即代表服务端已落库且激活，
+    // 但若后续流程部分失败（rotate 假失败重写等）留下的孤儿空占位也能被「一键清除」回收。
+    const id = await writeSecretVerified(key, '', `${QUICK_API_SECRET_LABEL_PREFIX} ${EMPTY_SECRET_LABEL}`);
+    if (!id) return '';
+    settings().emptySecretIds[key] = id;
+    saveSettingsDebounced();
+    return id;
 }
 
 export async function findSecretBounded(key: string, id: string): Promise<string | null> {

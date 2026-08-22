@@ -276,8 +276,19 @@ export function mergeImportedRoutingConfig(
         const vendor = normalizeVendor(structuredClone(raw));
         if (!vendor.id) continue;
         const existing = vendorById.get(vendor.id);
-        if (existing) Object.assign(existing, vendor);
-        else {
+        if (existing) {
+            // 跨机导入：Vendor 运行时统计（成功率/RPM 窗口/诊断）是本机状态，导入值一律不覆盖本机
+            //（与下方 entry 级健康字段同一规则），否则导入会改写路由加权与 UI 成功率。
+            const localRuntime = {
+                window: existing.window,
+                failStreak: existing.failStreak,
+                successes: existing.successes,
+                failures: existing.failures,
+                lastError: existing.lastError,
+            };
+            Object.assign(existing, vendor);
+            Object.assign(existing, localRuntime);
+        } else {
             vendorById.set(vendor.id, vendor);
             vendors.push(vendor);
         }
