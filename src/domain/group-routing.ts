@@ -51,6 +51,7 @@ export function groupUnitUnavailabilityReason(unit: GroupRouteUnit, now: number)
 /** 模型级冷却检查：该 Key 上该 realModel 是否处于冷却中。同 Key 不同模型互不影响。 */
 export function modelUnitUnavailabilityReason(unit: GroupRouteUnit, now: number): string | null {
     if (!unit?.entry || !unit?.realModel) return null;
+    if (unit.entry.disabledModels?.includes(unit.realModel)) return 'manually-disabled';
     if (isModelInCooldown(unit.entry, unit.realModel, now)) return 'cooldown';
     return null;
 }

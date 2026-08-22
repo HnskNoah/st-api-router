@@ -41,25 +41,26 @@ export function renderRouteDetail(
     const list = $('<div class="csl-route-list"></div>');
     for (const unit of units) {
         const h = routeHealth(unit, now);
+        const manuallyDisabled = unit.entry.disabledModels?.includes(unit.realModel) ?? false;
         const pill = $('<div class="csl-route-row"></div>');
         const rowName = $('<span class="csl-route-name"></span>').text(`${unit.vendor.name} · ${unit.entry.label} · ${unit.realModel}`);
-        const keyWeight = Number(unit.entry.weight) > 0 ? Number(unit.entry.weight) : 1;
-        const mappingWeight = Number(unit.mapping.weight) > 0 ? Number(unit.mapping.weight) : 1;
-        const weights = $('<span class="csl-route-weights"></span>').text(`Key ${keyWeight} × 模型 ${mappingWeight} = ${keyWeight * mappingWeight}`);
-        const mappingWeightInput = $('<input class="text_pole csl-route-weight" type="number" min="0.01" step="0.1" title="真实模型映射权重" aria-label="真实模型映射权重">')
-            .val(mappingWeight)
-            .on('change', function () {
-                const value = Number($(this).val());
-                unit.mapping.weight = Number.isFinite(value) && value > 0 ? value : 1;
-                $(this).val(unit.mapping.weight);
+        pill.append(rowName);
+        const remaining = h.remaining != null ? ` · 冷却中 ${formatDur(h.remaining)}` : '';
+        const stateText = manuallyDisabled ? '⛔ 手动禁用' : h.state === 'healthy' ? '🟢' : h.state === 'cooldown' ? `🟡${remaining}` : '🔴';
+        pill.append($('<span class="csl-route-state">').text(stateText));
+        // 手动禁用/启用该真实模型（可逆，持久化在 entry.disabledModels）
+        const toggleBtn = $('<button class="csl-btn csl-btn--secondary" type="button">')
+            .text(manuallyDisabled ? '启用' : '禁用')
+            .attr('title', manuallyDisabled ? '重新启用该真实模型参与路由' : '手动禁用该真实模型（不参与路由）')
+            .on('click', () => {
+                const list = unit.entry.disabledModels ??= [];
+                const idx = list.indexOf(unit.realModel);
+                if (idx >= 0) list.splice(idx, 1); else list.push(unit.realModel);
                 saveSettingsNow();
                 onRefresh();
             });
-        pill.append(rowName, weights, mappingWeightInput);
-        const remaining = h.remaining != null ? ` · 冷却中 ${formatDur(h.remaining)}` : '';
-        const stateText = h.state === 'healthy' ? '🟢' : h.state === 'cooldown' ? `🟡${remaining}` : '🔴';
-        pill.append($('<span class="csl-route-state">').text(stateText));
-        if (h.state === 'cooldown' || h.state === 'disabled') {
+        pill.append(toggleBtn);
+        if (!manuallyDisabled && (h.state === 'cooldown' || h.state === 'disabled')) {
             const resetBtn = $('<button class="csl-btn csl-btn--secondary" type="button" title="手动恢复该模型"><i class="fa-solid fa-rotate-left"></i></button>')
                 .on('click', () => {
                     if (h.state === 'cooldown') {

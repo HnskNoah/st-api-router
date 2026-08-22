@@ -73,6 +73,12 @@ describe('domain/vendor > 拉取后同步', () => {
         expect(entry.circuitsByModel).toEqual({});
     });
 
+    it('reconcileEntryMappings 清扫已消失模型的手动禁用项', () => {
+        const entry = makeEntry({ fetchedModels: ['kept'], disabledModels: ['kept', 'gone'] });
+        reconcileEntryMappings(entry, ['kept']);
+        expect(entry.disabledModels).toEqual(['kept']);
+    });
+
     it('reconcileEntryMappings 空列表清空全部映射', () => {
         const entry = makeEntry({
             mappings: [{ id: 'm1', realModel: 'gpt-4o', logicalModelId: 'l1' }],

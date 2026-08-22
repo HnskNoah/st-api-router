@@ -107,3 +107,17 @@ describe('candidateGroupUnits with model-level cooling', () => {
         expect(candidates).toHaveLength(1);
     });
 });
+
+describe('manually disabled real models', () => {
+    it('modelUnitUnavailabilityReason reports manually-disabled', () => {
+        const unit = makeUnit({ entryOverrides: { disabledModels: ['gpt-4o'] } });
+        expect(modelUnitUnavailabilityReason(unit, Date.now())).toBe('manually-disabled');
+    });
+
+    it('candidateGroupUnits filters manually disabled units', () => {
+        const unit = makeUnit({ entryOverrides: { disabledModels: ['gpt-4o'], mappings: [{ id: 'm1', realModel: 'gpt-4o', logicalModelId: 'l1' }], fetchedModels: ['gpt-4o'] } });
+        const vendors = [unit.vendor];
+        const group = normalizeGroup({ id: 'g1', currentLogicalModelId: 'lm1', entries: [unit.entry] });
+        expect(candidateGroupUnits(vendors, group, 'lm1')).toHaveLength(0);
+    });
+});

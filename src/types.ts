@@ -137,6 +137,8 @@ export interface GroupEntry {
     cooldownMultiplierByModel?: Record<string, number>;
     /** 记录最近一次失败消息（截断），诊断展示用（持久化）。 */
     lastErrorByRealModel?: Record<string, string>;
+    /** 手动禁用的真实模型（不参与路由；可逆）。 */
+    disabledModels?: string[];
 }
 
 /** Group（功能分组）：全局使用环境，持有当前逻辑模型和 Vendor + Key 条目。 */

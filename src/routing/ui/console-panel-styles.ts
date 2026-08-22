@@ -302,6 +302,20 @@ export function ensureConsolePanelStyles(): void {
         .csl-mapping-ignore-pill--auto { border-style: dashed; color: var(--csl-text-dim); }
         .csl-mapping-unignore { cursor: pointer; opacity: 0.6; }
         .csl-mapping-unignore:hover { opacity: 1; color: var(--csl-text); }
+        /* ── 观测筛选 chips ── */
+        .csl-obs-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+        .csl-obs-chip {
+            font-size: 10px; padding: 1px 8px; border-radius: 8px;
+            border: 1px solid var(--csl-border-strong); color: var(--csl-text-dim);
+            cursor: pointer; user-select: none;
+            transition: color 0.12s, border-color 0.12s, background 0.12s;
+        }
+        .csl-obs-chip:hover { color: var(--csl-text); border-color: var(--csl-accent); }
+        .csl-obs-chip.is-active { color: #fff; background: var(--csl-accent); border-color: var(--csl-accent); }
+        .csl-obs-sep { width: 1px; height: 12px; background: var(--csl-border-strong); margin: 0 2px; }
+
+        /* ── 手动禁用胶囊 ── */
+        .csl-health--manual { border-color: rgba(154, 160, 170, 0.6); color: var(--csl-text-dim); background: rgba(154, 160, 170, 0.1); }
         .csl-mapping-preview { font-size: 12px; color: var(--csl-text-dim); padding: 4px 0; }
         .csl-mapping-hint { font-size: 11px; color: var(--csl-text-faint); margin-top: 8px; }
 

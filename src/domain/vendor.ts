@@ -196,6 +196,9 @@ export function reconcileEntryMappings(entry: GroupEntry, models: string[]): num
     for (const mapping of entry.mappings) kept.add(mapping.realModel);
     // 健康记录按 realModel 键控：模型消失后其键不再有意义，随映射收敛一并清扫，避免设置 JSON 无界增长
     const healthMaps = [entry.failStreakByModel, entry.circuitsByModel, entry.cooldownMultiplierByModel, entry.lastErrorByRealModel, entry.lastErrorKindByModel];
+    if (entry.disabledModels?.length) {
+        entry.disabledModels = entry.disabledModels.filter(model => kept.has(model));
+    }
     for (const map of healthMaps) {
         if (!map) continue;
         for (const key of Object.keys(map)) {
@@ -804,6 +807,7 @@ export function normalizeGroupEntry(raw: Record<string, any> | undefined): Group
         lastErrorKindByModel: normalizeErrorKindMap(raw?.lastErrorKindByModel),
         cooldownMultiplierByModel: normalizeStringNumberMap(raw?.cooldownMultiplierByModel),
         lastErrorByRealModel: normalizeStringStringMap(raw?.lastErrorByRealModel),
+        disabledModels: normalizeModelList(raw?.disabledModels),
     };
 }
 

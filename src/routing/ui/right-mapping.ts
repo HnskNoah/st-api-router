@@ -32,7 +32,7 @@ export function renderRightMapping(
 
     // ── 一键归类按钮 ──
     const topBar = $('<div class="csl-mapping-topbar"></div>');
-    const oneClickBtn = $('<button class="menu_button" type="button" title="按核心名一键归类所有未映射真实模型，跳过特殊变体"><i class="fa-solid fa-wand-magic-sparkles"></i><span>一键归类全部</span></button>')
+    const oneClickBtn = $('<button class="csl-btn csl-btn--primary" type="button" title="按核心名一键归类所有未映射真实模型，跳过特殊变体"><i class="fa-solid fa-wand-magic-sparkles"></i><span>一键归类全部</span></button>')
         .on('click', () => {
             const allModels: string[] = [];
             for (const group of groups()) {
@@ -90,7 +90,7 @@ export function renderRightMapping(
             unmappedList.append(row);
         }
     };
-    const unmappedToggle = $('<button class="menu_button" type="button" style="margin-top:6px"><span>显示未归类模型</span></button>')
+    const unmappedToggle = $('<button class="csl-btn csl-btn--secondary" type="button" style="margin-top:6px"><span>显示未归类模型</span></button>')
         .on('click', function () {
             unmappedVisible = !unmappedVisible;
             $(this).find('span').text(unmappedVisible ? '隐藏未归类模型' : '显示未归类模型');
@@ -115,7 +115,7 @@ export function renderRightMapping(
     renderRules(ruleList);
     ruleSection.append(ruleList);
 
-    const addRuleBtn = $('<button class="menu_button" type="button" style="margin-top:6px"><i class="fa-solid fa-plus"></i><span>添加规则</span></button>')
+    const addRuleBtn = $('<button class="csl-btn csl-btn--secondary" type="button" style="margin-top:6px"><i class="fa-solid fa-plus"></i><span>添加规则</span></button>')
         .on('click', () => {
             openRuleEditor(null, () => renderRules(ruleList));
         });
@@ -164,7 +164,7 @@ export function renderRightMapping(
             ignoreList.append(manualWrap);
         }
     };
-    const toggleIgnoreBtn = $('<button class="menu_button" type="button" style="margin-top:6px"><span>显示忽略清单</span></button>')
+    const toggleIgnoreBtn = $('<button class="csl-btn csl-btn--secondary" type="button" style="margin-top:6px"><span>显示忽略清单</span></button>')
         .on('click', function () {
             ignoreVisible = !ignoreVisible;
             $(this).find('span').text(ignoreVisible ? '隐藏忽略清单' : '显示忽略清单');
@@ -196,15 +196,15 @@ function renderRules(ruleList: JQuery<HTMLElement>): void {
         const targetName = logicalModels().find(m => m.id === rule.logicalModelId)?.name || '(已删除)';
         row.append($('<span class="csl-mapping-rule-target">').text(`→ ${targetName}`));
         const acts = $('<div class="csl-mapping-rule-actions"></div>');
-        const reapply = $('<button class="menu_button" type="button" title="立即按此规则重新映射"><i class="fa-solid fa-bolt"></i></button>').on('click', () => {
+        const reapply = $('<button class="csl-btn csl-btn--icon" type="button" title="立即按此规则重新映射"><i class="fa-solid fa-bolt"></i></button>').on('click', () => {
             const touched = applyMappingRule(groups(), rule);
             saveSettingsNow();
             toastr.success(`规则「/${rule.pattern}/i」已应用，更新 ${touched} 条映射。`);
         });
-        const edit = $('<button class="menu_button" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button>').on('click', () => {
+        const edit = $('<button class="csl-btn csl-btn--icon" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button>').on('click', () => {
             openRuleEditor(rule, () => renderRules(ruleList));
         });
-        const remove = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除规则"><i class="fa-solid fa-trash"></i></button>').on('click', async () => {
+        const remove = $('<button class="csl-btn csl-btn--icon csl-btn--danger" type="button" title="删除规则"><i class="fa-solid fa-trash"></i></button>').on('click', async () => {
             const confirmed = await Popup.show.confirm('删除规则', `删除规则「/${rule.pattern}/i」？已建立的映射不会被撤销。`);
             if (!confirmed) return;
             const rulesArr = mappingRules();

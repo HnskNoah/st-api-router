@@ -42,8 +42,9 @@ export function levelDot(level: 'ok' | 'warn' | 'error' | 'empty'): string {
 
 // ── 健康判断 ──
 
-export function routeHealth(unit: GroupRouteUnit, now: number): { state: 'healthy' | 'cooldown' | 'disabled'; remaining?: number } {
+export function routeHealth(unit: GroupRouteUnit, now: number): { state: 'healthy' | 'cooldown' | 'disabled' | 'manual-disabled'; remaining?: number } {
     if (unit.vendor.enabled === false || unit.entry.enabled === false) return { state: 'disabled' };
+    if (unit.entry.disabledModels?.includes(unit.realModel)) return { state: 'manual-disabled' };
     if (isModelInCooldown(unit.entry, unit.realModel, now)) {
         const until = unit.entry.circuitsByModel?.[unit.realModel] ?? 0;
         return { state: 'cooldown', remaining: Math.max(0, until - now) };

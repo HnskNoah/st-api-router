@@ -256,7 +256,11 @@ export function renderRightVendor(
                         const kind = entry.lastErrorKindByModel?.[realModel];
                         let cls = 'csl-health--healthy csl-health--muted';
                         let label = '';
-                        if (kind === 'fatal' && isCooling) {
+                        const manuallyOff = entry.disabledModels?.includes(realModel) ?? false;
+                        if (manuallyOff) {
+                            cls = 'csl-health--manual';
+                            label = '手动禁用';
+                        } else if (kind === 'fatal' && isCooling) {
                             cls = 'csl-health--fatal';
                             label = `不可恢复 ${formatCooldownMs(remainingMs)}`;
                         } else if (isCooling) {
@@ -268,7 +272,19 @@ export function renderRightVendor(
                         pill.append($('<span class="csl-health-pill-model">').text(realModel));
                         if (label) pill.append($('<span class="csl-health-pill-state">').text(label));
                         pill.prop('title', `${realModel}${label ? `：${label}` : '（正常）'}`);
-                        if (isCooling) {
+                        if (manuallyOff) {
+                            const enableBtn = $('<span class="csl-health-reset" title="重新启用"><i class="fa-solid fa-rotate-left"></i></span>')
+                                .on('click', () => {
+                                    const list = entry.disabledModels ??= [];
+                                    const idx = list.indexOf(realModel);
+                                    if (idx >= 0) list.splice(idx, 1);
+                                    saveSettingsNow();
+                                    renderRightVendor(rightEl, onRefreshDashboard);
+                                    onRefreshDashboard();
+                                    toastr.success(`已重新启用「${realModel}」。`);
+                                });
+                            pill.append(enableBtn);
+                        } else if (isCooling) {
                             const resetBtn = $('<span class="csl-health-reset" title="手动恢复"><i class="fa-solid fa-rotate-left"></i></span>')
                                 .on('click', async () => {
                                     const confirmed = await Popup.show.confirm('手动恢复', `确定手动恢复「${realModel}」的冷却？`);
