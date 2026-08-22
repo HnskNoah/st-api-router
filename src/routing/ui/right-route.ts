@@ -257,7 +257,7 @@ function openGroupEditor(group: Group, onRefreshDashboard: () => void, onRefresh
                 $(this).val(entry.weight);
             });
             enabled.on('change', function () { entry.enabled = $(this).prop('checked'); });
-            const removeBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
+            const removeBtn = $('<button class="csl-btn csl-btn--icon csl-btn--danger" type="button" title="删除条目"><i class="fa-solid fa-trash"></i></button>')
                 .on('click', () => {
                     draft.entries = draft.entries.filter(item => item.id !== entry.id);
                     renderEntries();
@@ -267,7 +267,7 @@ function openGroupEditor(group: Group, onRefreshDashboard: () => void, onRefresh
         }
     };
     renderEntries();
-    const addEntryBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>添加 Vendor + Key</span></button>')
+    const addEntryBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-plus"></i><span>添加 Vendor + Key</span></button>')
         .on('click', () => {
             draft.entries.push({ id: makeId('group-entry'), vendorId: '', apiKey: '', label: 'Key', enabled: true, weight: 1, fetchedModels: [], mappings: [] });
             renderEntries();

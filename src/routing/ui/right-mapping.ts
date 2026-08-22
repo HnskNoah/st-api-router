@@ -137,11 +137,15 @@ export function renderRightMapping(
     const unmappedHead = $('<button class="csl-btn csl-btn--secondary csl-mapping-fold-head" type="button"></button>');
     unmappedHead.on('click', () => {
         unmappedOpen = !unmappedOpen;
-        if (unmappedOpen) renderUnmapped();
-        unmappedList.toggle(unmappedOpen);
-        renderUnmapped();
+        if (unmappedOpen) {
+            renderUnmapped();
+            unmappedList.show();
+        } else {
+            unmappedList.hide();
+        }
+        const models = findUnmappedModels(groups());
+        unmappedHead.html(`<i class="fa-solid ${unmappedOpen ? 'fa-chevron-down' : 'fa-chevron-right'}"></i><span>${unmappedOpen ? `收起未归类模型（${models.length}）` : '显示未归类模型'}</span>`);
     });
-    renderUnmapped();
     unmappedList.hide();
     unmappedSection.append(unmappedHead, unmappedList);
     rightEl.append(unmappedSection);
