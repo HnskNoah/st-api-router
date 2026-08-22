@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeQuickAction, normalizeQuickActionsForPersist, resolveLogicalModelForAction } from '../src/domain/quick-action.js';
+import { normalizeQuickAction, normalizeQuickActionPlacement, normalizeQuickActionsForPersist, quickActionDisplayName, resolveLogicalModelForAction } from '../src/domain/quick-action.js';
 import { normalizeLogicalModels } from '../src/domain/vendor.js';
 
 function sampleLogicalModels() {
@@ -38,6 +38,24 @@ describe('quick-action normalizeQuickAction', () => {
         expect(action.sequence).toBe(3);
         expect('profileId' in action).toBe(false);
     });
+    it('caps preset/model at 500 chars', () => {
+        expect(normalizeQuickAction({ preset: 'x'.repeat(600) }).preset).toHaveLength(500);
+        expect(normalizeQuickAction({ model: 'y'.repeat(600) }).model).toHaveLength(500);
+    });
+
+    it('normalizeQuickActionPlacement validates and defaults to rightSendForm', () => {
+        expect(normalizeQuickActionPlacement('leftSendForm')).toBe('leftSendForm');
+        expect(normalizeQuickActionPlacement('rightSendForm')).toBe('rightSendForm');
+        expect(normalizeQuickActionPlacement('qrButtons')).toBe('qrButtons');
+        expect(normalizeQuickActionPlacement('disabled')).toBe('disabled');
+        expect(normalizeQuickActionPlacement('bogus')).toBe('rightSendForm');
+        expect(normalizeQuickActionPlacement(undefined)).toBe('rightSendForm');
+    });
+
+    it('quickActionDisplayName falls back to index-based name', () => {
+        expect(quickActionDisplayName({ name: 'My QA' }, 0)).toBe('My QA');
+        expect(quickActionDisplayName({ name: '' }, 2)).toBe('方案3');
+    });
 });
 
 describe('quick-action normalizeQuickActionsForPersist 自动保存规范化', () => {
@@ -64,6 +82,12 @@ describe('quick-action resolveLogicalModelForAction', () => {
     it('matches by logical model id', () => {
         const models = sampleLogicalModels();
         expect(resolveLogicalModelForAction('lm-grok-4.5', models)?.id).toBe('lm-grok-4.5');
+    });
+
+    it('matches trimmed ids but not case-differing names', () => {
+        const models = sampleLogicalModels();
+        expect(resolveLogicalModelForAction('  lm-grok-4.5  ', models)?.id).toBe('lm-grok-4.5');
+        expect(resolveLogicalModelForAction('grok-4.5', models)).toBeNull();
     });
 
     it('matches by logical model name', () => {

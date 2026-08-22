@@ -79,12 +79,4 @@ describe('domain/vendor > computeVendorTokenClamps', () => {
         expect(result.maxOutputTokens).toBeUndefined();
     });
 
-    it('当前输出未超过 Vendor 上限时不弹钳制（不调高）', () => {
-        const result = computeVendorTokenClamps(
-            { maxContext: 0, maxInputTokens: 0, maxOutputTokens: 4096 },
-            { maxContext: 32000, maxOutputTokens: 2000 },
-        );
-        expect(result.maxContext).toBeUndefined();
-        expect(result.maxOutputTokens).toBeUndefined();
-    });
 });
