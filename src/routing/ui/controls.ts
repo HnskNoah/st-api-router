@@ -27,16 +27,16 @@ export interface EditorDialogOptions {
 
 /** 打开一个带「保存/取消」按钮行的编辑弹窗，统一 Popup 生命周期。 */
 export function showEditorDialog(opts: EditorDialogOptions): Popup {
-    const saveBtn = $('<button class="menu_button quicker-api__save-button" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
-    const cancelBtn = $('<button class="menu_button" type="button"><span>取消</span></button>');
+    const saveBtn = $('<button class="csl-btn csl-btn--primary" type="button"><i class="fa-solid fa-floppy-disk"></i><span>保存</span></button>');
+    const cancelBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><span>取消</span></button>');
     // 按钮行：横向靠右布局，确保始终可见
     const actions = $('<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:12px"></div>').append(saveBtn);
 
     if (opts.extraActions) {
         for (const extra of opts.extraActions) {
-            const btn = $('<button class="menu_button" type="button"></button>')
+            const btn = $('<button class="csl-btn csl-btn--secondary" type="button"></button>')
                 .attr('title', extra.title ?? extra.label)
-                .toggleClass('quicker-api__delete-button', Boolean(extra.danger));
+                .toggleClass('csl-btn--danger', Boolean(extra.danger));
             if (extra.icon) btn.append($(`<i class="fa-solid ${extra.icon}"></i>`));
             btn.append($('<span>').text(extra.label));
             btn.on('click', async () => {
@@ -85,4 +85,9 @@ async function runSaveAction(fn: () => void | boolean | Promise<void | boolean>)
         toastr.error(error instanceof Error ? error.message : String(error));
         return false;
     }
+}
+
+/** 按钮加载态：异步操作期间禁点并旋转图标。 */
+export function setBtnLoading(btn: JQuery<HTMLElement>, loading: boolean): void {
+    btn.prop('disabled', loading).toggleClass('is-loading', loading);
 }

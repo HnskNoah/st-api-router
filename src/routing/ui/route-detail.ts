@@ -20,7 +20,7 @@ export function renderRouteDetail(
     const model = logicalModels().find(m => m.id === selectedLogicalId);
     const head = $('<div class="csl-detail-head"></div>').append(
         $('<span class="csl-detail-title">').text(model?.name ?? '路由详情'),
-        $('<button class="menu_button" type="button" title="关闭返回"><i class="fa-solid fa-xmark"></i></button>').on('click', () => { onClose(); }),
+        $('<button class="csl-btn csl-btn--icon" type="button" title="关闭返回"><i class="fa-solid fa-xmark"></i></button>').on('click', () => { onClose(); }),
     );
     detailEl.append(head);
     const status = modelStatus(selectedLogicalId);
@@ -56,7 +56,7 @@ export function renderRouteDetail(
         const stateText = h.state === 'healthy' ? '🟢' : h.state === 'cooldown' ? `🟡${remaining}` : '🔴';
         pill.append($('<span class="csl-route-state">').text(stateText));
         if (h.state === 'cooldown' || h.state === 'disabled') {
-            const resetBtn = $('<button class="menu_button" type="button" title="手动恢复该模型"><i class="fa-solid fa-rotate-left"></i></button>')
+            const resetBtn = $('<button class="csl-btn csl-btn--secondary" type="button" title="手动恢复该模型"><i class="fa-solid fa-rotate-left"></i></button>')
                 .on('click', () => {
                     if (h.state === 'cooldown') {
                         if (unit.entry.circuitsByModel) delete unit.entry.circuitsByModel[unit.realModel];

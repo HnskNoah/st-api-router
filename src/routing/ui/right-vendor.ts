@@ -35,7 +35,7 @@ export function renderRightVendor(
 
     // ── 批量刷新全部 Vendor 模型 ──
     const batchBar = $('<div class="csl-vendor-batch" style="display:flex;gap:4px;margin-bottom:6px"></div>');
-    const batchBtn = $('<button class="menu_button" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表"><i class="fa-solid fa-arrows-rotate"></i><span>刷新全部模型</span></button>')
+    const batchBtn = $('<button class="csl-btn csl-btn--primary" type="button" title="用各 Vendor 已配置的 Key 重新拉取模型并刷新列表"><i class="fa-solid fa-arrows-rotate"></i><span>刷新全部模型</span></button>')
         .on('click', async () => {
             const vendorList = vendors();
             if (vendorList.length === 0) {
@@ -47,14 +47,17 @@ export function renderRightVendor(
             try {
                 let ok = 0, skipped = 0;
                 const failed: string[] = [];
-                for (const v of vendorList) {
+                for (let index = 0; index < vendorList.length; index++) {
+                    const v = vendorList[index];
+                    batchBtn.find('span').text(`刷新中 ${index + 1}/${vendorList.length}…`);
                     const localGroup = activeGroup();
                     const entry = localGroup?.entries.find(e => e.vendorId === v.id && e.apiKey && e.enabled);
                     if (!entry) { skipped++; continue; }
-                    const result = await fetchModelsForVendor(v, entry);
+                    const result = await fetchModelsForVendor(v, entry, { quiet: true });
                     if (result) ok++;
-                    else failed.push(v.name);
-                    await new Promise(r => setTimeout(r, 100));
+                    const { promise: pause, resolve: resume } = Promise.withResolvers<void>();
+                    setTimeout(resume, 100);
+                    await pause;
                 }
                 saveSettingsNow();
                 renderRightVendor(rightEl, onRefreshDashboard);
@@ -137,12 +140,11 @@ export function renderRightVendor(
 
         // 操作按钮
         const actions = $('<span class="csl-vendor-actions"></span>');
-        const editBtn = $('<button class="menu_button" type="button" title="编辑 Vendor"><i class="fa-solid fa-pen"></i></button>')
+        const editBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="编辑 Vendor"><i class="fa-solid fa-pen"></i></button>')
             .on('click', () => { openVendorEditor(vendor, () => { renderRightVendor(rightEl, onRefreshDashboard); onRefreshDashboard(); }); });
         actions.append(editBtn);
-
         if (vendor.enabled) {
-            const fetchBtn = $('<button class="menu_button" type="button" title="拉取模型"><i class="fa-solid fa-arrows-rotate"></i></button>')
+            const fetchBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="拉取模型"><i class="fa-solid fa-arrows-rotate"></i></button>')
                 .on('click', async () => {
                     const btn = fetchBtn;
                     btn.prop('disabled', true);
@@ -209,7 +211,7 @@ export function renderRightVendor(
                     });
                 keyRow.append(keyInput);
 
-                const fetchBtn = $('<button class="menu_button" type="button" title="使用此 Key 拉取模型"><i class="fa-solid fa-arrows-rotate"></i></button>')
+                const fetchBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="使用此 Key 拉取模型"><i class="fa-solid fa-arrows-rotate"></i></button>')
                     .on('click', async () => {
                         if (!entry.apiKey) {
                             toastr.warning('请先填入该 Key。');
@@ -229,7 +231,7 @@ export function renderRightVendor(
                     });
                 keyRow.append(fetchBtn);
                 // 删除 Key
-                const delBtn = $('<button class="menu_button quicker-api__delete-button" type="button" title="删除该 Key"><i class="fa-solid fa-trash"></i></button>')
+                const delBtn = $('<button class="csl-btn csl-btn--icon csl-btn--danger" type="button" title="删除该 Key"><i class="fa-solid fa-trash"></i></button>')
                     .on('click', async () => {
                         const confirmed = await Popup.show.confirm('删除 Key', `删除 Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）？`);
                         if (!confirmed || !group) return;
@@ -301,7 +303,7 @@ export function renderRightVendor(
             }
             // 添加 Key 入口（追加 GroupEntry 到当前分组该 Vendor 下）
             const addKeyWrap = $('<div class="csl-vendor-add-wrap" style="padding:4px 0 0"></div>');
-            const addKeyBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>添加 Key</span></button>')
+            const addKeyBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-plus"></i><span>添加 Key</span></button>')
                 .on('click', () => {
                     if (!group) { toastr.warning('当前没有分组。'); return; }
                     const entry = normalizeGroupEntry({
@@ -327,7 +329,7 @@ export function renderRightVendor(
 
 function renderAddVendorBtn(onRefreshDashboard: () => void): JQuery<HTMLElement> {
     const wrap = $('<div class="csl-vendor-add-wrap"></div>');
-    const addBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>')
+    const addBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-plus"></i><span>新增 Vendor</span></button>')
         .on('click', () => {
             const content = $('<div></div>');
             const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="如：硅基流动 / OpenRouter">');
@@ -406,7 +408,7 @@ function openVendorEditor(vendor: Vendor, onDone: () => void): void {
     });
 }
 
-export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): Promise<string[] | null> {
+export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry, opts: { quiet?: boolean } = {}): Promise<string[] | null> {
     const key = entry.apiKey;
     const isDeepseek = vendor.format === 'deepseek';
     const secretKey = isDeepseek ? SECRET_KEYS.DEEPSEEK : SECRET_KEYS.CUSTOM;
@@ -419,6 +421,11 @@ export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): P
         if (key && (!secretId || !existingIds.has(secretId))) {
             secretId = await writeSecret(secretKey, key, `quicker-api:${vendor.name}`);
             if (secretId) entry.secretId = secretId;
+        }
+        if (!secretId) {
+            // 不带 secret_id 的 status 请求会让服务端回退到「当前活动密钥」，可能把原生 Key 泄给该端点
+            if (!opts.quiet) toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）无法写入或定位 secret（密钥为空或写入失败），已取消拉取。`);
+            return null;
         }
         const statusBody: Record<string, any> = {
             chat_completion_source: isDeepseek ? 'deepseek' : 'custom',
@@ -454,7 +461,7 @@ export async function fetchModelsForVendor(vendor: Vendor, entry: GroupEntry): P
     } catch (error) {
         console.error('[QuickerApi] fetch vendor models failed:', error);
         const message = error instanceof Error ? error.message : String(error);
-        toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）获取模型失败：${message}。`);
+        if (!opts.quiet) toastr.error(`Key「${entry.label || 'Key'}」（Vendor「${vendor.name}」）获取模型失败：${message}。`);
         return null;
     } finally {
         if (previousActiveId) {

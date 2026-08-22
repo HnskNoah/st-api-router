@@ -93,6 +93,18 @@ export function cslCheckbox(value: boolean, onChange: (v: boolean) => void): JQu
     return $('<input type="checkbox">').prop('checked', value).on('change', function () { onChange($(this).prop('checked')); });
 }
 
-export function cslNumber(value: number, onChange: (v: number) => void): JQuery<HTMLElement> {
-    return $('<input class="text_pole csl-num" type="number" min="0" step="1">').val(value).on('change', function () { onChange(Number($(this).val()) || 0); });
+export function cslNumber(value: number, onChange: (v: number) => void, opts: { min?: number; max?: number } = {}): JQuery<HTMLElement> {
+    const min = opts.min ?? 0;
+    const max = opts.max;
+    return $('<input class="text_pole csl-num" type="number">')
+        .attr('min', String(min))
+        .attr('max', max === undefined ? 'any' : String(max))
+        .val(value)
+        .on('change', function () {
+            let next = Number($(this).val());
+            if (!Number.isFinite(next)) next = min;
+            next = Math.max(min, max === undefined ? next : Math.min(max, next));
+            $(this).val(next);
+            onChange(next);
+        });
 }

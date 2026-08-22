@@ -81,8 +81,7 @@ ST 侧栏空间金贵，路由配置的复杂度不该挤在里面。改为**点
 - 🟢 正常 / 🟡 有降级 / 🔴 不可用 / ⚪ 未配置
 - 不强迫理解 Vendor/Key/Mapping 概念即可用
 
-**实现状态**：✅ 基础版已实现（`dashboard.ts`），缺「最优路由摘要」行。
-**目标**：补全 `modelStatus().best` 到每行副标题。
+**实现状态**：✅ 已实现（`dashboard.ts`）——每行副标题即最优路由摘要（`modelStatus().best` 的 Vendor · Key · 真实模型），冷却中显示剩余时长。
 
 ### 2.2 中栏：路由详情（选中逻辑模型后展开）
 
@@ -139,10 +138,11 @@ ST 侧栏空间金贵，路由配置的复杂度不该挤在里面。改为**点
 ```
 
 **实现状态**：
-- ✅ 设置 tab（`right-settings.ts`）— 已有
-- ⚠️ Vendor tab（`right-vendor.ts`）— 已有，缺成功率进度条
-- ⚠️ 路由 tab（`right-route.ts`）— 已有，缺分组切换下拉
-- ❌ 映射 tab — 未创建，需从旧面板 `ui.ts` 搬映射区
+- ✅ 设置 tab（路由参数 + 分组切换下拉 + 模型管理 + 数据管理 + 映射规则/忽略，`right-route.ts` + `right-mapping.ts`）
+- ✅ Vendor tab（含成功率进度条，`right-vendor.ts`）
+- ✅ 旧面板 `ui.ts` 已删除，功能全部并入新控制台
+
+> 注：原规划的 4 tab 已收敛为 3 区（设置 = 路由+映射合并；见 §8.5）。
 
 ---
 
@@ -372,3 +372,48 @@ dashboard 排序：当前分组选中的逻辑模型置顶 + `is-current` 高亮
 - **手机端底部面板**：初版已实现（`console-panel-mobile.ts`）；待做：拖拽手势、分组隐藏、Vendor 大表单改弹窗
 - **日志增强**：已实现 debug 时 `installFetchLogging`（记 /secrets/status/generate/models 请求）
 
+---
+
+## 9. 视觉与交互系统 v2（2026-08 第二次重做）
+
+> 用户决策：统一深色卡片风（自包含设计令牌）；三级按钮体系；控制台全量重做。
+> 实现：`console-panel-styles.ts` 全量重写（设计令牌 + 按钮体系），各渲染器替换按钮类名。
+
+### 9.1 设计令牌（挂在 `.csl-overlay` / `.qam-overlay` 根上）
+
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `--csl-bg` | `#16181d` | 面板底 |
+| `--csl-card` / `--csl-card-hover` | `#1e2128` / `#23262e` | 卡片/悬停面 |
+| `--csl-border` / `--csl-border-strong` | `rgba(255,255,255,.06)` / `.12` | 描边两级 |
+| `--csl-text` / `--csl-text-dim` / `--csl-text-faint` | `#e8eaee` / `#9aa0aa` / `#6b7078` | 文字三级 |
+| `--csl-accent` | `#5b9bd5` | 主色/选中 |
+| `--csl-ok` / `--csl-warn` / `--csl-danger` | `#7ecf8a` / `#e0c07e` / `#e08a8a` | 健康三色 |
+| `--csl-radius` | `10px` | 圆角基准 |
+
+### 9.2 三级按钮体系（`.csl-btn`）
+
+| 类 | 用途 | 形态 |
+|---|---|---|
+| `--primary` | 每个区域唯一主操作 | accent 实底白字 |
+| `--secondary` | 常规操作 | card 底 + strong 描边 |
+| `--icon` | 高频小操作 | ghost，tooltip 说明 |
+| `--danger` | 破坏性操作 | 红描边，hover 红实底 |
+| `[disabled]` / `.is-loading` | 异步进行中 | 半透明 + 图标旋转 |
+
+规则：每个卡片/区块最多一个 primary；异步按钮点击即进入 loading 态（禁点+转圈），完成恢复。
+旧 `menu_button` 在控制台内全部替换；quick-actions 菜单保持独立视觉（用户既定决策）。
+
+### 9.3 交互修复清单（随本次重做落地）
+
+1. 导入配置：解析后弹摘要确认（合入数量 + 是否覆盖设置），不再选完文件直接覆盖。
+2. 批量刷新：按钮实时显示「刷新中 i/N」；单个失败不再双份 toast（quiet 参数抑制内部报错）。
+3. `cslNumber` 支持 min/max 钳制并回写显示；阈值类字段带取值提示。
+4. 「重置模型数据」确认文案修正（实际不自动重新拉取）。
+5. 「从已拉取模型创建」执行前弹确认（该操作含 prune 回收副作用）。
+6. 拉取模型路径的 secretId 回退漏洞修复（同 B9：写 secret 失败即取消拉取，不带空 id 打 status）。
+
+### 9.4 刻意不做（v2 补充）
+
+- ❌ 引入 CSS 框架/构建期样式方案（运行时注入字符串即可，保持零依赖）
+- ❌ 亮色主题适配（ST 使用场景以深色皮肤为主，令牌集中后续可加）

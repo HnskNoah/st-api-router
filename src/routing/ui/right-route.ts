@@ -63,23 +63,23 @@ export function renderRightRoute(
     rows.append(cslField('保持同一 Vendor（次）', cslNumber(routing.stickyCount, v => {
         routing.stickyCount = v;
         saveSettingsNow();
-    })));
+    }, { min: 0, max: 10 })));
     rows.append(cslField('失败阈值', cslNumber(routing.failThreshold, v => {
         routing.failThreshold = v;
         saveSettingsNow();
-    })));
+    }, { min: 1, max: 20 }), '连续失败多少次进入冷却；≥1'));
     rows.append(cslField('冷却时间（秒）', cslNumber(routing.cooldownSeconds, v => {
         routing.cooldownSeconds = v;
         saveSettingsNow();
-    })));
+    }, { min: 1, max: 86400 }), '≥1'));
     rows.append(cslField('自动重试次数', cslNumber(routing.autoRetryCount, v => {
         routing.autoRetryCount = v;
         saveSettingsNow();
-    }), '失败或空回复时自动换路由重试（每次附加 0～500ms 随机抖动）；0 = 关闭，达到次数后停止'));
+    }, { min: 0, max: 10 }), '失败或空回复时自动换路由重试（每次附加 0～500ms 随机抖动）；0 = 关闭，达到次数后停止'));
     rows.append(cslField('重试延迟（毫秒）', cslNumber(routing.autoRetryDelayMs, v => {
         routing.autoRetryDelayMs = v;
         saveSettingsNow();
-    }), '失败后等待该时长再触发重试（附加 0～500ms 抖动）；等待期间若出现自动生成（群聊自动模式/脚本），会直接接管本次重试'));
+    }, { min: 0, max: 60000 }), '失败后等待该时长再触发重试（附加 0～500ms 抖动）；等待期间若出现自动生成（群聊自动模式/脚本），会直接接管本次重试'));
 
     // 分组选择
     const group = activeGroup();
@@ -87,7 +87,7 @@ export function renderRightRoute(
         rows.append($('<div class="csl-section-title">').text('当前分组'));
         const groupRow = $('<div class="csl-field"></div>');
         groupRow.append($('<span class="csl-field-label">').text(group.name));
-        const editGroupBtn = $('<button class="menu_button" type="button" title="编辑分组"><i class="fa-solid fa-pen"></i></button>')
+        const editGroupBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="编辑分组"><i class="fa-solid fa-pen"></i></button>')
             .on('click', () => openGroupEditor(group, onRefreshDashboard, onRefreshVendor));
         groupRow.append(editGroupBtn);
         rows.append(groupRow);
@@ -96,7 +96,7 @@ export function renderRightRoute(
     // 模型管理（批量刷新已移到 Vendor 标签页顶部）
     rows.append($('<div class="csl-section-title">').text('模型管理'));
     const modelRow = $('<div class="csl-field" style="gap:4px"></div>');
-    const buildLogicalBtn = $('<button class="menu_button" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>')
+        const buildLogicalBtn = $('<button class="csl-btn csl-btn--primary" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>')
         .on('click', () => {
             const allModels: string[] = [];
             for (const g of groups()) {
@@ -108,6 +108,7 @@ export function renderRightRoute(
                 toastr.info('还没有已拉取的模型。先在 Vendor 标签页拉取模型，再回来创建逻辑模型。');
                 return;
             }
+            if (!window.confirm(`将为 ${allModels.length} 个已拉取模型创建/归并逻辑模型，并重新应用映射规则、回收未引用的孤儿逻辑模型。继续？`)) return;
             const { created, skipped, mapped, rebuilt } = buildLogicalModelsFromFetched(allModels, logicalModels(), groups());
             const reapplied = applyMappingRules(groups(), mappingRules());
             const pruned = pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
@@ -126,7 +127,7 @@ export function renderRightRoute(
             if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 个特殊变体`);
             toastr.success(`${parts.join('，')}。`);
         });
-    const addLogicalBtn = $('<button class="menu_button" type="button" title="手动添加逻辑模型"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>')
+    const addLogicalBtn = $('<button class="csl-btn csl-btn--secondary" type="button" title="手动添加逻辑模型"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>')
         .on('click', () => {
             const content = $('<div class="csl-editor"></div>');
             const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="逻辑模型名称，如：DeepSeek 系">');
@@ -155,20 +156,20 @@ export function renderRightRoute(
     // 数据管理
     rows.append($('<div class="csl-section-title">').text('数据管理'));
     const exportRow = $('<div class="csl-field" style="gap:4px"></div>');
-    const exportBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-file-export"></i><span>导出</span></button>')
+    const exportBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-export"></i><span>导出</span></button>')
         .on('click', () => exportData());
-    const importBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-file-import"></i><span>导入</span></button>')
+    const importBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-import"></i><span>导入</span></button>')
         .on('click', () => importData(onRefreshDashboard, onRefreshVendor));
-    const exportModelsBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>')
+    const exportModelsBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>')
         .on('click', () => exportModelList());
-    const exportLogBtn = $('<button class="menu_button" type="button"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>')
+    const exportLogBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>')
         .on('click', () => exportDebugLog());
     exportRow.append(exportBtn, importBtn, exportModelsBtn, exportLogBtn);
     rows.append(exportRow);
 
     // 危险操作
     const dangerRow = $('<div class="csl-field" style="gap:4px"></div>');
-    const resetBtn = $('<button class="menu_button" type="button" style="color:var(--quicker-api-danger)"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>')
+    const resetBtn = $('<button class="csl-btn csl-btn--danger" type="button"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>')
         .on('click', async () => {
             const vendorsData = vendors();
             const logicalCount = logicalModels().length;
@@ -178,7 +179,7 @@ export function renderRightRoute(
             }
             const confirmed = await Popup.show.confirm(
                 '重置模型数据',
-                `将删除全部逻辑模型（${logicalCount} 个）、所有 Key 的模型映射与已拉取列表，然后重新拉取重建。此操作不可撤销，确定继续？`,
+                `将删除全部逻辑模型（${logicalCount} 个）、所有 Key 的模型映射与已拉取列表。此操作不可撤销，确定继续？`,
             );
             if (!confirmed) return;
             const stats = resetModelData(logicalModels(), groups());
@@ -187,7 +188,7 @@ export function renderRightRoute(
             onRefreshDashboard();
             toastr.success(`已删除 ${stats.removedLogicalModels} 个逻辑模型、${stats.removedMappings} 条映射。`);
         });
-    const clearSecretsBtn = $('<button class="menu_button" type="button" style="color:var(--quicker-api-danger)"><i class="fa-solid fa-trash"></i><span>清除 ST secret</span></button>')
+    const clearSecretsBtn = $('<button class="csl-btn csl-btn--danger" type="button"><i class="fa-solid fa-trash"></i><span>清除 ST secret</span></button>')
         .on('click', async () => {
             const confirmed = await Popup.show.confirm(
                 '清除 ST secret',
@@ -240,12 +241,31 @@ function importData(onRefreshDashboard: () => void, onRefreshVendor: () => void)
     input.on('change', async function () {
         const file = (this as HTMLInputElement).files?.[0];
         if (!file) return;
+        let parsed: any;
         try {
-            const text = await file.text();
-            const parsed = JSON.parse(text);
-            const importedVendors = Array.isArray(parsed?.vendors) ? parsed.vendors : [];
-            const importedLogicalModels = Array.isArray(parsed?.logicalModels) ? parsed.logicalModels : [];
-            const importedGroups = Array.isArray(parsed?.groups) ? parsed.groups : [];
+            parsed = JSON.parse(await file.text());
+        } catch (error) {
+            toastr.error(`导入失败：${error instanceof Error ? error.message : String(error)}。`);
+            return;
+        }
+        const importedVendors = Array.isArray(parsed?.vendors) ? parsed.vendors : [];
+        const importedLogicalModels = Array.isArray(parsed?.logicalModels) ? parsed.logicalModels : [];
+        const importedGroups = Array.isArray(parsed?.groups) ? parsed.groups : [];
+        if (importedVendors.length === 0 && importedLogicalModels.length === 0 && importedGroups.length === 0) {
+            toastr.warning('导入文件中没有 vendors/logicalModels/groups 数据，已取消。');
+            return;
+        }
+        const extras: string[] = [];
+        if (parsed?.routing && typeof parsed.routing === 'object') extras.push('覆盖当前路由设置');
+        if (typeof parsed?.activeGroupId === 'string') extras.push('切换当前分组');
+        const confirmed = await Popup.show.confirm(
+            '导入路由配置',
+            `将按 id 合并：Vendor ${importedVendors.length} 个、逻辑模型 ${importedLogicalModels.length} 个、分组 ${importedGroups.length} 个`
+            + (extras.length ? `；${extras.join('，')}` : '')
+            + '。确定继续？',
+        );
+        if (!confirmed) return;
+        try {
             const merged = mergeImportedRoutingConfig({
                 vendors: vendors(),
                 logicalModels: logicalModels(),
