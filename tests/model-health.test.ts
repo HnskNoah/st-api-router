@@ -62,6 +62,13 @@ describe('classifyModelFailureMessage', () => {
         expect(classifyModelFailureMessage('format error')).toBe('bad_request');
     });
 
+    it('does not let embedded digits shadow classes (anchored status codes)', () => {
+        expect(classifyModelFailureMessage('[API错误] 请求超时（timeout 40000ms）')).toBe('temp');
+        expect(classifyModelFailureMessage('request id: 20260822040312 gateway timeout')).toBe('temp');
+        expect(classifyModelFailureMessage('HTTP 400 bad request')).toBe('bad_request');
+        expect(classifyModelFailureMessage('HTTP 429 too many requests')).toBe('rate_limited');
+    });
+
     it('classifies temp: network errors', () => {
         expect(classifyModelFailureMessage('Failed to fetch')).toBe('temp');
         expect(classifyModelFailureMessage('Load failed')).toBe('temp');

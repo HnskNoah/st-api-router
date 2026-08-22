@@ -42,6 +42,8 @@ export interface RetryChain {
     excludedKeys(): string[];
     /** 失败/空回复后决策：可重试则排定下一次换路由（含上限与环境变化检查）。 */
     handleFailure(input: RetryFailureInput): void;
+    /** 插件拆卸时取消挂起重试并清链。 */
+    dispose(): void;
 }
 
 export function createRetryChain(deps: RetryChainDeps): RetryChain {
@@ -120,6 +122,11 @@ export function createRetryChain(deps: RetryChainDeps): RetryChain {
             toastr.info(`Quicker Api：${kindLabel}，${(delayMs / 1000).toFixed(1).replace(/\.0$/, '')}s 后自动换路由重试（${decision.attempt}/${routing.autoRetryCount}）。`);
             timer = window.setTimeout(() => {
                 timer = null;
+                if (!deps.getRouting().enabled || runtimeState.extensionDisabled) {
+                    debugLog('auto retry cancelled: routing disabled');
+                    reset();
+                    return;
+                }
                 if (deps.isUserStopPending()) {
                     debugLog('auto retry cancelled: user stop');
                     reset();
@@ -165,6 +172,7 @@ export function createRetryChain(deps: RetryChainDeps): RetryChain {
     return {
         consumeStart,
         reset,
+        dispose: () => reset(),
         count: () => count,
         isExcluded: unit => excluded.has(groupUnitKey(unit)),
         excludedKeys: () => [...excluded],

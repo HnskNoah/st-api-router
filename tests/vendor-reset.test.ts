@@ -2,7 +2,7 @@
 // 供"重置模型数据"按钮使用（重置后由前端重新拉取重建）。
 
 import { describe, expect, it } from 'vitest';
-import { resetModelData } from '../src/domain/vendor.js';
+import { pruneOrphanLogicalModels, resetModelData } from '../src/domain/vendor.js';
 import type { Group, LogicalModel } from '../src/types.js';
 
 function makeGroup(overrides: Partial<Group> = {}): Group {
@@ -60,5 +60,28 @@ describe('domain/vendor > resetModelData 重置模型数据', () => {
         expect(logicalModels).toEqual([]);
         expect(groups[0].entries[0].fetchedModels).toEqual([]);
         expect(result.removedMappings).toBe(0);
+    });
+});
+
+describe('domain/vendor > pruneOrphanLogicalModels 孤儿回收', () => {
+    it('仅被分组当前指针引用的逻辑模型不被回收', () => {
+        const logicalModels: LogicalModel[] = [
+            { id: 'l1', name: 'hand-picked', matchPattern: '' },
+            { id: 'l-orphan', name: 'orphan', matchPattern: '' },
+        ];
+        const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', [])] })];
+        groups[0].currentLogicalModelId = 'l1';
+        const removed = pruneOrphanLogicalModels(logicalModels, groups, []);
+        expect(removed).toEqual(['l-orphan']);
+        expect(logicalModels.map(model => model.id)).toEqual(['l1']);
+    });
+
+    it('无引用且非当前的逻辑模型仍被回收', () => {
+        const logicalModels: LogicalModel[] = [{ id: 'l-orphan', name: 'orphan', matchPattern: '' }];
+        const groups = [makeGroup({ entries: [makeEntry('e1', 'v1', [])] })];
+        groups[0].currentLogicalModelId = '';
+        const removed = pruneOrphanLogicalModels(logicalModels, groups, []);
+        expect(removed).toEqual(['l-orphan']);
+        expect(logicalModels).toHaveLength(0);
     });
 });

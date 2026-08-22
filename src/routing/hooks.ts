@@ -43,6 +43,7 @@ export interface RoutingHooks {
     onGenerationEnded(): void;
     getActiveUnit(): GroupRouteUnit | null;
     lockManualRoute(unit: GroupRouteUnit): void;
+    dispose(): void;
 }
 
 export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
@@ -131,6 +132,12 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             toastr.info(`Quicker Api：检测到自动生成，直接换路由重试（${retry.count()}/${deps.getRouting().autoRetryCount}）。`);
         }
         debugLog('onGenerationStarted retry context', { type, automaticTrigger, chainAction, retryCount: retry.count() });
+        // 新 STARTED 到场即证明上一轮生成未发 ENDED 就结束了（斜杠打断/早期抛错路径）：清掉残留 active，
+        // 否则它会持续劫持后续 CHAT_COMPLETION_SETTINGS_READY
+        if (state.active) {
+            debugLog('onGenerationStarted stale active cleared', { hadVendor: state.active.unit.vendor.name });
+            state.active = null;
+        }
         const groups = deps.getGroups();
         const activeGroup = groups.find(group => group.id === deps.getActiveGroupId()) || groups[0] || null;
         if (!activeGroup || !activeGroup.enabled) {
@@ -144,10 +151,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             return;
         }
         let unit: GroupRouteUnit | null = consumeManualLock(activeGroup, logicalModelId);
-        if (unit && retry.isExcluded(unit)) {
-            debugLog('onGenerationStarted manual lock excluded by retry chain', { key: groupUnitKey(unit) });
-            unit = null;
-        }
         if (!unit) {
             const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId, {
                 stickyCount: routing.stickyCount,
@@ -172,6 +175,11 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         });
 
         await ensureEntrySecret(unit);
+        if (unit.vendor.format !== 'deepseek' && !unit.entry.secretId) {
+            toastr.warning('Quicker Api：无法定位该 Key 的 secret，本次生成不经过路由。');
+            debugLog('route skipped: missing secretId', { vendorName: unit.vendor.name, entryLabel: unit.entry.label });
+            return;
+        }
 
         // token 限制确认并钳制（只改 oai_settings，不触发 reconnect）
         const clamps = computeVendorTokenClamps(unit.vendor, {
@@ -217,10 +225,18 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             debugLog('onChatCompletionSettingsReady skip: generation blocked by guard', {
                 source: generateData?.chat_completion_source,
             });
+            // 本次生成必被服务端拒绝：丢弃 active 路由并结算观察器，避免记账/重试链被本地阻断污染
+            state.active = null;
+            deps.endGeneration?.();
             return;
         }
         const active = state.active;
         if (active) {
+            const requestType = String(generateData?.type || 'normal');
+            if (requestType === 'quiet' || requestType === 'continue' || requestType === 'impersonate') {
+                debugLog('onChatCompletionSettingsReady skip: background type while active', { requestType });
+                return;
+            }
             patchGenerateData(generateData, active.unit, customParamsForUnit(active.unit));
             // 不写 oai_settings / 不触发连接（拦截模式，保持用户空占位连接状态仅 setOnlineStatus）
             const source = generateData.chat_completion_source;
@@ -281,6 +297,10 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             unit = result.unit;
         }
         await ensureEntrySecret(unit);
+        if (unit.vendor.format !== 'deepseek' && !unit.entry.secretId) {
+            debugLog('fallback route skipped: missing secretId', { vendorName: unit.vendor.name, entryLabel: unit.entry.label });
+            return;
+        }
         const clamps = computeVendorTokenClamps(unit.vendor, {
             maxContext: Number(oai_settings.openai_max_context) || 0,
             maxOutputTokens: Number(oai_settings.openai_max_tokens) || 0,
@@ -420,11 +440,17 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     function consumeManualLock(activeGroup: Group | null, logicalModelId: string): GroupRouteUnit | null {
         const locked = state.manualLockedUnit;
         if (!locked) return null;
-        state.manualLockedUnit = null;
         if (!isManualLockApplicable(locked, activeGroup, logicalModelId)) {
+            state.manualLockedUnit = null;
             debugLog('manual lock invalid, fallback to random');
             return null;
         }
+        if (retry.isExcluded(locked)) {
+            // 被重试链排除：保留锁定，本次随机选路，锁不丢
+            debugLog('manual lock deferred: excluded by retry chain');
+            return null;
+        }
+        state.manualLockedUnit = null;
         recordGroupSelection(locked);
         debugLog('manual lock consumed', {
             vendorName: locked.vendor.name,
@@ -450,5 +476,6 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         onGenerationEnded,
         getActiveUnit: () => state.active?.unit ?? null,
         lockManualRoute,
+        dispose: () => retry.dispose(),
     };
 }

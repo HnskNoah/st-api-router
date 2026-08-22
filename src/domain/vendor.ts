@@ -187,11 +187,21 @@ export function assignRealModel(logicalModels: LogicalModel[], realModel: string
     return model;
 }
 
-/** 拉取后收敛 Key 级映射：只保留仍在新模型列表中的真实模型映射（以最新拉取结果为权威），返回移除条数。 */
+/** 拉取后收敛 Key 级映射：只保留仍在新模型列表中的真实模型映射（以最新拉取结果为权威），
+ * 并同步清扫已消失模型的健康记录键，返回移除映射条数。 */
 export function reconcileEntryMappings(entry: GroupEntry, models: string[]): number {
     const kept = new Set(models);
     const before = entry.mappings.length;
     entry.mappings = entry.mappings.filter(mapping => kept.has(mapping.realModel));
+    for (const mapping of entry.mappings) kept.add(mapping.realModel);
+    // 健康记录按 realModel 键控：模型消失后其键不再有意义，随映射收敛一并清扫，避免设置 JSON 无界增长
+    const healthMaps = [entry.failStreakByModel, entry.circuitsByModel, entry.cooldownMultiplierByModel, entry.lastErrorByRealModel, entry.lastErrorKindByModel];
+    for (const map of healthMaps) {
+        if (!map) continue;
+        for (const key of Object.keys(map)) {
+            if (!kept.has(key)) delete map[key];
+        }
+    }
     return before - entry.mappings.length;
 }
 
@@ -204,6 +214,9 @@ export function pruneOrphanLogicalModels(
     const referenced = new Set(protectedLogicalModelIds);
     for (const entry of allGroupEntries(groups)) {
         for (const mapping of entry.mappings) referenced.add(mapping.logicalModelId);
+    }
+    for (const g of groups) {
+        if (g.currentLogicalModelId) referenced.add(g.currentLogicalModelId);
     }
     const removed: string[] = [];
     for (let index = logicalModels.length - 1; index >= 0; index--) {

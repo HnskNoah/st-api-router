@@ -58,6 +58,21 @@ describe('domain/vendor > 拉取后同步', () => {
         expect(removed).toBe(1);
     });
 
+    it('reconcileEntryMappings 同步清扫已消失模型的健康记录键', () => {
+        const entry = makeEntry({
+            fetchedModels: ['kept'],
+            mappings: [{ id: 'm-gone', realModel: 'gone', logicalModelId: 'l1' }],
+            failStreakByModel: { kept: 1, gone: 2 },
+            circuitsByModel: { gone: 12345 },
+            lastErrorByRealModel: { kept: 'x', gone: 'y' },
+        });
+        reconcileEntryMappings(entry, ['kept']);
+        expect(entry.mappings).toEqual([]);
+        expect(entry.failStreakByModel).toEqual({ kept: 1 });
+        expect(entry.lastErrorByRealModel).toEqual({ kept: 'x' });
+        expect(entry.circuitsByModel).toEqual({});
+    });
+
     it('reconcileEntryMappings 空列表清空全部映射', () => {
         const entry = makeEntry({
             mappings: [{ id: 'm1', realModel: 'gpt-4o', logicalModelId: 'l1' }],

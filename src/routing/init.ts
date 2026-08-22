@@ -78,6 +78,7 @@ export function initRouting(): void {
     registration = {
         teardown() {
             debugLog('routing teardown');
+            hooks.dispose();
             eventSource.removeListener(event_types.GENERATION_STARTED, hooks.onGenerationStarted);
             eventSource.removeListener(event_types.GENERATION_ENDED, hooks.onGenerationEnded);
             eventSource.removeListener(event_types.GENERATION_STOPPED, hooks.onGenerationStopped);
