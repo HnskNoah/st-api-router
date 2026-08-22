@@ -12,6 +12,7 @@ import {
     assignModelToLogical,
     buildLogicalModelsFromFetched,
     findUnmappedModels,
+    normalizeLogicalModel,
     normalizeMappingRule,
     previewMappingRule,
     pruneOrphanLogicalModels,
@@ -19,7 +20,7 @@ import {
     specialVariantModels,
 } from '../../domain/vendor.js';
 import { groups, logicalModels, mappingRules, settings } from '../../settings/access.js';
-import { saveSettingsNow } from './console-helpers.js';
+import { saveSettingsNow, cslField } from './console-helpers.js';
 import type { MappingRule } from '../../types.js';
 
 /** 渲染"映射"标签页到 rightEl 容器。 */
@@ -28,12 +29,9 @@ export function renderRightMapping(
     onRefreshDashboard: () => void,
 ): void {
     if (!rightEl) return;
-    rightEl.empty();
-
-    // ── 一键归类按钮 ──
     const topBar = $('<div class="csl-mapping-topbar"></div>');
     const oneClickBtn = $('<button class="csl-btn csl-btn--primary" type="button" title="按核心名一键归类所有未映射真实模型，跳过特殊变体"><i class="fa-solid fa-wand-magic-sparkles"></i><span>一键归类全部</span></button>')
-        .on('click', () => {
+        .on('click', async () => {
             const allModels: string[] = [];
             for (const group of groups()) {
                 for (const entry of group.entries) {
@@ -44,6 +42,11 @@ export function renderRightMapping(
                 toastr.info('还没有已拉取的模型，无法归类。');
                 return;
             }
+            const confirmed = await Popup.show.confirm(
+                '一键归类全部',
+                `将按核心名归类 ${allModels.length} 个已拉取模型（跳过特殊变体），重放映射规则，并回收未引用的孤儿逻辑模型。继续？`,
+            );
+            if (!confirmed) return;
             const { created, mapped, skipped } = buildLogicalModelsFromFetched(allModels, logicalModels(), groups());
             const reapplied = applyMappingRules(groups(), mappingRules());
             const pruned = pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
@@ -57,24 +60,65 @@ export function renderRightMapping(
             if (pruned.length > 0) parts.push(`回收 ${pruned.length} 个孤儿子逻辑模型`);
             toastr.success(parts.length > 0 ? `一键归类完成：${parts.join('，')}。` : '没有未归类的模型。');
         });
+    topBar.append(oneClickBtn);
+    rightEl.append(topBar);
+
+    // ── 批量映射规则（添加规则 / 添加逻辑模型） ──
+    const ruleSection = $('<div class="csl-mapping-section"></div>');
+    ruleSection.append($('<div class="csl-mapping-section-title">').text('批量映射规则'));
+    const ruleList = $('<div class="csl-mapping-rules"></div>');
+    renderRules(ruleList);
+    ruleSection.append(ruleList);
+
+    const addBtnRow = $('<div style="display:flex;gap:6px;margin-top:6px"></div>');
+    const addRuleBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-plus"></i><span>添加规则</span></button>')
+        .on('click', () => {
+            openRuleEditor(null, () => renderRules(ruleList));
+        });
+    const addLogicalBtn = $('<button class="csl-btn csl-btn--secondary" type="button" title="手动添加逻辑模型"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>')
+        .on('click', () => {
+            const content = $('<div class="csl-editor"></div>');
+            const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="逻辑模型名称，如：DeepSeek 系">');
+            content.append(
+                $('<div class="csl-empty">').text('逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型。'),
+                cslField('名称', nameInput),
+            );
+            showEditorDialog({
+                title: '添加逻辑模型',
+                content,
+                onSave: () => {
+                    const name = String(nameInput.val() ?? '').trim().slice(0, 120);
+                    if (!name) { toastr.warning('请填写逻辑模型名称。'); return false; }
+                    logicalModels().push(normalizeLogicalModel({ name }));
+                    saveSettingsNow();
+                    onRefreshDashboard();
+                    renderUnmapped();
+                },
+                successMessage: `逻辑模型「${nameInput.val()}」已添加。`,
+            });
+        });
+    addBtnRow.append(addRuleBtn, addLogicalBtn);
+    ruleSection.append(addBtnRow);
+    rightEl.append(ruleSection);
+
+    // ── 未归类真实模型（头部折叠） ──
     const unmappedSection = $('<div class="csl-mapping-section"></div>');
-    const unmappedTitle = $('<div class="csl-mapping-section-title">').text('未归类真实模型');
-    unmappedSection.append(unmappedTitle);
     const unmappedList = $('<div class="csl-mapping-unmapped"></div>');
-    let unmappedVisible = false;
+    let unmappedOpen = false;
     const renderUnmapped = () => {
         unmappedList.empty();
         const models = findUnmappedModels(groups());
-        unmappedTitle.text(models.length > 0 ? `未归类真实模型（${models.length}）` : '未归类真实模型');
         if (models.length === 0) {
+            unmappedHead.html('<i class="fa-solid fa-chevron-right"></i><span>显示未归类模型</span>');
             unmappedList.append($('<div class="csl-mapping-empty">').text('没有未归类的真实模型。'));
             return;
         }
+        unmappedHead.html(`<i class="fa-solid ${unmappedOpen ? 'fa-chevron-down' : 'fa-chevron-right'}"></i><span>显示未归类模型（${models.length}）</span>`);
         for (const realModel of models) {
             const row = $('<div class="csl-mapping-unmapped-row"></div>');
             const select = $('<select class="text_pole"></select>').append($('<option value="">').text('— 选择逻辑模型 —'));
             for (const model of logicalModels()) select.append($('<option>').val(model.id).text(model.name));
-            const apply = $('<button class="menu_button" type="button" title="映射到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
+            const apply = $('<button class="csl-btn csl-btn--icon" type="button" title="映射到所选逻辑模型"><i class="fa-solid fa-link"></i></button>')
                 .on('click', () => {
                     const logicalModelId = String(select.val() || '');
                     if (!logicalModelId) { toastr.warning('请选择目标逻辑模型。'); return; }
@@ -90,44 +134,22 @@ export function renderRightMapping(
             unmappedList.append(row);
         }
     };
-    const unmappedToggle = $('<button class="csl-btn csl-btn--secondary" type="button" style="margin-top:6px"><span>显示未归类模型</span></button>')
-        .on('click', function () {
-            unmappedVisible = !unmappedVisible;
-            $(this).find('span').text(unmappedVisible ? '隐藏未归类模型' : '显示未归类模型');
-            if (unmappedVisible) {
-                renderUnmapped();
-                unmappedList.show();
-            } else {
-                unmappedList.hide();
-            }
-        });
+    const unmappedHead = $('<button class="csl-btn csl-btn--secondary csl-mapping-fold-head" type="button"></button>');
+    unmappedHead.on('click', () => {
+        unmappedOpen = !unmappedOpen;
+        if (unmappedOpen) renderUnmapped();
+        unmappedList.toggle(unmappedOpen);
+        renderUnmapped();
+    });
     renderUnmapped();
     unmappedList.hide();
-    unmappedSection.append(unmappedList, unmappedToggle);
+    unmappedSection.append(unmappedHead, unmappedList);
     rightEl.append(unmappedSection);
-    topBar.append(oneClickBtn);
-    rightEl.append(topBar);
 
-    // ── 规则列表 ──
-    const ruleSection = $('<div class="csl-mapping-section"></div>');
-    ruleSection.append($('<div class="csl-mapping-section-title">').text('批量映射规则'));
-    const ruleList = $('<div class="csl-mapping-rules"></div>');
-    renderRules(ruleList);
-    ruleSection.append(ruleList);
-
-    const addRuleBtn = $('<button class="csl-btn csl-btn--secondary" type="button" style="margin-top:6px"><i class="fa-solid fa-plus"></i><span>添加规则</span></button>')
-        .on('click', () => {
-            openRuleEditor(null, () => renderRules(ruleList));
-        });
-    ruleSection.append(addRuleBtn);
-    rightEl.append(ruleSection);
-
-    // ── 忽略清单 ──
+    // ── 忽略清单（头部折叠） ──
     const ignoreSection = $('<div class="csl-mapping-section"></div>');
-    const ignoreHead = $('<div class="csl-mapping-section-title"></div>').text('忽略清单');
-    ignoreSection.append(ignoreHead);
     const ignoreList = $('<div class="csl-mapping-ignored"></div>');
-    let ignoreVisible = false;
+    let ignoreOpen = false;
     const renderIgnored = () => {
         ignoreList.empty();
         const ignored = settings().ignoredModels ?? [];
@@ -137,8 +159,7 @@ export function renderRightMapping(
             return;
         }
         if (autoIgnored.length > 0) {
-            const autoLabel = $('<div class="csl-mapping-ignored-label">').text('自动忽略（特殊变体）：');
-            ignoreList.append(autoLabel);
+            ignoreList.append($('<div class="csl-mapping-ignored-label">').text('自动忽略（特殊变体）：'));
             const autoWrap = $('<div class="csl-mapping-ignored-pills"></div>');
             for (const name of autoIgnored) {
                 autoWrap.append($('<span class="csl-mapping-ignore-pill csl-mapping-ignore-pill--auto">').text(name));
@@ -146,8 +167,7 @@ export function renderRightMapping(
             ignoreList.append(autoWrap);
         }
         if (ignored.length > 0) {
-            const manualLabel = $('<div class="csl-mapping-ignored-label">').text('手动忽略：');
-            ignoreList.append(manualLabel);
+            ignoreList.append($('<div class="csl-mapping-ignored-label">').text('手动忽略：'));
             const manualWrap = $('<div class="csl-mapping-ignored-pills"></div>');
             for (const name of ignored) {
                 const pill = $('<span class="csl-mapping-ignore-pill"></span>');
@@ -164,19 +184,17 @@ export function renderRightMapping(
             ignoreList.append(manualWrap);
         }
     };
-    const toggleIgnoreBtn = $('<button class="csl-btn csl-btn--secondary" type="button" style="margin-top:6px"><span>显示忽略清单</span></button>')
-        .on('click', function () {
-            ignoreVisible = !ignoreVisible;
-            $(this).find('span').text(ignoreVisible ? '隐藏忽略清单' : '显示忽略清单');
-            if (ignoreVisible) {
-                renderIgnored();
-                ignoreList.show();
-            } else {
-                ignoreList.hide();
-            }
-        });
-    ignoreSection.append(ignoreList, toggleIgnoreBtn);
+    const ignoreHeadBtn = $('<button class="csl-btn csl-btn--secondary csl-mapping-fold-head" type="button"></button>');
+    ignoreHeadBtn.on('click', () => {
+        ignoreOpen = !ignoreOpen;
+        if (ignoreOpen) renderIgnored();
+        ignoreList.toggle(ignoreOpen);
+        ignoreHeadBtn.html(`<i class="fa-solid ${ignoreOpen ? 'fa-chevron-down' : 'fa-chevron-right'}"></i><span>${ignoreOpen ? '收起忽略清单' : '显示忽略清单'}</span>`);
+    });
+    ignoreHeadBtn.html('<i class="fa-solid fa-chevron-right"></i><span>显示忽略清单</span>');
+    renderIgnored();
     ignoreList.hide();
+    ignoreSection.append(ignoreHeadBtn, ignoreList);
     rightEl.append(ignoreSection);
 
     // ── 提示 ──

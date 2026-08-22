@@ -299,6 +299,8 @@ export function ensureConsolePanelStyles(): void {
             font-size: 11px; padding: 2px 8px; border-radius: 10px;
             border: 1px solid var(--csl-border-strong); background: rgba(0,0,0,0.14);
         }
+        .csl-mapping-fold-head { width: 100%; justify-content: flex-start; gap: 6px; margin-bottom: 6px; }
+        .csl-mapping-fold-head i { font-size: 10px; color: var(--csl-accent); }
         .csl-mapping-ignore-pill--auto { border-style: dashed; color: var(--csl-text-dim); }
         .csl-mapping-unignore { cursor: pointer; opacity: 0.6; }
         .csl-mapping-unignore:hover { opacity: 1; color: var(--csl-text); }

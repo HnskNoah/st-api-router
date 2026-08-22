@@ -4,11 +4,7 @@
 import { POPUP_TYPE, Popup } from '@sillytavern/scripts/popup';
 import { groups, logicalModels, mappingRules, routingSettings, settings, vendors } from '../../settings/access.js';
 import {
-    applyMappingRules,
-    buildLogicalModelsFromFetched,
     normalizeGroup,
-    normalizeLogicalModel,
-    pruneOrphanLogicalModels,
     resetModelData,
     mergeImportedRoutingConfig,
     sanitizeGroupForExport,
@@ -88,65 +84,6 @@ export function renderRightRoute(
         saveSettingsNow();
     }, { min: 0, max: 60000 }), '失败后等待该时长再触发重试；等待期间若出现自动生成（群聊自动模式/脚本），会直接接管本次重试'));
 
-    // 模型管理（批量刷新已移到 Vendor 标签页顶部）
-    rows.append($('<div class="csl-section-title">').text('模型管理'));
-    const modelRow = $('<div class="csl-field" style="gap:4px"></div>');
-        const buildLogicalBtn = $('<button class="csl-btn csl-btn--primary" type="button" title="为每个已拉取的真实模型单独创建逻辑模型并自动映射"><i class="fa-solid fa-wand-magic-sparkles"></i><span>从已拉取模型创建</span></button>')
-        .on('click', () => {
-            const allModels: string[] = [];
-            for (const g of groups()) {
-                for (const entry of g.entries) {
-                    for (const model of entry.fetchedModels) allModels.push(model);
-                }
-            }
-            if (allModels.length === 0) {
-                toastr.info('还没有已拉取的模型。先在 Vendor 标签页拉取模型，再回来创建逻辑模型。');
-                return;
-            }
-            if (!window.confirm(`将为 ${allModels.length} 个已拉取模型创建/归并逻辑模型，并重新应用映射规则、回收未引用的孤儿逻辑模型。继续？`)) return;
-            const { created, skipped, mapped, rebuilt } = buildLogicalModelsFromFetched(allModels, logicalModels(), groups());
-            const reapplied = applyMappingRules(groups(), mappingRules());
-            const pruned = pruneOrphanLogicalModels(logicalModels(), groups(), mappingRules().map(rule => rule.logicalModelId));
-            if (created.length === 0 && mapped === 0 && rebuilt === 0 && reapplied === 0 && pruned.length === 0) {
-                toastr.info(skipped.length > 0 ? `无新模型可创建（${skipped.length} 个搜索/思考/图像/缓存变体已跳过）。` : '逻辑模型已是最新，无需创建。');
-                return;
-            }
-            saveSettingsNow();
-            onRefreshDashboard();
-            onRefreshVendor();
-            const parts = [`已为 ${created.length} 个真实模型创建独立逻辑模型`];
-            if (mapped > 0) parts.push(`自动映射 ${mapped} 条`);
-            if (rebuilt > 0) parts.push(`修正归并 ${rebuilt} 条`);
-            if (reapplied > 0) parts.push(`重新应用规则 ${reapplied} 条`);
-            if (pruned.length > 0) parts.push(`回收孤儿逻辑模型 ${pruned.length} 个`);
-            if (skipped.length > 0) parts.push(`跳过 ${skipped.length} 个特殊变体`);
-            toastr.success(`${parts.join('，')}。`);
-        });
-    const addLogicalBtn = $('<button class="csl-btn csl-btn--secondary" type="button" title="手动添加逻辑模型"><i class="fa-solid fa-plus"></i><span>添加逻辑模型</span></button>')
-        .on('click', () => {
-            const content = $('<div class="csl-editor"></div>');
-            const nameInput = $('<input class="text_pole" type="text" maxlength="120" placeholder="逻辑模型名称，如：DeepSeek 系">');
-            content.append(
-                $('<div class="csl-empty">').text('逻辑模型是你在分组里选的"模型名"；多个 Vendor 的真实模型名可归并到同一个逻辑模型。'),
-                cslField('名称', nameInput),
-            );
-            showEditorDialog({
-                title: '添加逻辑模型',
-                content,
-                onSave: () => {
-                    const name = String(nameInput.val() ?? '').trim().slice(0, 120);
-                    if (!name) { toastr.warning('请填写逻辑模型名称。'); return false; }
-                    const normalized = normalizeLogicalModel({ name });
-                    logicalModels().push(normalized);
-                    saveSettingsNow();
-                    onRefreshDashboard();
-                    onRefreshVendor();
-                },
-                successMessage: `逻辑模型「${nameInput.val()}」已添加。`,
-            });
-        });
-    modelRow.append(buildLogicalBtn, addLogicalBtn);
-    rows.append(modelRow);
 
     // 备份与恢复
     rows.append($('<div class="csl-section-title">').text('备份与恢复'));
