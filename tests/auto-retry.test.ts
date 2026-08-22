@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
     autoRetryDelayMs,
     evaluateAutoRetry,
-    isAutoRetryStart,
     routeGroupOnce,
+    classifyRetryChainStart,
     groupUnitKey,
     type GroupRouteUnit,
 } from '../src/domain/group-routing.js';
@@ -136,28 +136,32 @@ describe('autoRetryDelayMs', () => {
     });
 });
 
-describe('isAutoRetryStart', () => {
-    const base = { retryScheduled: true, type: 'regenerate' as string | undefined, scheduledAt: 1000, now: 2500, windowMs: 15000 };
+describe('classifyRetryChainStart', () => {
+    const base = { retryScheduled: true, type: 'normal' as string | undefined, scheduledAt: 1000, now: 2500, windowMs: 15000, automaticTrigger: true, scheduledType: 'regenerate' };
 
-    it('is false for a manual normal generation during the retry window', () => {
-        expect(isAutoRetryStart({ ...base, type: 'normal' })).toBe(false);
+    it('self: our own scheduled regenerate within the window', () => {
+        expect(classifyRetryChainStart({ ...base, type: 'regenerate', automaticTrigger: false })).toBe('self');
     });
 
-    it('is true for a regenerate within the window', () => {
-        expect(isAutoRetryStart(base)).toBe(true);
+    it('self: our own scheduled swipe retry comes back as swipe', () => {
+        expect(classifyRetryChainStart({ ...base, type: 'swipe', scheduledType: 'swipe', automaticTrigger: false })).toBe('self');
     });
 
-    it('is false when the scheduled marker has expired', () => {
-        // 1000 + 15000 + 1 > window → stale
-        expect(isAutoRetryStart({ ...base, now: 16001 })).toBe(false);
+    it('inherit: automatic generation within the window takes over the chain', () => {
+        expect(classifyRetryChainStart(base)).toBe('inherit');
     });
 
-    it('is false when nothing was scheduled', () => {
-        expect(isAutoRetryStart({ ...base, retryScheduled: false })).toBe(false);
+    it('fresh: manual generation within the window resets the chain', () => {
+        expect(classifyRetryChainStart({ ...base, automaticTrigger: false })).toBe('fresh');
     });
 
-    it('is false for a regenerate outside the window', () => {
-        expect(isAutoRetryStart({ ...base, type: 'regenerate', now: 16001 })).toBe(false);
+    it('fresh: nothing was scheduled', () => {
+        expect(classifyRetryChainStart({ ...base, retryScheduled: false })).toBe('fresh');
+    });
+
+    it('fresh: stale schedule beyond the window even for automatic or regenerate starts', () => {
+        expect(classifyRetryChainStart({ ...base, now: 16001 })).toBe('fresh');
+        expect(classifyRetryChainStart({ ...base, type: 'regenerate', now: 16001 })).toBe('fresh');
     });
 });
 
@@ -171,5 +175,18 @@ describe('normalizeRoutingSettings autoRetryCount', () => {
         expect(normalizeRoutingSettings({ autoRetryCount: -1 }).autoRetryCount).toBe(0);
         expect(normalizeRoutingSettings({ autoRetryCount: 'abc' }).autoRetryCount).toBe(0);
         expect(normalizeRoutingSettings({ autoRetryCount: 2.9 }).autoRetryCount).toBe(2);
+    });
+});
+
+describe('normalizeRoutingSettings autoRetryDelayMs', () => {
+    it('defaults to 1200 when missing', () => {
+        expect(normalizeRoutingSettings({}).autoRetryDelayMs).toBe(1200);
+    });
+
+    it('clamps to non-negative integers', () => {
+        expect(normalizeRoutingSettings({ autoRetryDelayMs: 2500 }).autoRetryDelayMs).toBe(2500);
+        expect(normalizeRoutingSettings({ autoRetryDelayMs: -1 }).autoRetryDelayMs).toBe(1200);
+        expect(normalizeRoutingSettings({ autoRetryDelayMs: 'abc' }).autoRetryDelayMs).toBe(1200);
+        expect(normalizeRoutingSettings({ autoRetryDelayMs: 1.9 }).autoRetryDelayMs).toBe(1);
     });
 });

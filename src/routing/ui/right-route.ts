@@ -76,6 +76,10 @@ export function renderRightRoute(
         routing.autoRetryCount = v;
         saveSettingsNow();
     }), '失败或空回复时自动换路由重试（每次附加 0～500ms 随机抖动）；0 = 关闭，达到次数后停止'));
+    rows.append(cslField('重试延迟（毫秒）', cslNumber(routing.autoRetryDelayMs, v => {
+        routing.autoRetryDelayMs = v;
+        saveSettingsNow();
+    }), '失败后等待该时长再触发重试（附加 0～500ms 抖动）；等待期间若出现自动生成（群聊自动模式/脚本），会直接接管本次重试'));
 
     // 分组选择
     const group = activeGroup();

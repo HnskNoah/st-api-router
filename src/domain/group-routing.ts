@@ -150,19 +150,27 @@ export function autoRetryDelayMs(baseMs: number, jitterMs: number, randomValue: 
     return base + jitter;
 }
 
-/** 判断一次 GENERATION_STARTED 是否为自动重试触发的 regenerate（在调度窗口内）。 */
-export function isAutoRetryStart(opts: {
+/** 一次 GENERATION_STARTED 对挂起重试链的处理动作。
+ * self：我们排定的重试到场（窗口内且类型与排定一致），链继续；
+ * inherit：窗口内的自动生成（群聊自动模式、QR 脚本等 automatic_trigger 触发）接管链，当作本次换路由重试；
+ * fresh：用户新发起或窗口已过期，清链重新开始。 */
+export type RetryChainAction = 'self' | 'inherit' | 'fresh';
+
+export function classifyRetryChainStart(opts: {
     retryScheduled: boolean;
     type: string | undefined;
     scheduledAt: number;
     now: number;
     windowMs: number;
-}): boolean {
-    return Boolean(
-        opts.retryScheduled
-        && opts.type === 'regenerate'
-        && (opts.now - opts.scheduledAt) <= opts.windowMs,
-    );
+    automaticTrigger: boolean;
+    /** 排定重试时的生成类型（regenerate/swipe）；本次 STARTED 与之相同即视为我们的重试到场。 */
+    scheduledType?: string;
+}): RetryChainAction {
+    if (!opts.retryScheduled) return 'fresh';
+    if ((opts.now - opts.scheduledAt) > opts.windowMs) return 'fresh';
+    if (opts.type === (opts.scheduledType ?? 'regenerate')) return 'self';
+    if (opts.automaticTrigger) return 'inherit';
+    return 'fresh';
 }
 
 export interface AutoRetryDecision {

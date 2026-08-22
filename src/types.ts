@@ -30,6 +30,8 @@ export interface RoutingSettings {
     cooldownSeconds: number;
     /** 失败或空回复时的自动重试次数（换路由重生成）；0 = 关闭。 */
     autoRetryCount: number;
+    /** 自动重试触发前的等待毫秒数（附加 0～500ms 随机抖动）。 */
+    autoRetryDelayMs: number;
 }
 
 export type VendorFormat = 'custom' | 'deepseek';

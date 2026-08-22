@@ -7,12 +7,13 @@ import { oai_settings } from '@sillytavern/scripts/openai';
 import { SECRET_KEYS } from '@sillytavern/scripts/secrets';
 import { Popup } from '@sillytavern/scripts/popup';
 import { ensureSecretId } from '../secrets/api.js';
-import { routeGroupOnce, recordGroupSelection, evaluateAutoRetry, groupUnitKey, autoRetryDelayMs, isAutoRetryStart, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
+import { routeGroupOnce, recordGroupSelection, groupUnitKey, type GroupRouteSticky, type GroupRouteUnit } from '../domain/group-routing.js';
 import { recordModelFailure, recordModelObservation, recordModelSuccess } from '../domain/model-health.js';
 import { computeVendorTokenClamps, recordVendorSuccess } from '../domain/vendor.js';
 import { applyVendorTokenClamps } from './apply-provider.js';
 import { patchGenerateData } from './patch-generate-data.js';
 import { resolveFallbackRoute } from './fallback.js';
+import { createRetryChain } from './retry-chain.js';
 import { isManualLockApplicable } from './manual-route.js';
 import { isGenerationBlockedByGuard } from '../domain/generation-guard.js';
 import { runtimeState } from '../state.js';
@@ -21,12 +22,6 @@ import type { FailureProbe } from './failure-observer.js';
 import type { Group, LogicalModel, ModelObservationRecord, RoutingSettings, Vendor } from '../types.js';
 
 const USER_STOP_GRACE_MS = 50;
-/** 自动重试触发前等待 ST 结算的毫秒数。 */
-const AUTO_RETRY_DELAY_MS = 1200;
-/** 每次自动重试额外随机抖动（0～500ms），避免多客户端/多轮重试同步打爆渠道。 */
-const AUTO_RETRY_JITTER_MS = 500;
-/** retryScheduled 标记的有效窗口：超过该时长视为已失效（防止误消费）。 */
-const AUTO_RETRY_SCHEDULE_WINDOW_MS = 15_000;
 
 export interface RoutingHooksDeps {
     getVendors(): Vendor[];
@@ -52,37 +47,23 @@ export interface RoutingHooks {
 
 export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
     const state: {
-        active: { unit: GroupRouteUnit; logicalModelId: string; groupId: string } | null;
+        active: { unit: GroupRouteUnit; logicalModelId: string; groupId: string; generationType: string } | null;
         userStopPending: boolean;
         manualLockedUnit: GroupRouteUnit | null;
         lastPicked: GroupRouteSticky | null;
-        retryCount: number;
-        retryScheduled: boolean;
-        retryScheduledAt: number;
-        retryExcluded: Set<string>;
-        retryTimer: number | null;
     } = {
         active: null,
         userStopPending: false,
         manualLockedUnit: null,
         lastPicked: null,
-        retryCount: 0,
-        retryScheduled: false,
-        retryScheduledAt: 0,
-        retryExcluded: new Set<string>(),
-        retryTimer: null,
     };
 
-    function resetRetryChain(): void {
-        state.retryCount = 0;
-        state.retryScheduled = false;
-        state.retryScheduledAt = 0;
-        state.retryExcluded.clear();
-        if (state.retryTimer != null) {
-            clearTimeout(state.retryTimer);
-            state.retryTimer = null;
-        }
-    }
+    const retry = createRetryChain({
+        getRouting: deps.getRouting,
+        getGroups: deps.getGroups,
+        getActiveGroupId: deps.getActiveGroupId,
+        isUserStopPending: () => state.userStopPending,
+    });
 
     function customParamsForUnit(unit: GroupRouteUnit): { includeBody: string; excludeBody: string; includeHeaders: string } {
         const logical = deps.getLogicalModels().find(item => item.id === unit.mapping?.logicalModelId);
@@ -107,19 +88,21 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         });
     }
 
-    async function onGenerationStarted(type?: string, automaticTrigger?: unknown): Promise<void> {
+    async function onGenerationStarted(type?: string, generationOptions?: unknown): Promise<void> {
+        // ST 第二参数是 Generate 的 options 对象，真正的自动标志在其 automatic_trigger 字段
+        const automaticTrigger = (generationOptions as { automatic_trigger?: unknown } | null | undefined)?.automatic_trigger === true;
         // 新一轮生成开始：清掉上一轮 STOPPED 留下的 pending 标记
         // （否则一次用户停止会让后续所有生成的成败都跳过记录）
         state.userStopPending = false;
         debugLog('onGenerationStarted enter', {
             type,
-            automaticTrigger: Boolean(automaticTrigger),
+            automaticTrigger,
             routingEnabled: deps.getRouting().enabled,
             activeGroupId: deps.getActiveGroupId(),
             groupCount: deps.getGroups().length,
         });
-        // 跳过非用户主动触发的生成：quiet/continue/impersonate；swipe（滑动切换回复）不参与路由与自动重试
-        if (type === 'quiet' || type === 'continue' || type === 'impersonate' || type === 'swipe') {
+        // 跳过后台类生成：quiet/continue/impersonate；swipe 是真实生成，参与路由与自动重试（重试动作=再次滑动）
+        if (type === 'quiet' || type === 'continue' || type === 'impersonate') {
             debugLog('onGenerationStarted skip: non-user trigger', { type });
             return;
         }
@@ -130,29 +113,24 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         runtimeState.generationRoutingInFlight = true;
         try {
-            await runGenerationRouting(type);
+            await runGenerationRouting(type, automaticTrigger);
         } finally {
             runtimeState.generationRoutingInFlight = false;
         }
     }
 
-    async function runGenerationRouting(type?: string): Promise<void> {
+    async function runGenerationRouting(type?: string, automaticTrigger = false): Promise<void> {
         const routing = deps.getRouting();
         if (!routing.enabled) {
             debugLog('onGenerationStarted skip: routing disabled');
             return;
         }
-        // 自动重试的生成（retryScheduled 在窗口内且本次是 regenerate）保留计数与排除集；用户新发起则重置重试链
-        const isAutoRetry = isAutoRetryStart({
-            retryScheduled: state.retryScheduled,
-            type,
-            scheduledAt: state.retryScheduledAt,
-            now: Date.now(),
-            windowMs: AUTO_RETRY_SCHEDULE_WINDOW_MS,
-        });
-        state.retryScheduled = false;
-        if (!isAutoRetry) resetRetryChain();
-        debugLog('onGenerationStarted retry context', { type, isAutoRetry, retryCount: state.retryCount });
+        // 重试链消费（self=排定的 regenerate 到场；inherit=自动生成接管；fresh=清链，语义见 retry-chain.ts）
+        const chainAction = retry.consumeStart(type, automaticTrigger);
+        if (chainAction === 'inherit') {
+            toastr.info(`Quicker Api：检测到自动生成，直接换路由重试（${retry.count()}/${deps.getRouting().autoRetryCount}）。`);
+        }
+        debugLog('onGenerationStarted retry context', { type, automaticTrigger, chainAction, retryCount: retry.count() });
         const groups = deps.getGroups();
         const activeGroup = groups.find(group => group.id === deps.getActiveGroupId()) || groups[0] || null;
         if (!activeGroup || !activeGroup.enabled) {
@@ -166,7 +144,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             return;
         }
         let unit: GroupRouteUnit | null = consumeManualLock(activeGroup, logicalModelId);
-        if (unit && state.retryExcluded.has(groupUnitKey(unit))) {
+        if (unit && retry.isExcluded(unit)) {
             debugLog('onGenerationStarted manual lock excluded by retry chain', { key: groupUnitKey(unit) });
             unit = null;
         }
@@ -174,7 +152,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             const result = routeGroupOnce(deps.getVendors(), activeGroup, logicalModelId, {
                 stickyCount: routing.stickyCount,
                 lastPicked: state.lastPicked,
-                excludeKeys: [...state.retryExcluded],
+                excludeKeys: retry.excludedKeys(),
             });
             state.lastPicked = result.nextLastPicked;
             if (!result.unit) {
@@ -203,7 +181,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         const needsApply = clamps.maxContext !== undefined || clamps.maxOutputTokens !== undefined;
         debugLog('onGenerationStarted token clamps', { needsApply, clamps });
         if (needsApply) {
-            if (isAutoRetry) {
+            if (chainAction !== 'fresh') {
                 // 自动重试不弹确认窗（避免阻塞重试链）；钳制也跳过，防止中途改 oai_settings
                 debugLog('onGenerationStarted auto retry: token clamps skipped', { clamps });
             } else {
@@ -221,7 +199,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
 
         // 存储选中的 unit，等 CHAT_COMPLETION_SETTINGS_READY 时直接改 generateData
-        state.active = { unit, logicalModelId, groupId: activeGroup.id };
+        state.active = { unit, logicalModelId, groupId: activeGroup.id, generationType: type ?? 'normal' };
         debugLog('onGenerationStarted active set', {
             vendorName: unit.vendor.name,
             entryLabel: unit.entry.label,
@@ -341,7 +319,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         }
         state.userStopPending = true;
         state.active = null;
-        resetRetryChain();
+        retry.reset();
         deps.endGeneration?.();
     }
 
@@ -372,7 +350,7 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
             if (!probe) {
                 recordVendorSuccess(vendor);
                 recordModelSuccess(entry, realModel);
-                resetRetryChain();
+                retry.reset();
                 saveSettingsDebounced();
                 debugLog('onGenerationEnded recorded success', { vendorName: vendor.name, realModel });
                 return;
@@ -424,66 +402,13 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
                     toastr.warning(`Quicker Api：${displayName} 本次生成失败已记录（模型级熔断）。`);
                 }
             }
-            // ── 自动重试：失败或空回复 → 排除当前渠道，换路由重生成 ──
-            const groupIntact = (() => {
-                const g = deps.getGroups().find(item => item.id === deps.getActiveGroupId()) || deps.getGroups()[0] || null;
-                return Boolean(g && g.enabled && g.currentLogicalModelId === active.logicalModelId);
-            })();
-            const decision = evaluateAutoRetry({
-                autoRetryCount: routing.autoRetryCount,
-                retriesUsed: state.retryCount,
-                routingEnabled: routing.enabled,
-                extensionDisabled: runtimeState.extensionDisabled,
-                presetTransitionBlocked: runtimeState.presetTransitionBlocked,
-                groupIntact,
+            // ── 自动重试：失败或空回复 → 排除当前渠道换路由重试（决策、上限、点击定时器见 retry-chain.ts）──
+            retry.handleFailure({
+                unit: active.unit,
+                logicalModelId: active.logicalModelId,
+                emptyResponse: probe.kind === 'empty_response',
+                originType: active.generationType === 'swipe' ? 'swipe' : 'regenerate',
             });
-            if (decision.canRetry) {
-                state.retryExcluded.add(groupUnitKey(active.unit));
-                state.retryCount = decision.attempt;
-                state.retryScheduled = true;
-                state.retryScheduledAt = Date.now();
-                const kindLabel = probe.kind === 'empty_response' ? '空回复' : '生成失败';
-                const delayMs = autoRetryDelayMs(AUTO_RETRY_DELAY_MS, AUTO_RETRY_JITTER_MS, Math.random());
-                toastr.info(`Quicker Api：${kindLabel}，${Math.round(delayMs / 1000)}s 后自动换路由重试（${decision.attempt}/${routing.autoRetryCount}）。`);
-                state.retryTimer = window.setTimeout(() => {
-                    state.retryTimer = null;
-                    if (state.userStopPending) {
-                        debugLog('auto retry cancelled: user stop');
-                        resetRetryChain();
-                        return;
-                    }
-                    // 延时窗口内分组/逻辑模型可能被用户切换：此时不再重试，避免在错误目标上生成
-                    const g = deps.getGroups().find(item => item.id === deps.getActiveGroupId()) || deps.getGroups()[0] || null;
-                    if (!g || !g.enabled || g.currentLogicalModelId !== active.logicalModelId) {
-                        debugLog('auto retry cancelled: group or logical model changed', {
-                            currentLogicalModelId: g?.currentLogicalModelId ?? null,
-                            expectedLogicalModelId: active.logicalModelId,
-                        });
-                        resetRetryChain();
-                        return;
-                    }
-                    if (document.body?.dataset?.generating) {
-                        debugLog('auto retry cancelled: ST still generating');
-                        resetRetryChain();
-                        return;
-                    }
-                    const btn = document.getElementById('option_regenerate');
-                    if (!btn) {
-                        debugLog('auto retry cancelled: regenerate button missing');
-                        resetRetryChain();
-                        return;
-                    }
-                    debugLog('auto retry: clicking regenerate', { attempt: decision.attempt });
-                    btn.click();
-                }, delayMs);
-            } else if (routing.autoRetryCount > 0 && state.retryCount >= routing.autoRetryCount) {
-                toastr.warning(`Quicker Api：自动重试已达上限（${routing.autoRetryCount} 次），已停止。请检查 API 或手动重试。`);
-                resetRetryChain();
-            } else if (state.retryCount > 0) {
-                // 环境变化（模型/分组切换、路由停用、预设切换等）→ 静默停止，不误报“已达上限”
-                debugLog('auto retry stopped: environment changed', { retryCount: state.retryCount, autoRetryCount: routing.autoRetryCount });
-                resetRetryChain();
-            }
         }, USER_STOP_GRACE_MS);
     }
 

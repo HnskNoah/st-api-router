@@ -46,6 +46,7 @@ export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = Object.freeze({
     failThreshold: 3,
     cooldownSeconds: 300,
     autoRetryCount: 0,
+    autoRetryDelayMs: 1200,
 });
 
 /** 启动空占位连接（custom + 空 URL）：持久化后 isValidUrl('') 为 false，
@@ -79,5 +80,8 @@ export function normalizeRoutingSettings(raw: unknown): RoutingSettings {
         autoRetryCount: Number.isFinite(Number(routing.autoRetryCount)) && Number(routing.autoRetryCount) >= 0
             ? Math.floor(Number(routing.autoRetryCount))
             : DEFAULT_ROUTING_SETTINGS.autoRetryCount,
+        autoRetryDelayMs: Number.isFinite(Number(routing.autoRetryDelayMs)) && Number(routing.autoRetryDelayMs) >= 0
+            ? Math.floor(Number(routing.autoRetryDelayMs))
+            : DEFAULT_ROUTING_SETTINGS.autoRetryDelayMs,
     };
 }
