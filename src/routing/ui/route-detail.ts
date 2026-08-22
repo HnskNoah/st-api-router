@@ -1,8 +1,12 @@
 // 中栏：路由详情（选中逻辑模型后的具体路由列表）。
 // 纯渲染函数，由 console-panel.ts 调用。
 
+import { Popup } from '@sillytavern/scripts/popup';
 import { groups, logicalModels, settings, vendors } from '../../settings/access.js';
 import { modelStatus, routeHealth, formatDur, formatClock, saveSettingsNow } from './console-helpers.js';
+
+let observationFilter: 'all' | 'error' | 'empty' = 'all';
+let observationScope: 'global' | 'model' = 'global';
 
 /** 渲染路由详情到 detailEl 容器。 */
 export function renderRouteDetail(
@@ -72,11 +76,42 @@ export function renderRouteDetail(
         list.append(pill);
     }
     detailEl.append(list);
-    // ── 最近错误与结果观测（全局滑动窗口） ──
+    // ── 最近错误与结果观测（全局滑动窗口，支持筛选/清空） ──
     const failures = $('<div class="csl-route-failures"></div>');
-    const failuresHead = $('<div class="csl-route-failures-head">').text('最近错误与结果观测（全局，最新 200 条）');
-    failures.append(failuresHead);
-    const history = [...(settings().observationHistory ?? [])].sort((a, b) => b.occurredAt - a.occurredAt);
+    const failuresHead = $('<div class="csl-route-failures-head">').text('最近错误与结果观测（最新 200 条）');
+    const mkKindChip = (label: string, value: 'all' | 'error' | 'empty') => $('<span class="csl-obs-chip">')
+        .toggleClass('is-active', observationFilter === value).text(label)
+        .on('click', () => { observationFilter = value; onRefresh(); });
+    const mkScopeChip = (label: string, value: 'global' | 'model') => $('<span class="csl-obs-chip">')
+        .toggleClass('is-active', observationScope === value).text(label)
+        .on('click', () => { observationScope = value; onRefresh(); });
+    const chipRow = $('<div class="csl-obs-chips"></div>');
+    chipRow.append(
+        mkKindChip('全部', 'all'),
+        mkKindChip('仅错误', 'error'),
+        mkKindChip('仅空回复', 'empty'),
+        $('<span class="csl-obs-sep"></span>'),
+        mkScopeChip('全局', 'global'),
+        mkScopeChip('当前模型', 'model'),
+    );
+    failuresHead.append(chipRow);
+    const clearBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="清空观测历史"><i class="fa-solid fa-trash"></i></button>')
+        .on('click', async () => {
+            const confirmed = await Popup.show.confirm('清空观测历史', '确定清空全部错误与结果观测记录？');
+            if (!confirmed) return;
+            const history = settings().observationHistory;
+            if (history) history.splice(0, history.length);
+            saveSettingsNow();
+            onRefresh();
+        });
+    failuresHead.append(clearBtn);
+    failures.append(failuresHead, chipRow);
+    let history = [...(settings().observationHistory ?? [])].sort((a, b) => b.occurredAt - a.occurredAt);
+    if (observationFilter === 'error') history = history.filter(rec => rec.kind !== 'empty_response');
+    if (observationFilter === 'empty') history = history.filter(rec => rec.kind === 'empty_response');
+    if (observationScope === 'model' && selectedLogicalId) {
+        history = history.filter(rec => rec.logicalModelId === selectedLogicalId);
+    }
     const vendorName = (id: string) => vendors().find(v => v.id === id)?.name ?? id;
     const entryLabel = (entryId: string) => {
         for (const group of groups()) {
@@ -87,7 +122,7 @@ export function renderRouteDetail(
     };
     const kindLabel = (kind: string) => kind === 'fatal' ? '不可恢复' : kind === 'rate_limited' ? '限流' : kind === 'temp' ? '临时错误' : kind === 'bad_request' ? '参数错误' : kind === 'empty_response' ? '空回复（不计失败）' : '未知';
     if (history.length === 0) {
-        failures.append($('<div class="csl-route-failure-empty">').text('暂无失败或结果观测记录。'));
+        failures.append($('<div class="csl-route-failure-empty">').text('暂无匹配的观测记录。'));
     } else {
         for (const rec of history) {
             const row = $('<div class="csl-route-failure-row"></div>');

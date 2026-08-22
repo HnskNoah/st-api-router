@@ -2,7 +2,7 @@
 // 生成数据就绪后直接改 generateData（拦截模式，不碰 ST 原生 DOM/连接字段）；
 // 结束后按失败观察结果记录 Key × realModel 成功/失败（模型级熔断），不再自动禁用整个 Vendor。
 
-import { saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
+import { chat, saveSettingsDebounced, setOnlineStatus } from '@sillytavern/script';
 import { oai_settings } from '@sillytavern/scripts/openai';
 import { SECRET_KEYS } from '@sillytavern/scripts/secrets';
 import { Popup } from '@sillytavern/scripts/popup';
@@ -64,6 +64,21 @@ export function createRoutingHooks(deps: RoutingHooksDeps): RoutingHooks {
         getGroups: deps.getGroups,
         getActiveGroupId: deps.getActiveGroupId,
         isUserStopPending: () => state.userStopPending,
+        prepareSwipeRetryTarget() {
+            // swipe 失败（尤其空回复）会在消息里遗留空变体槽：saveReply 已建槽、endSwipe 只回退指针。
+            // 直接右滑会落在空槽上本地切换而不发起生成——重试前清掉当前指针之后的尾随空槽。
+            const lastRow = document.querySelector('.mes.last_mes');
+            const mesId = Number(lastRow?.getAttribute('mesid'));
+            const msg = (chat as unknown as Array<{ swipes?: string[]; swipe_id?: number }> | undefined)?.[mesId];
+            let trimmed = 0;
+            if (msg && Array.isArray(msg.swipes) && typeof msg.swipe_id === 'number') {
+                while (msg.swipes.length > 1 && msg.swipes.length - 1 > msg.swipe_id && msg.swipes[msg.swipes.length - 1] === '') {
+                    msg.swipes.pop();
+                    trimmed++;
+                }
+            }
+            if (trimmed > 0) debugLog('auto retry: trimmed leftover empty swipes', { trimmed });
+        },
     });
 
     function customParamsForUnit(unit: GroupRouteUnit): { includeBody: string; excludeBody: string; includeHeaders: string } {

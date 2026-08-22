@@ -49,7 +49,13 @@ export function renderRightRoute(
         onRefreshDashboard();
         onRefreshVendor();
     });
-    groupSection.append(groupLabel, groupSelect);
+    const editGroupBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="编辑当前分组"><i class="fa-solid fa-pen"></i></button>')
+        .on('click', () => {
+            const group = activeGroup();
+            if (!group) { toastr.warning('当前没有分组。'); return; }
+            openGroupEditor(group, onRefreshDashboard, onRefreshVendor);
+        });
+    groupSection.append(groupLabel, groupSelect, editGroupBtn);
     rightEl.append(groupSection);
 
     // 路由开关
@@ -60,10 +66,12 @@ export function renderRightRoute(
         saveSettingsNow();
         toastr.info(`路由已${v ? '启用' : '停用'}。`);
     })));
+    rows.append($('<div class="csl-section-title">').text('粘性选路'));
     rows.append(cslField('保持同一 Vendor（次）', cslNumber(routing.stickyCount, v => {
         routing.stickyCount = v;
         saveSettingsNow();
-    }, { min: 0, max: 10 })));
+    }, { min: 0, max: 10 }), '连续 N 次生成优先使用同一 Vendor；0 = 每次随机'));
+    rows.append($('<div class="csl-section-title">').text('熔断'));
     rows.append(cslField('失败阈值', cslNumber(routing.failThreshold, v => {
         routing.failThreshold = v;
         saveSettingsNow();
@@ -71,27 +79,16 @@ export function renderRightRoute(
     rows.append(cslField('冷却时间（秒）', cslNumber(routing.cooldownSeconds, v => {
         routing.cooldownSeconds = v;
         saveSettingsNow();
-    }, { min: 1, max: 86400 }), '≥1'));
-    rows.append(cslField('自动重试次数', cslNumber(routing.autoRetryCount, v => {
+    }, { min: 1, max: 86400 }), '≥1；实际冷却按时段指数退避（×2 封顶 ×32）'));
+    rows.append($('<div class="csl-section-title">').text('自动重试'));
+    rows.append(cslField('重试次数', cslNumber(routing.autoRetryCount, v => {
         routing.autoRetryCount = v;
         saveSettingsNow();
     }, { min: 0, max: 10 }), '失败或空回复时自动换路由重试（每次附加 0～500ms 随机抖动）；0 = 关闭，达到次数后停止'));
     rows.append(cslField('重试延迟（毫秒）', cslNumber(routing.autoRetryDelayMs, v => {
         routing.autoRetryDelayMs = v;
         saveSettingsNow();
-    }, { min: 0, max: 60000 }), '失败后等待该时长再触发重试（附加 0～500ms 抖动）；等待期间若出现自动生成（群聊自动模式/脚本），会直接接管本次重试'));
-
-    // 分组选择
-    const group = activeGroup();
-    if (group) {
-        rows.append($('<div class="csl-section-title">').text('当前分组'));
-        const groupRow = $('<div class="csl-field"></div>');
-        groupRow.append($('<span class="csl-field-label">').text(group.name));
-        const editGroupBtn = $('<button class="csl-btn csl-btn--icon" type="button" title="编辑分组"><i class="fa-solid fa-pen"></i></button>')
-            .on('click', () => openGroupEditor(group, onRefreshDashboard, onRefreshVendor));
-        groupRow.append(editGroupBtn);
-        rows.append(groupRow);
-    }
+    }, { min: 0, max: 60000 }), '失败后等待该时长再触发重试；等待期间若出现自动生成（群聊自动模式/脚本），会直接接管本次重试'));
 
     // 模型管理（批量刷新已移到 Vendor 标签页顶部）
     rows.append($('<div class="csl-section-title">').text('模型管理'));
@@ -153,21 +150,27 @@ export function renderRightRoute(
     modelRow.append(buildLogicalBtn, addLogicalBtn);
     rows.append(modelRow);
 
-    // 数据管理
-    rows.append($('<div class="csl-section-title">').text('数据管理'));
-    const exportRow = $('<div class="csl-field" style="gap:4px"></div>');
-    const exportBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-export"></i><span>导出</span></button>')
+    // 备份与恢复
+    rows.append($('<div class="csl-section-title">').text('备份与恢复'));
+    const backupRow = $('<div class="csl-field" style="gap:4px"></div>');
+    const exportBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-export"></i><span>导出配置</span></button>')
         .on('click', () => exportData());
-    const importBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-import"></i><span>导入</span></button>')
+    const importBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-import"></i><span>导入配置</span></button>')
         .on('click', () => importData(onRefreshDashboard, onRefreshVendor));
+    backupRow.append(exportBtn, importBtn);
+    rows.append(backupRow);
+
+    // 诊断
+    rows.append($('<div class="csl-section-title">').text('诊断'));
+    const diagRow = $('<div class="csl-field" style="gap:4px"></div>');
     const exportModelsBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>')
         .on('click', () => exportModelList());
     const exportLogBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>')
         .on('click', () => exportDebugLog());
-    exportRow.append(exportBtn, importBtn, exportModelsBtn, exportLogBtn);
-    rows.append(exportRow);
+    diagRow.append(exportModelsBtn, exportLogBtn);
+    rows.append(diagRow);
 
-    // 危险操作
+    rows.append($('<div class="csl-section-title" style="color:var(--quicker-api-danger,#e08a8a)">').text('危险操作'));
     const dangerRow = $('<div class="csl-field" style="gap:4px"></div>');
     const resetBtn = $('<button class="csl-btn csl-btn--danger" type="button"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>')
         .on('click', async () => {

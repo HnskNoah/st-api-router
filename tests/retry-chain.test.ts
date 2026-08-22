@@ -66,6 +66,7 @@ describe('retry chain consumption window', () => {
             getGroups: () => [group],
             getActiveGroupId: () => 'g1',
             isUserStopPending: () => false,
+            prepareSwipeRetryTarget: () => {},
         });
         const unit = makeUnit();
 
@@ -86,6 +87,7 @@ describe('retry chain consumption window', () => {
             getGroups: () => [group],
             getActiveGroupId: () => 'g1',
             isUserStopPending: () => false,
+            prepareSwipeRetryTarget: () => {},
         });
         const unit = makeUnit();
 

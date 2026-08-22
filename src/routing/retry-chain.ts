@@ -21,8 +21,9 @@ export interface RetryChainDeps {
     getRouting(): RoutingSettings;
     getGroups(): Group[];
     getActiveGroupId(): string | null;
-    /** 用户是否刚按下停止（停止会取消待触发的重试点击）。 */
     isUserStopPending(): boolean;
+    /** swipe 重试前置：清理上次失败遗留的尾随空变体槽（实现见 hooks）。 */
+    prepareSwipeRetryTarget(): void;
 }
 
 export interface RetryFailureInput {
@@ -148,9 +149,13 @@ export function createRetryChain(deps: RetryChainDeps): RetryChain {
                     return;
                 }
                 // swipe 失败走 ST 官方滑动入口（overswipe→重新生成），其余点 wand 菜单的重新生成
-                const btn = input.originType === 'swipe'
-                    ? document.querySelector<HTMLElement>('.mes.last_mes .swipe_right')
-                    : document.getElementById('option_regenerate');
+                let btn: HTMLElement | null;
+                if (input.originType === 'swipe') {
+                    deps.prepareSwipeRetryTarget();
+                    btn = document.querySelector<HTMLElement>('.mes.last_mes .swipe_right') ?? null;
+                } else {
+                    btn = document.getElementById('option_regenerate');
+                }
                 if (!btn) {
                     debugLog('auto retry cancelled: retry control missing', { originType: input.originType });
                     reset();
