@@ -316,6 +316,8 @@ export function ensureConsolePanelStyles(): void {
 
         /* ── 手动禁用胶囊 ── */
         .csl-health--manual { border-color: rgba(154, 160, 170, 0.6); color: var(--csl-text-dim); background: rgba(154, 160, 170, 0.1); }
+        /* select2 下拉需盖过 ST Popup 的层级，否则在弹窗内无法点选 */
+        .select2-dropdown, .select2-container--open { z-index: 100000; }
         .csl-mapping-preview { font-size: 12px; color: var(--csl-text-dim); padding: 4px 0; }
         .csl-mapping-hint { font-size: 11px; color: var(--csl-text-faint); margin-top: 8px; }
 

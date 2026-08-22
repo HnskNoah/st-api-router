@@ -228,12 +228,6 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
     for (const model of logicalModels()) {
         logicalSelect.append($('<option>').val(model.id).text(model.name));
     }
-    logicalSelect.select2({
-        placeholder: '— 选择逻辑模型 —',
-        searchInputPlaceholder: '搜索逻辑模型…',
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-    });
     const previewRow = $('<div class="csl-mapping-preview"></div>');
     const updatePreview = () => {
         const { names, count } = previewMappingRule(groups(), String(patternInput.val() || ''));
@@ -273,8 +267,6 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
         }
         let touched = 0;
         if (applyNow) touched = applyMappingRule(groups(), rule);
-        saveSettingsNow();
-        onDone();
         toastr.success(existing ? '规则已更新。' : `规则已保存${applyNow ? `并应用，更新 ${touched} 条映射` : ''}。`);
         return true;
     };
@@ -282,6 +274,14 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
         title: existing ? '编辑映射规则' : '添加映射规则',
         content,
         onSave: () => doSave(false),
+        onShown: () => {
+            logicalSelect.select2({
+                placeholder: '— 选择逻辑模型 —',
+                searchInputPlaceholder: '搜索逻辑模型…',
+                searchInputCssClass: 'text_pole',
+                width: '100%',
+            });
+        },
         extraActions: [
             {
                 label: '保存并应用',

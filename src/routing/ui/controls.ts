@@ -11,7 +11,8 @@ export interface EditorDialogOptions {
     onSave: () => void | boolean | Promise<void | boolean>;
     /** 保存成功的提示文案（默认「已保存。」）。 */
     successMessage?: string;
-    /** 取消/关闭回调（可选）。 */
+    /** 弹窗显示完成后回调（用于初始化 select2 等依赖 DOM 挂载的控件）。 */
+    onShown?: () => void;
     onCancel?: () => void;
     large?: boolean;
     wide?: boolean;
@@ -72,7 +73,8 @@ export function showEditorDialog(opts: EditorDialogOptions): Popup {
         opts.onCancel?.();
         void popup.completeCancelled();
     });
-    void popup.show();
+    const shown = popup.show();
+    if (opts.onShown) void shown.then(() => opts.onShown?.());
     return popup;
 }
 
