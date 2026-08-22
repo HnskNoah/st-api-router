@@ -10,14 +10,12 @@ import {
     normalizeLogicalModel,
     pruneOrphanLogicalModels,
     resetModelData,
-    buildModelListText,
     mergeImportedRoutingConfig,
     sanitizeGroupForExport,
     sortedLogicalModels,
 } from '../../domain/vendor.js';
 import { normalizeRoutingSettings } from '../../constants.js';
 import { showEditorDialog } from './controls.js';
-import { exportDebugLog } from '../../debug.js';
 import { clearQuickApiSecrets } from '../../secrets/api.js';
 import { escapeHtml } from '../../utils/text.js';
 import { makeId } from '../../utils/id.js';
@@ -160,16 +158,6 @@ export function renderRightRoute(
     backupRow.append(exportBtn, importBtn);
     rows.append(backupRow);
 
-    // 诊断
-    rows.append($('<div class="csl-section-title">').text('诊断'));
-    const diagRow = $('<div class="csl-field" style="gap:4px"></div>');
-    const exportModelsBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-download"></i><span>导出模型列表</span></button>')
-        .on('click', () => exportModelList());
-    const exportLogBtn = $('<button class="csl-btn csl-btn--secondary" type="button"><i class="fa-solid fa-file-lines"></i><span>导出日志</span></button>')
-        .on('click', () => exportDebugLog());
-    diagRow.append(exportModelsBtn, exportLogBtn);
-    rows.append(diagRow);
-
     rows.append($('<div class="csl-section-title" style="color:var(--quicker-api-danger,#e08a8a)">').text('危险操作'));
     const dangerRow = $('<div class="csl-field" style="gap:4px"></div>');
     const resetBtn = $('<button class="csl-btn csl-btn--danger" type="button"><i class="fa-solid fa-broom"></i><span>重置模型数据</span></button>')
@@ -302,20 +290,6 @@ function importData(onRefreshDashboard: () => void, onRefreshVendor: () => void)
     input.trigger('click');
 }
 
-function exportModelList(): void {
-    const text = buildModelListText(groups());
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `quicker-api-models-${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    const total = text.split('\n').filter(Boolean).length;
-    toastr.success(`已导出模型列表：共 ${total} 个模型。`);
-}
 
 function openGroupEditor(group: Group, onRefreshDashboard: () => void, onRefreshVendor: () => void): void {
     const draft = normalizeGroup(structuredClone(group));

@@ -583,18 +583,6 @@ export function sanitizeGroupForExport(group: Group): Group {
     return copy;
 }
 
-/** 模型列表导出（txt）：所有 Key 已拉取真实模型名，每行一个，去重并按名称排序。刻意不含任何密钥字段。 */
-export function buildModelListText(groups: Group[]): string {
-    const names = new Set<string>();
-    for (const entry of allGroupEntries(groups)) {
-        for (const model of entry.fetchedModels) {
-            const trimmed = String(model || '').trim();
-            if (trimmed) names.add(trimmed);
-        }
-    }
-    return [...names].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).join('\n');
-}
-
 /** Vendor token 限制换算（ST 语义：总上下文预算 = 输入预算 + 输出上限）。
  *  Vendor 三个上限都可选（0 = 不限制）。只有当前设置超过 Vendor 上限时才返回钳制目标；
  *  当前已低于/等于上限时不返回（不把用户的设置调高）。 */

@@ -228,7 +228,12 @@ function openRuleEditor(existing: MappingRule | null, onDone: () => void): void 
     for (const model of logicalModels()) {
         logicalSelect.append($('<option>').val(model.id).text(model.name));
     }
-    if (draft.logicalModelId) logicalSelect.val(draft.logicalModelId);
+    logicalSelect.select2({
+        placeholder: '— 选择逻辑模型 —',
+        searchInputPlaceholder: '搜索逻辑模型…',
+        searchInputCssClass: 'text_pole',
+        width: '100%',
+    });
     const previewRow = $('<div class="csl-mapping-preview"></div>');
     const updatePreview = () => {
         const { names, count } = previewMappingRule(groups(), String(patternInput.val() || ''));
